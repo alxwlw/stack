@@ -7,7 +7,7 @@
 		"url": "git+https://github.com/alxwlw/stack.git"
 	},
 	"bin": {
-		"stack": "./src/cli.ts"
+		"stack": "src/cli.ts"
 	},
 	"files": [
 		"src",
