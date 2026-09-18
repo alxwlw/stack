@@ -33,13 +33,17 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/setup
-      - name: npm CLI ≥ 11.5.1 (иначе trusted publishing даст непонятную ошибку авторизации)
-        run: |
-          # Раннер приносит npm от ноды своего образа (10.x), а proto пинит ноду, но npm не шимит —
-          # в PATH остаётся чужой npm. Ставим свежий явно; проверка ниже никуда не девается и
-          # поймает случай, когда и это не сработало.
+      - run: |
+          # Раннер приносит npm 10.x от ноды своего образа, а proto пинит ноду, но npm не шимит.
+          # Установить свежий npm мало: `npm --version` после `npm i -g` продолжает отдавать старый,
+          # потому что PATH указывает не туда, куда лёг новый пакет (проверено на прогоне 1.0.1).
+          # Поэтому обращаемся к установленному CLI по абсолютному пути и им же публикуем — PATH
+          # в этой джобе не участвует вовсе.
           npm i -g npm@^11.5
-          v=$(npm --version)
+          NPM="$(npm root -g)/npm/bin/npm-cli.js"
+          [ -f "$NPM" ] || { echo "не нашёл npm-cli.js по пути $NPM"; exit 1; }
+
+          v=$(node "$NPM" --version)
           major="${v%%.*}"
           minor="${v#*.}"
           minor="${minor%%.*}"
@@ -48,7 +52,7 @@ jobs:
             exit 1
           fi
           echo "npm $v ok"
-      - run: |
+
           # npm не читает pnpm-workspace.yaml, а `--workspace` резолвится от package.json#workspaces,
           # которого здесь нет: публикуем из каталога каждого пакета.
           #
@@ -59,9 +63,9 @@ jobs:
           for p in stack oxlint-config tsconfig; do
             name=$(node -p "require('./packages/$p/package.json').name")
             ver=$(node -p "require('./packages/$p/package.json').version")
-            if npm view "$name@$ver" version >/dev/null 2>&1; then
+            if node "$NPM" view "$name@$ver" version >/dev/null 2>&1; then
               echo "$name@$ver is already in the registry — skipping"
               continue
             fi
-            (cd "packages/$p" && npm publish --provenance --access public)
+            (cd "packages/$p" && node "$NPM" publish --provenance --access public)
           done
