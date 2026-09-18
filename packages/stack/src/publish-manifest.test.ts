@@ -22,8 +22,14 @@ for (const pkg of ['stack', 'oxlint-config', 'tsconfig']) {
 			cwd: join(ROOT, 'packages', pkg),
 			encoding: 'utf8',
 		});
-		expect(res.status).toBe(0);
-		const corrections = `${res.stdout}${res.stderr}`
+		const out = `${res.stdout}${res.stderr}`;
+		// `--dry-run` всё равно ходит в реестр, поэтому после релиза он отвечает «нельзя
+		// опубликовать поверх уже опубликованной версии». Это ожидаемое состояние всех версий
+		// между релизами, а не дефект манифеста: терпим ровно эту ошибку и никакую другую.
+		const alreadyPublished = out.includes('cannot publish over the previously published');
+		if (!alreadyPublished) expect(res.status).toBe(0);
+
+		const corrections = out
 			.split('\n')
 			.filter((l) => l.includes('auto-corrected') || l.includes('was invalid and removed'));
 		expect(corrections).toEqual([]);

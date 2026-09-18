@@ -134,26 +134,35 @@ export async function dispatchSync(repo: string, token: string, version: string)
 }
 
 if (import.meta.main) {
-	const appId = process.env.STACK_BOT_APP_ID;
-	const privateKey = process.env.STACK_BOT_PRIVATE_KEY;
-	if (!appId || !privateKey) {
-		throw new Error('STACK_BOT_APP_ID/STACK_BOT_PRIVATE_KEY are not set');
-	}
 	const version = stripTagPrefix(process.env.VERSION ?? '');
 	const consumers = (process.env.CONSUMERS ?? '')
 		.split('\n')
 		.map((line) => line.trim())
 		.filter(Boolean);
 
-	const jwt = signAppJwt(appId, privateKey);
-	const installations = await getInstallations(jwt);
-	const result = await rollout(consumers, installations, version, {
-		getToken: (id) => getInstallationToken(id, jwt),
-		dispatch: (repo, token, v) => dispatchSync(repo, token, v),
-	});
+	// Пустой список потребителей — законное состояние, а не сбой: они появляются по мере
+	// внедрения канона. Проверка идёт ДО требования секретов приложения, иначе каждый релиз
+	// до первого потребителя даёт красный прогон рассылки. Если потребители есть, а секретов
+	// нет — это настоящая ошибка, и она по-прежнему громкая.
+	if (consumers.length === 0) {
+		console.log('no consumers configured — nothing to roll out');
+	} else {
+		const appId = process.env.STACK_BOT_APP_ID;
+		const privateKey = process.env.STACK_BOT_PRIVATE_KEY;
+		if (!appId || !privateKey) {
+			throw new Error('STACK_BOT_APP_ID/STACK_BOT_PRIVATE_KEY are not set');
+		}
 
-	const summary = `dispatched: ${result.dispatched}, failed: ${result.failed}`;
-	console.log(summary);
-	if (process.env.GITHUB_STEP_SUMMARY)
-		appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${summary}\n`);
+		const jwt = signAppJwt(appId, privateKey);
+		const installations = await getInstallations(jwt);
+		const result = await rollout(consumers, installations, version, {
+			getToken: (id) => getInstallationToken(id, jwt),
+			dispatch: (repo, token, v) => dispatchSync(repo, token, v),
+		});
+
+		const summary = `dispatched: ${result.dispatched}, failed: ${result.failed}`;
+		console.log(summary);
+		if (process.env.GITHUB_STEP_SUMMARY)
+			appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${summary}\n`);
+	}
 }

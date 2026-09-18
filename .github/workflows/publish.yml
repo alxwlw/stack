@@ -47,6 +47,17 @@ jobs:
       - run: |
           # npm не читает pnpm-workspace.yaml, а `--workspace` резолвится от package.json#workspaces,
           # которого здесь нет: публикуем из каталога каждого пакета.
+          #
+          # Версию, уже лежащую в реестре, пропускаем: перезапись реестр запрещает, и без этой
+          # проверки первый же тег после ручной публикации даёт заведомо красный прогон. Проверка
+          # отказоустойчива в сторону публикации — если `npm view` не ответил (сеть, 5xx), мы
+          # публикуем и падаем громко, а не молчим о непубликации.
           for p in stack oxlint-config tsconfig; do
+            name=$(node -p "require('./packages/$p/package.json').name")
+            ver=$(node -p "require('./packages/$p/package.json').version")
+            if npm view "$name@$ver" version >/dev/null 2>&1; then
+              echo "$name@$ver is already in the registry — skipping"
+              continue
+            fi
             (cd "packages/$p" && npm publish --provenance --access public)
           done
