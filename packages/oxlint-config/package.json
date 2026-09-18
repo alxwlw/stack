@@ -1,6 +1,6 @@
 {
 	"name": "@alxwlw/oxlint-config",
-	"version": "0.0.0",
+	"version": "1.0.0",
 	"description": "The alxwlw oxlint canon for oxlint 1.x + oxlint-tsgolint (type-aware): base/node/nest/react/next presets, TypeScript-7-compatible (tsgolint embeds typescript-go).",
 	"license": "MIT",
 	"repository": {
