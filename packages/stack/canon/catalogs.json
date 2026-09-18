@@ -10,9 +10,9 @@
 		"dependency-cruiser": "18.1.0",
 		"vitest": "4.1.10",
 		"@playwright/test": "1.62.0",
-		"@alxwlw/stack": "1.0.0",
-		"@alxwlw/oxlint-config": "1.0.0",
-		"@alxwlw/tsconfig": "1.0.0"
+		"@alxwlw/stack": "1.0.1",
+		"@alxwlw/oxlint-config": "1.0.1",
+		"@alxwlw/tsconfig": "1.0.1"
 	},
 	"libs": {
 		"@nestjs/core": "12.0.1",
