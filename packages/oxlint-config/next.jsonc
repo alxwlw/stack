@@ -1,0 +1,9 @@
+{
+	// @alxwlw/oxlint-config — next preset = react + oxlint's Next.js plugin
+	// (correctness-category nextjs rules: no-img-element pitfalls,
+	// no-html-link-for-pages, google-font hygiene, …). For Next.js apps,
+	// extend this from the repo root.
+	// NOTE top-level `plugins` REPLACES the inherited set — full list restated.
+	"extends": ["./react.jsonc"],
+	"plugins": ["typescript", "oxc", "unicorn", "import", "react", "jsx-a11y", "nextjs"],
+}

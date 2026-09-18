@@ -1,0 +1,16 @@
+name: ci
+on:
+  pull_request:
+  push:
+    branches: [main]
+jobs:
+  ci:
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup
+      - run: bun test
+      - run: pnpm exec oxlint --type-aware
+      - run: pnpm exec oxfmt --check .
+      - run: pnpm exec tsc --build
+      - run: proto run actionlint -- -color

@@ -1,0 +1,9 @@
+@alxwlw/oxlint-config
+
+The presets and the `stack` JS plugin in this package originate in a private
+package owned by the same author. It carried no licence declaration; it is
+published here under this repository's MIT licence with the author's consent.
+
+rules/require-nest-di-decorator.js was, upstream, kept byte-identical to a
+sibling ESLint rule by a lockstep test that does NOT travel with this copy.
+The two will drift; this copy is authoritative here.

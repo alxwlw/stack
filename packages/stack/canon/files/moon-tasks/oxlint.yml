@@ -1,0 +1,34 @@
+$schema: 'https://moonrepo.dev/schemas/tasks.json'
+
+# Canon template (seeded once via --with=moon-tasks; repo-owned afterwards).
+# Pair with @alxwlw/oxlint-config presets in the repo root .oxlintrc.json.
+
+tasks:
+  # Non-mutating check — what CI runs (`moon ci :lint`). `--type-aware` is
+  # LOAD-BEARING: without it every typescript/* type-aware rule is SILENTLY
+  # skipped (no error, no warning).
+  lint:
+    command: 'oxlint --type-aware --report-unused-disable-directives --config
+      $workspaceRoot/.oxlintrc.json .'
+    # Type-aware lint needs the project-reference `.d.ts`: unresolved imports
+    # produce `error`-typed values and the no-unsafe-* rules fire phantom hits.
+    deps:
+      - '~:typecheck'
+    inputs:
+      - 'src/**/*.{ts,tsx,mts,cts}'
+      - '/.oxlintrc.json'
+    options:
+      cache: true
+  # Mutating auto-fix — local only (pre-commit hook). NEVER --fix-suggestions in
+  # automation: tsgolint's require-await "suggestion" rewrites public signatures.
+  lint-fix:
+    command: 'oxlint --type-aware --report-unused-disable-directives --fix --config
+      $workspaceRoot/.oxlintrc.json .'
+    deps:
+      - '~:typecheck'
+    inputs:
+      - 'src/**/*.{ts,tsx,mts,cts}'
+      - '/.oxlintrc.json'
+    options:
+      cache: false
+      runInCI: false

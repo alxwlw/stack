@@ -1,0 +1,8 @@
+{
+	"name": "app",
+	"private": true,
+	"devDependencies": {
+		"knip": "6.20.0",
+		"typescript": "catalog:dev"
+	}
+}

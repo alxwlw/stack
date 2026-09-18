@@ -1,0 +1,32 @@
+$schema: 'https://moonrepo.dev/schemas/tasks.json'
+
+# Canon template (seeded once by `stack sync --with=moon-tasks`; repo-owned
+# afterwards). Pair with @alxwlw/tsconfig/refs|nest presets. Encodes moon 2.x
+# footguns paid for in production — keep the comments.
+
+fileGroups:
+  sources:
+    - 'src/**/*'
+
+tasks:
+  typecheck:
+    command: 'tsc --build'
+    # Build dependency projects' declarations first, so a project's referenced
+    # `.tsbuild/*.d.ts` already exist when its own `tsc --build` runs.
+    deps:
+      - '^:typecheck'
+    inputs:
+      - '@globs(sources)'
+      - 'tsconfig.json'
+      - '/tsconfig.options.json'
+    outputs:
+      - '.tsbuild'
+    options:
+      # `tsc --build` is incremental: an up-to-date project emits nothing, which
+      # trips moon's "outputs declared but none created" check. cache stays off
+      # so the build always runs in `^:typecheck` order.
+      cache: false
+      # Serialize every `tsc --build` across the run: sibling leaf projects each
+      # rebuild their TRANSITIVE references, and two processes writing the same
+      # shared `.tsbuild/*.d.ts` race → intermittent TS6305 on fresh checkouts.
+      mutex: 'tsc-solution-build'

@@ -1,0 +1,52 @@
+name: publish
+on:
+  push:
+    # Только semver-подобные теги (vX.Y.Z[-...]) — плавающий мажор `v1` (см. docs/release.md)
+    # тоже подошёл бы под `v*` и гонял бы этот воркфлоу второй раз на уже опубликованной версии.
+    tags: ['v[0-9]*.[0-9]*.[0-9]*']
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  selftest:
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup
+      - run: bun test
+      - run: pnpm exec oxlint --type-aware
+      - run: pnpm exec oxfmt --check .
+      - run: pnpm exec tsc --build
+      - name: версия тега совпадает с версией всех трёх пакетов
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          stack=$(node -p "require('./packages/stack/package.json').version")
+          oxlint_config=$(node -p "require('./packages/oxlint-config/package.json').version")
+          tsconfig=$(node -p "require('./packages/tsconfig/package.json').version")
+          if [ "$tag" != "$stack" ] || [ "$stack" != "$oxlint_config" ] || [ "$stack" != "$tsconfig" ]; then
+            echo "тег $tag; версии пакетов: stack=$stack oxlint-config=$oxlint_config tsconfig=$tsconfig"
+            exit 1
+          fi
+  publish:
+    needs: selftest
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup
+      - name: npm CLI ≥ 11.5.1 (иначе trusted publishing даст непонятную ошибку авторизации)
+        run: |
+          v=$(npm --version)
+          major="${v%%.*}"
+          minor="${v#*.}"
+          minor="${minor%%.*}"
+          if [ "$major" -lt 11 ] || { [ "$major" -eq 11 ] && [ "$minor" -lt 5 ]; }; then
+            echo "npm $v < 11.5.1 — OIDC trusted publishing не сработает"
+            exit 1
+          fi
+          echo "npm $v ok"
+      - run: |
+          # npm не читает pnpm-workspace.yaml, а `--workspace` резолвится от package.json#workspaces,
+          # которого здесь нет: публикуем из каталога каждого пакета.
+          for p in stack oxlint-config tsconfig; do
+            (cd "packages/$p" && npm publish --provenance --access public)
+          done

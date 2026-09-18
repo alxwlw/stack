@@ -1,0 +1,187 @@
+{
+	// @alxwlw/oxlint-config — base preset. Correctness category plus a
+	// battle-tested strict subset proven in production migrations
+	// (no-unnecessary-condition, no-deprecated, …) — see
+	// README. typescript/* type-aware rules are backed by oxlint-tsgolint and
+	// are SILENTLY SKIPPED unless oxlint runs with `--type-aware` (or
+	// `"options": {"typeAware": true}`) — wire the flag into the repo's lint
+	// task and never drop it. Build project-reference `.d.ts` (tsc --build)
+	// BEFORE type-aware lint: unresolved imports produce `error`-typed values
+	// that fire the no-unsafe-* rules.
+	//
+	// Consumption: `{ "extends": ["./node_modules/@alxwlw/oxlint-config/<preset>.jsonc"] }`
+	// in the repo's .oxlintrc.json. Prettier stays a separate gate (oxlint does
+	// not format); dependency-cruiser stays the architecture/cycle engine.
+	"plugins": ["typescript", "oxc", "unicorn", "import"],
+	"categories": {
+		"correctness": "error",
+	},
+	"jsPlugins": [
+		{ "name": "stack", "specifier": "./rules/oxlint-plugin.mjs" },
+		{ "name": "simple-import-sort", "specifier": "./rules/simple-import-sort.mjs" },
+	],
+	"env": {
+		"builtin": true,
+		"node": true,
+		"es2024": true,
+	},
+	"rules": {
+		// ── Async-safety (type-aware, tsgolint).
+		"typescript/no-floating-promises": ["error", { "ignoreVoid": true }],
+		"typescript/no-misused-promises": "error",
+		"typescript/await-thenable": "error",
+		"typescript/no-unsafe-argument": "error",
+		"typescript/no-unsafe-assignment": "error",
+		"typescript/no-unsafe-call": "error",
+		"typescript/no-unsafe-member-access": "error",
+		"typescript/no-unsafe-return": "error",
+		// ── recommendedTypeChecked carry-overs (tsgolint).
+		"typescript/no-array-delete": "error",
+		"typescript/no-base-to-string": "error",
+		"typescript/no-duplicate-type-constituents": "error",
+		"typescript/no-for-in-array": "error",
+		"typescript/no-implied-eval": "error",
+		"typescript/no-mixed-enums": "error",
+		"typescript/no-unnecessary-type-assertion": "error",
+		"typescript/no-unsafe-enum-comparison": "error",
+		"typescript/only-throw-error": "error",
+		"typescript/prefer-promise-reject-errors": "error",
+		"typescript/restrict-plus-operands": "error",
+		"typescript/unbound-method": "error",
+		"typescript/require-await": "error",
+		"typescript/no-explicit-any": "error",
+		// ── Curated strict subset (proven at error level in production; the
+		// full strict preset is NOT enabled — no-non-null-assertion is a style
+		// ban, no-extraneous-class fires on every NestJS @Module).
+		"typescript/no-redundant-type-constituents": "error",
+		"typescript/no-unnecessary-condition": ["error", { "allowConstantLoopConditions": true }],
+		"typescript/no-deprecated": "error",
+		"typescript/use-unknown-in-catch-callback-variable": "error",
+		"typescript/no-unnecessary-type-conversion": "error",
+		"typescript/no-dynamic-delete": "error",
+		"typescript/no-misused-spread": "error",
+		"typescript/no-unnecessary-type-parameters": "error",
+		"typescript/no-confusing-void-expression": ["error", { "ignoreArrowShorthand": true }],
+		"typescript/restrict-template-expressions": [
+			"error",
+			{ "allowNumber": true, "allowBoolean": true },
+		],
+		// ── Non-type-aware typescript rules (native Rust; several are
+		// recommendedTypeChecked members missing from oxlint's default-on
+		// correctness category — keep them explicit).
+		"typescript/consistent-type-imports": [
+			"error",
+			{ "prefer": "type-imports", "fixStyle": "inline-type-imports" },
+		],
+		"typescript/ban-ts-comment": "error",
+		"typescript/no-misused-new": "error",
+		"typescript/no-non-null-asserted-optional-chain": "error",
+		"typescript/no-this-alias": "error",
+		"typescript/prefer-as-const": "error",
+		"typescript/no-unsafe-declaration-merging": "error",
+		"typescript/no-extra-non-null-assertion": "error",
+		"typescript/no-duplicate-enum-values": "error",
+		"typescript/no-require-imports": "error",
+		"typescript/no-unnecessary-type-constraint": "error",
+		"typescript/no-wrapper-object-types": "error",
+		"typescript/no-empty-object-type": "error",
+		"typescript/no-namespace": "error",
+		"typescript/no-unsafe-function-type": "error",
+		"typescript/prefer-namespace-keyword": "error",
+		// ── eslint core (beyond the correctness category defaults; the last five
+		// are eslint:recommended ERROR rules that oxlint's default-on correctness
+		// category does NOT include — verified empirically on oxlint 1.74).
+		"no-unused-vars": "error",
+		"no-array-constructor": "error",
+		"no-var": "error",
+		"prefer-const": "error",
+		"prefer-rest-params": "error",
+		"prefer-spread": "error",
+		"no-fallthrough": "error",
+		"no-case-declarations": "error",
+		"no-empty": "error",
+		"no-prototype-builtins": "error",
+		"no-regex-spaces": "error",
+		// ── import plugin: no-duplicates only. no-cycle stays OFF —
+		// dependency-cruiser is the canon cycle engine.
+		"import/no-duplicates": "error",
+		// ── group-aware import sorting (JS plugin, autofix under --fix).
+		"simple-import-sort/imports": "error",
+		"simple-import-sort/exports": "error",
+	},
+	"overrides": [
+		{
+			// CommonJS files are CommonJS by definition — require() is the module
+			// system there, not a lint violation (repo-local .cjs shims like
+			// .syncpackrc.cjs / depcruise configs use it legitimately).
+			"files": ["**/*.cjs"],
+			"rules": {
+				"typescript/no-require-imports": "off",
+			},
+		},
+		{
+			// tsdoc applies to TS/TSX only (JS/CJS config files legitimately use
+			// JSDoc `@type` casts) — same scope as the canon eslint preset.
+			"files": ["**/*.ts", "**/*.tsx"],
+			"rules": {
+				"stack/tsdoc-syntax": "error",
+			},
+		},
+		{
+			// Mirror of tseslint's disableTypeChecked layer: tests / spec / config
+			// files / plain JS sit outside the tsc programs — tsgolint would check
+			// them under an inferred default program, producing noise the canon
+			// eslint posture never had. Extend this list in the consuming repo for
+			// repo-specific out-of-program trees (scripts/, e2e/, bundler-frontend
+			// subdirs, …).
+			"files": [
+				"**/*.test.ts",
+				"**/*.test.tsx",
+				"**/*.spec.ts",
+				"**/*.spec.tsx",
+				"**/*.config.ts",
+				"**/*.config.mts",
+				"**/*.config.cts",
+				"**/*.js",
+				"**/*.mjs",
+				"**/*.cjs",
+			],
+			"rules": {
+				// tseslint's disableTypeChecked also covered naming-convention (its
+				// selector engine is type-capable) — mirror that scope for the node/
+				// nest consumers (base itself never enables the rule; harmless here).
+				"stack/naming-convention": "off",
+				"typescript/no-floating-promises": "off",
+				"typescript/no-misused-promises": "off",
+				"typescript/await-thenable": "off",
+				"typescript/no-unsafe-argument": "off",
+				"typescript/no-unsafe-assignment": "off",
+				"typescript/no-unsafe-call": "off",
+				"typescript/no-unsafe-member-access": "off",
+				"typescript/no-unsafe-return": "off",
+				"typescript/no-array-delete": "off",
+				"typescript/no-base-to-string": "off",
+				"typescript/no-duplicate-type-constituents": "off",
+				"typescript/no-for-in-array": "off",
+				"typescript/no-implied-eval": "off",
+				"typescript/no-mixed-enums": "off",
+				"typescript/no-unnecessary-type-assertion": "off",
+				"typescript/no-unsafe-enum-comparison": "off",
+				"typescript/only-throw-error": "off",
+				"typescript/prefer-promise-reject-errors": "off",
+				"typescript/restrict-plus-operands": "off",
+				"typescript/unbound-method": "off",
+				"typescript/require-await": "off",
+				"typescript/no-redundant-type-constituents": "off",
+				"typescript/no-unnecessary-condition": "off",
+				"typescript/no-deprecated": "off",
+				"typescript/use-unknown-in-catch-callback-variable": "off",
+				"typescript/no-unnecessary-type-conversion": "off",
+				"typescript/no-misused-spread": "off",
+				"typescript/no-unnecessary-type-parameters": "off",
+				"typescript/no-confusing-void-expression": "off",
+				"typescript/restrict-template-expressions": "off",
+			},
+		},
+	],
+}

@@ -1,0 +1,11 @@
+{
+	// @alxwlw/oxlint-config — node preset = base + the canon naming convention
+	// (a hand-ported @typescript-eslint/naming-convention selector subset).
+	// Repos with a `_`-prefix private-by-convention marker override the rule
+	// with `["error", { "leadingUnderscore": "allowSingleOrDouble" }]` and pair
+	// it with a no-unused-vars `^_` ignore pattern.
+	"extends": ["./base.jsonc"],
+	"rules": {
+		"stack/naming-convention": "error",
+	},
+}

@@ -1,0 +1,4 @@
+# Repo-local markdownlint ignores — YOURS to edit (seeded once by
+# `stack sync`, never overwritten). gitignore-style patterns.
+# The rule set lives in the sync-managed .markdownlint-cli2.jsonc — never edit
+# that file; add repo-specific ignore paths HERE.

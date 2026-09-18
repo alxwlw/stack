@@ -1,0 +1,11 @@
+{
+	"profile": "node",
+	"with": ["libs", "moon-tasks"],
+	"exceptions": [
+		{
+			"catalog": "dev",
+			"name": "knip",
+			"reason": "плагин ещё не обновлён под knip 6.27, держим 6.20 до апстрим-фикса",
+		},
+	],
+}

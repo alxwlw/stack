@@ -1,0 +1,103 @@
+name: stack sync
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: версия @alxwlw/stack, которую нужно применить
+        type: string
+        required: true
+      install:
+        description: 'запускать ли pnpm install после sync (false для приватных реестров)'
+        type: boolean
+        default: true
+    secrets:
+      app-id:
+        description: ID GitHub App, от имени которого коммитится и открывается PR
+        required: true
+      app-private-key:
+        description: приватный ключ той же GitHub App
+        required: true
+jobs:
+  sync:
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    # Конкурентный workflow_dispatch на ту же версию может открыть два PR на одну ветку
+    # stack/v<version>; последующий запуск ждёт предыдущий, а не гонится с ним.
+    concurrency:
+      group: stack-sync-${{ inputs.version }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/create-github-app-token@v2
+        id: app-token
+        with:
+          app-id: ${{ secrets.app-id }}
+          private-key: ${{ secrets.app-private-key }}
+      - uses: actions/checkout@v5
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+      - uses: alxwlw/stack/.github/actions/setup@v1
+        with:
+          install: false
+      - env:
+          VERSION: ${{ inputs.version }}
+        run: bunx "@alxwlw/stack@$VERSION" sync
+      - if: inputs.install
+        run: pnpm install --no-frozen-lockfile
+      - name: проверить, есть ли изменения
+        id: diff
+        run: |
+          changed="$(git status --porcelain | cut -c4-)"
+          if [ -z "$changed" ]; then
+            echo "канон уже применён, менять нечего"
+            exit 0
+          fi
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          {
+            echo "files<<STACK_SYNC_FILES"
+            echo "$changed"
+            echo "STACK_SYNC_FILES"
+          } >> "$GITHUB_OUTPUT"
+      - name: узнать пользователя бота
+        if: steps.diff.outputs.changed == 'true'
+        id: bot-user
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+        run: echo "id=$(gh api "/users/${APP_SLUG}[bot]" --jq .id)" >> "$GITHUB_OUTPUT"
+      - name: закоммитить и запушить ветку
+        if: steps.diff.outputs.changed == 'true'
+        env:
+          VERSION: ${{ inputs.version }}
+          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+          BOT_USER_ID: ${{ steps.bot-user.outputs.id }}
+        run: |
+          git config user.name "${APP_SLUG}[bot]"
+          git config user.email "${BOT_USER_ID}+${APP_SLUG}[bot]@users.noreply.github.com"
+          git checkout -B "stack/v${VERSION}"
+          git add -A
+          git commit -m "chore(stack): канон ${VERSION}"
+          git push --force origin "stack/v${VERSION}"
+      - name: открыть pull request
+        if: steps.diff.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          VERSION: ${{ inputs.version }}
+          CHANGED_FILES: ${{ steps.diff.outputs.files }}
+        run: |
+          {
+            echo "Канон \`@alxwlw/stack@${VERSION}\` применён к репозиторию."
+            echo
+            echo "Изменённые файлы:"
+            while IFS= read -r file; do
+              printf -- '- %s\n' "$file"
+            done <<<"$CHANGED_FILES"
+            echo
+            echo "Релиз: https://github.com/alxwlw/stack/releases/tag/v${VERSION}"
+          } >"$RUNNER_TEMP/stack-sync-pr-body.md"
+          if [ "$(gh pr list --head "stack/v${VERSION}" --json number --jq length)" = "0" ]; then
+            gh pr create \
+              --title "chore(stack): канон ${VERSION}" \
+              --body-file "$RUNNER_TEMP/stack-sync-pr-body.md" \
+              --head "stack/v${VERSION}"
+          else
+            echo "PR для stack/v${VERSION} уже открыт, ветка обновлена force-push"
+          fi

@@ -1,0 +1,8 @@
+{
+	// Consumer simulation: extends the nest preset from ANOTHER directory via a
+	// relative path — the same shape as a real repo's
+	// `"extends": ["./node_modules/@alxwlw/oxlint-config/nest.jsonc"]`. Proves
+	// that nested extends chains (nest → node → base) and the jsPlugins
+	// specifiers resolve relative to the DECLARING file, not the consumer cwd.
+	"extends": ["../../nest.jsonc"],
+}

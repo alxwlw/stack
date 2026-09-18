@@ -1,0 +1,22 @@
+{
+	"name": "@alxwlw/stack-workspace",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"test": "bun test",
+		"lint": "oxlint --type-aware",
+		"format": "oxfmt ."
+	},
+	"devDependencies": {
+		"@types/bun": "catalog:dev",
+		"@types/node": "catalog:dev",
+		"oxfmt": "catalog:dev",
+		"oxlint": "catalog:dev",
+		"oxlint-tsgolint": "catalog:dev",
+		"typescript": "catalog:dev"
+	},
+	"engines": {
+		"node": ">=26.8.1"
+	},
+	"packageManager": "pnpm@11.15.0"
+}

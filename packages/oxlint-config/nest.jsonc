@@ -1,0 +1,16 @@
+{
+	// @alxwlw/oxlint-config — nest preset = node + the Nest-DI guard.
+	// stack/require-nest-di-decorator: in a DI-managed class (@Injectable/
+	// @Controller/@Catch) every ctor param with a default value must carry
+	// @Optional() — SWC/Bun-class transpilers strip emitDecoratorMetadata, so
+	// without it Nest treats the param as a required dependency and throws
+	// UnknownDependenciesException at runtime while tsc/local dev pass.
+	"extends": ["./node.jsonc"],
+	"rules": {
+		"stack/require-nest-di-decorator": "error",
+		// NestJS guards/interceptors are async for the CanActivate/
+		// NestInterceptor contract (surface throws as rejections) without an
+		// inner await — require-await is all false positives there.
+		"typescript/require-await": "off",
+	},
+}

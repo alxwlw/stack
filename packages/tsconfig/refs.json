@@ -1,0 +1,35 @@
+{
+	"$schema": "https://json.schemastore.org/tsconfig",
+	// Project-references discipline for pnpm+moon monorepos (TS7-validated in
+	// production): tsc emits ONLY .d.ts into .tsbuild/ — runtime JS comes from
+	// Bun/SWC/bundlers. ${configDir} resolves against the EXTENDING config
+	// (TS 5.5+), so per-package tsconfigs usually need nothing beyond "extends".
+	"extends": "./node.json",
+	"compilerOptions": {
+		"target": "ES2023",
+		"lib": ["ES2023"],
+
+		"noFallthroughCasesInSwitch": true,
+		"noImplicitOverride": true,
+		"noImplicitReturns": true,
+
+		// Bun/SWC/esbuild transpile per-file — keep every file independently
+		// compilable; verbatimModuleSyntax is inherited true from base (the nest
+		// preset flips it off — decorator DI needs non-elided imports).
+		"isolatedModules": true,
+
+		"composite": true,
+		"declaration": true,
+		"declarationMap": true,
+		"emitDeclarationOnly": true,
+		"incremental": true,
+		"noEmitOnError": true,
+
+		"resolveJsonModule": true,
+
+		"rootDir": "${configDir}/src",
+		"outDir": "${configDir}/.tsbuild"
+	},
+	"include": ["${configDir}/src"],
+	"exclude": ["${configDir}/**/__tests__/**", "${configDir}/**/*.test.ts"]
+}

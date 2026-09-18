@@ -1,0 +1,22 @@
+name: rollout
+on:
+  workflow_run:
+    workflows: [publish]
+    types: [completed]
+jobs:
+  dispatch:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup
+        with:
+          install: false
+      - env:
+          STACK_BOT_APP_ID: ${{ secrets.STACK_BOT_APP_ID }}
+          STACK_BOT_PRIVATE_KEY: ${{ secrets.STACK_BOT_PRIVATE_KEY }}
+          CONSUMERS: ${{ secrets.STACK_CONSUMERS }}
+          # Имя тега (`v1.2.3`), не голая версия: scripts/rollout.ts сам срезает префикс и
+          # валидирует semver — см. его stripTagPrefix и docs/release.md.
+          VERSION: ${{ github.event.workflow_run.head_branch }}
+        run: bun scripts/rollout.ts

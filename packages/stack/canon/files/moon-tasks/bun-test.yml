@@ -1,0 +1,17 @@
+$schema: 'https://moonrepo.dev/schemas/tasks.json'
+
+# Canon template (seeded once via --with=moon-tasks; repo-owned afterwards).
+# NB moon 2.x: a project OVERRIDING this command must set options.mergeArgs:
+# 'replace' — otherwise moon APPENDS the inherited args (`bun test` + override
+# `bun test src` → `bun test bun test src`).
+
+tasks:
+  test:
+    command: 'bun test'
+    inputs:
+      - 'src/**/*'
+      - 'test/**/*'
+      - 'package.json'
+      - 'tsconfig.json'
+    options:
+      cache: true

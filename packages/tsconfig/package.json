@@ -1,0 +1,21 @@
+{
+	"name": "@alxwlw/tsconfig",
+	"version": "0.0.0",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/alxwlw/stack.git"
+	},
+	"files": [
+		"*.json"
+	],
+	"publishConfig": {
+		"access": "public",
+		"provenance": true
+	},
+	"devDependencies": {
+		"@types/bun": "catalog:dev",
+		"@types/node": "catalog:dev",
+		"typescript": "catalog:dev"
+	}
+}

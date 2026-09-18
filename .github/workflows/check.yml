@@ -1,0 +1,26 @@
+name: stack check
+on:
+  workflow_call:
+    inputs:
+      install:
+        description: есть ли pnpm-воркспейс — запускать pnpm exec, а не bunx
+        type: boolean
+        default: true
+      version:
+        description: версия @alxwlw/stack для репозиториев без pnpm
+        type: string
+        default: latest
+jobs:
+  check:
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: alxwlw/stack/.github/actions/setup@v1
+        with:
+          install: ${{ inputs.install }}
+      - if: inputs.install
+        run: pnpm exec stack check
+      - if: ${{ !inputs.install }}
+        env:
+          VERSION: ${{ inputs.version }}
+        run: bunx "@alxwlw/stack@$VERSION" check

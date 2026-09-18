@@ -1,0 +1,23 @@
+{
+	"$schema": "https://json.schemastore.org/tsconfig",
+	// Bun-runtime preset (standalone scripts/CLIs and Bun-native apps): bundler
+	// resolution, Bun type surface, no emit. allowImportingTsExtensions requires
+	// noEmit — and conflicts with composite project references (TS5096): repos
+	// on this preset should disable moon's syncProjectReferences. Validated
+	// against several production repos' hand-rolled equivalents.
+	"extends": "./base.json",
+	"compilerOptions": {
+		"module": "ESNext",
+		"moduleResolution": "bundler",
+		"lib": ["ES2023"],
+		"types": ["bun"],
+		"noEmit": true,
+		"declaration": false,
+		"allowImportingTsExtensions": true,
+		"isolatedModules": true,
+		"resolveJsonModule": true,
+		"noFallthroughCasesInSwitch": true,
+		"noImplicitOverride": true,
+		"noImplicitReturns": true
+	}
+}

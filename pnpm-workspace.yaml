@@ -1,0 +1,11 @@
+packages:
+  - packages/*
+
+catalogs:
+  dev:
+    typescript: 7.0.2
+    oxlint: 1.83.0
+    oxlint-tsgolint: 7.0.2001
+    oxfmt: 0.68.0
+    '@types/bun': 1.4.2
+    '@types/node': 26.1.1

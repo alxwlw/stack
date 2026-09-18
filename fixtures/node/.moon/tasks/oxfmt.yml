@@ -1,0 +1,14 @@
+$schema: 'https://moonrepo.dev/schemas/tasks.json'
+
+# Canon template (seeded once via --with=moon-tasks; repo-owned afterwards).
+# oxfmt 0.68.0 reads .prettierignore natively — no --ignore-path flag needed.
+
+tasks:
+  format:
+    command: 'oxfmt --check .'
+    inputs:
+      - '**/*.{ts,tsx,js,jsx,mts,json,md,yml,yaml}'
+      - '/.prettierignore'
+      - '/.oxfmtrc.jsonc'
+    options:
+      cache: true

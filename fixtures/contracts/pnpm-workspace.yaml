@@ -1,0 +1,17 @@
+packages:
+  - packages/*
+catalogs:
+  dev:
+    typescript: 7.0.2
+    oxlint: 1.83.0
+    oxlint-tsgolint: 7.0.2001
+    oxfmt: 0.68.0
+    '@types/node': 26.1.1
+    '@types/bun': 1.4.2
+    knip: 6.27.0
+    dependency-cruiser: 18.1.0
+    vitest: 4.1.10
+    '@playwright/test': 1.62.0
+    '@alxwlw/stack': 0.0.0
+    '@alxwlw/oxlint-config': 0.0.0
+    '@alxwlw/tsconfig': 0.0.0

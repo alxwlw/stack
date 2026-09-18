@@ -1,0 +1,10 @@
+# Repo-local Dependabot config — YOURS to edit (seeded once by `stack sync`, never overwritten).
+version: 2
+updates:
+  - package-ecosystem: 'npm'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+    ignore:
+      # Canon packages arrive through `stack sync`, not through Dependabot.
+      - dependency-name: '@alxwlw/*'

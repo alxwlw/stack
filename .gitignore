@@ -1,0 +1,7 @@
+node_modules/
+.tsbuild/
+dist/
+*.tsbuildinfo
+.moon/cache/
+.claude/
+.superpowers/

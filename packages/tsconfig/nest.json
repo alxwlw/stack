@@ -1,0 +1,16 @@
+{
+	"$schema": "https://json.schemastore.org/tsconfig",
+	// NestJS preset = project-references discipline + legacy decorators.
+	// verbatimModuleSyntax MUST be false here: it elides type-only imports, and
+	// reflect-metadata DI resolves constructor params from those imports —
+	// eliding them yields UnknownDependenciesException at runtime while tsc and
+	// local dev pass. (This canon still requires explicit @Inject on every
+	// @Injectable ctor param — enforced by the oxlint canon's
+	// stack/require-nest-di-decorator rule.)
+	"extends": "./refs.json",
+	"compilerOptions": {
+		"experimentalDecorators": true,
+		"emitDecoratorMetadata": true,
+		"verbatimModuleSyntax": false
+	}
+}

@@ -1,0 +1,158 @@
+{
+	"files": [
+		{
+			"src": "files/editorconfig",
+			"dest": ".editorconfig",
+			"appliesTo": ["node", "contracts", "infra"]
+		},
+		{
+			"src": "files/gitleaks-canon.toml",
+			"dest": ".gitleaks.canon.toml",
+			"appliesTo": ["node", "contracts", "infra"]
+		},
+		{
+			"src": "files/gitleaks-local.template.toml",
+			"dest": ".gitleaks.toml",
+			"appliesTo": ["node", "contracts", "infra"],
+			"strategy": "create-if-absent"
+		},
+		{
+			"src": "files/markdownlint-cli2.jsonc",
+			"dest": ".markdownlint-cli2.jsonc",
+			"appliesTo": ["node", "contracts", "infra"]
+		},
+		{
+			"src": "files/markdownlintignore.template",
+			"dest": ".markdownlintignore",
+			"appliesTo": ["node", "contracts", "infra"],
+			"strategy": "create-if-absent"
+		},
+		{
+			"src": "files/yamllint",
+			"dest": ".yamllint",
+			"appliesTo": ["node", "contracts", "infra"]
+		},
+		{
+			"src": "files/yamllint-canon-ignores",
+			"dest": ".yamllint-canon-ignores",
+			"appliesTo": ["node", "contracts", "infra"]
+		},
+		{
+			"src": "files/yamllint-local-ignores.template",
+			"dest": ".yamllint-ignores",
+			"appliesTo": ["node", "contracts", "infra"],
+			"strategy": "create-if-absent"
+		},
+		{
+			"src": "files/prototools",
+			"dest": ".prototools",
+			"appliesTo": ["node", "contracts", "infra"]
+		},
+		{
+			"src": "files/proto-plugins/actionlint.toml",
+			"dest": ".moon/proto-plugins/actionlint.toml",
+			"appliesTo": ["node", "contracts", "infra"]
+		},
+		{
+			"src": "files/proto-plugins/shellcheck.toml",
+			"dest": ".moon/proto-plugins/shellcheck.toml",
+			"appliesTo": ["node", "contracts", "infra"]
+		},
+		{
+			"src": "files/proto-plugins/gitleaks.toml",
+			"dest": ".moon/proto-plugins/gitleaks.toml",
+			"appliesTo": ["node", "contracts", "infra"]
+		},
+		{
+			"src": "files/oxfmtrc.jsonc",
+			"dest": ".oxfmtrc.jsonc",
+			"appliesTo": ["node", "contracts"]
+		},
+		{
+			"src": "files/prettierignore.template",
+			"dest": ".prettierignore",
+			"appliesTo": ["node", "contracts"],
+			"strategy": "create-if-absent"
+		},
+		{
+			"src": "files/dependabot.template.yml",
+			"dest": ".github/dependabot.yml",
+			"appliesTo": ["node", "contracts"],
+			"strategy": "create-if-absent"
+		},
+		{
+			"src": "files/oxlintrc.template.json",
+			"dest": ".oxlintrc.json",
+			"appliesTo": ["node", "contracts"],
+			"strategy": "create-if-absent"
+		},
+		{
+			"src": "files/tsconfig.options.template.json",
+			"dest": "tsconfig.options.json",
+			"appliesTo": ["node", "contracts"],
+			"strategy": "create-if-absent"
+		},
+		{
+			"src": "files/moon-tasks/typescript.yml",
+			"dest": ".moon/tasks/typescript.yml",
+			"appliesTo": ["node", "contracts"],
+			"strategy": "create-if-absent",
+			"group": "moon-tasks"
+		},
+		{
+			"src": "files/moon-tasks/oxlint.yml",
+			"dest": ".moon/tasks/oxlint.yml",
+			"appliesTo": ["node", "contracts"],
+			"strategy": "create-if-absent",
+			"group": "moon-tasks"
+		},
+		{
+			"src": "files/moon-tasks/oxfmt.yml",
+			"dest": ".moon/tasks/oxfmt.yml",
+			"appliesTo": ["node", "contracts"],
+			"strategy": "create-if-absent",
+			"group": "moon-tasks"
+		},
+		{
+			"src": "files/moon-tasks/bun-test.yml",
+			"dest": ".moon/tasks/bun-test.yml",
+			"appliesTo": ["node", "contracts"],
+			"strategy": "create-if-absent",
+			"group": "moon-tasks"
+		},
+		{
+			"src": "files/moon-tasks/stack.yml",
+			"dest": ".moon/tasks/stack.yml",
+			"appliesTo": ["node", "contracts", "infra"],
+			"strategy": "create-if-absent",
+			"group": "moon-tasks"
+		},
+		{
+			"src": "files/knip.base.json",
+			"dest": "knip.base.json",
+			"appliesTo": ["node"],
+			"group": "knip"
+		},
+		{
+			"src": "files/dependency-cruiser.base.cjs",
+			"dest": ".dependency-cruiser.base.cjs",
+			"appliesTo": ["node", "contracts"],
+			"group": "depcruise"
+		},
+		{
+			"src": "files/workflow-stack-check.yml",
+			"dest": ".github/workflows/stack-check.yml",
+			"appliesTo": ["node", "contracts"]
+		},
+		{
+			"src": "files/workflow-stack-check-infra.yml",
+			"dest": ".github/workflows/stack-check.yml",
+			"appliesTo": ["infra"]
+		},
+		{
+			"src": "files/workflow-stack-sync.yml",
+			"dest": ".github/workflows/stack-sync.yml",
+			"appliesTo": ["node", "contracts", "infra"]
+		}
+	]
+}
