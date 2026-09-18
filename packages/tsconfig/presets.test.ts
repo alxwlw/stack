@@ -13,7 +13,11 @@ import { afterEach, expect, test } from 'bun:test';
 
 const PKG = import.meta.dir;
 const TSC = join(PKG, 'node_modules', '.bin', 'tsc');
-const TMP = join(PKG, '.test-tmp');
+// Каталог свой у каждого процесса. Раньше он был общий (`.test-tmp`), а `afterEach` сносил его
+// целиком — два одновременных `bun test` по одному чекауту убивали фикстуры друг друга, и тесты
+// падали с TS5058/EINVAL на исчезнувших путях. Внутри пакета он остаётся сознательно: `types`
+// резолвятся обходом node_modules вверх, из /tmp это не работает.
+const TMP = join(PKG, '.test-tmp', String(process.pid));
 
 let dir: string;
 let counter = 0;

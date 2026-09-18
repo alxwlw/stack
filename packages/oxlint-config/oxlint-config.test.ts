@@ -29,9 +29,17 @@ function run(config: string, files: string[], extraArgs: string[] = []): Diagnos
 		{ encoding: 'utf8', cwd: PKG },
 	);
 	// exit 1 = diagnostics found (expected); >1 = crash / config parse error.
-	expect(res.status).not.toBeNull();
-	expect(res.status as number).toBeLessThanOrEqual(1);
-	const parsed = JSON.parse(res.stdout) as { diagnostics: Diagnostic[] };
+	// Контекст в сообщении — не украшение: перемежающийся провал этого файла однажды не удалось
+	// разобрать именно потому, что `JSON.parse` падал голым SyntaxError без вывода процесса.
+	const ctx = `status=${res.status} signal=${res.signal}\nstdout:\n${res.stdout}\nstderr:\n${res.stderr}`;
+	expect(res.status, ctx).not.toBeNull();
+	expect(res.status as number, ctx).toBeLessThanOrEqual(1);
+	let parsed: { diagnostics: Diagnostic[] };
+	try {
+		parsed = JSON.parse(res.stdout) as { diagnostics: Diagnostic[] };
+	} catch (err) {
+		throw new Error(`oxlint не отдал JSON: ${err instanceof Error ? err.message : err}\n${ctx}`);
+	}
 	return parsed.diagnostics;
 }
 

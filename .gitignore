@@ -5,3 +5,4 @@ dist/
 .moon/cache/
 .claude/
 .superpowers/
+.test-tmp/
