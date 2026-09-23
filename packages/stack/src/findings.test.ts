@@ -116,3 +116,13 @@ test('копия исключения гасит так же, как ориги�
 	expect(out).toHaveLength(1);
 	expect(out[0]?.suppressedBy).toEqual(onEditorconfig);
 });
+
+// Раньше протухшим считалось всё, что не вернул find: второе из двух исключений на одну находку
+// шло в stale-exception. Теперь протухшесть — «не покрывает ни одной находки», и оба покрывают.
+test('два исключения на одну находку: гасит первое, второе не считается протухшим', () => {
+	const twin: Exception = { ...onEditorconfig, reason: 'второе оправдание' };
+	const out = applyExceptions([drift], [onEditorconfig, twin]);
+	expect(out.map((f) => [f.code, f.suppressedBy?.reason])).toEqual([
+		['file-drift', 'исторический отступ'],
+	]);
+});
