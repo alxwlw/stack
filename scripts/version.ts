@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { syncCatalogs } from '../packages/stack/src/catalogs.ts';
+import { planCatalogs } from '../packages/stack/src/catalogs.ts';
 import { readStackConfig } from '../packages/stack/src/config.ts';
 import { SEMVER_RE } from './semver.ts';
 
@@ -45,7 +45,7 @@ export function resyncFixtures(root: string): void {
 	for (const profile of ['node', 'contracts', 'infra']) {
 		const dir = join(root, 'fixtures', profile);
 		if (!existsSync(join(dir, 'pnpm-workspace.yaml'))) continue;
-		syncCatalogs(dir, readStackConfig(dir));
+		for (const d of planCatalogs(dir, readStackConfig(dir))) d.apply();
 	}
 }
 
