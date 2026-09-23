@@ -4,17 +4,10 @@ import { join } from 'node:path';
 import { parseDocument } from 'yaml';
 
 import type { StackConfig } from './config.ts';
-import type { Finding } from './findings.ts';
+import type { Drift } from './findings.ts';
 import { canonDir } from './manifest.ts';
 
 export type CanonCatalogs = Record<string, Record<string, string>>;
-
-export interface CatalogChange {
-	group: string;
-	name: string;
-	from: string | undefined;
-	to: string;
-}
 
 const WORKSPACE_FILE = 'pnpm-workspace.yaml';
 
@@ -40,61 +33,44 @@ export function catalogsFor(cfg: StackConfig, dir: string = canonDir()): CanonCa
 	);
 }
 
-export function syncCatalogs(
+// Один проход и один предикат для check и sync — см. planFiles.
+export function planCatalogs(
 	repoRoot: string,
 	cfg: StackConfig,
 	dir: string = canonDir(),
-): CatalogChange[] {
+): Drift[] {
 	const path = join(repoRoot, WORKSPACE_FILE);
 	if (!existsSync(path)) return [];
 	const doc = parseDocument(readFileSync(path, 'utf8'));
-	const changes: CatalogChange[] = [];
+	const plan: Drift[] = [];
 	for (const [group, entries] of Object.entries(catalogsFor(cfg, dir))) {
 		for (const [name, version] of Object.entries(entries)) {
 			const current = doc.getIn(['catalogs', group, name]);
 			// YAML разбирает `typescript: 7` и `26.1` как числа — сравниваем строками.
 			if (current != null && displayValue(current) === version) continue;
-			// setIn создаёт недостающие узлы и не трогает соседей и их комментарии.
-			doc.setIn(['catalogs', group, name], version);
-			changes.push({
-				group,
-				name,
-				from: current == null ? undefined : displayValue(current),
-				to: version,
-			});
-		}
-	}
-	// singleQuote: oxfmt (canon .oxfmtrc.jsonc) formats YAML with singleQuote:true, and this
-	// file's own pre-existing catalogs already use single quotes for scoped names. New
-	// scoped-package keys (@foo/bar isn't a plain-scalar-safe start char) default to double
-	// quotes otherwise, so a freshly-synced workspace fails `oxfmt --check` on its own output.
-	if (changes.length) writeFileSync(path, doc.toString({ singleQuote: true }));
-	return changes;
-}
-
-export function checkCatalogs(
-	repoRoot: string,
-	cfg: StackConfig,
-	dir: string = canonDir(),
-): Finding[] {
-	const path = join(repoRoot, WORKSPACE_FILE);
-	if (!existsSync(path)) return [];
-	const doc = parseDocument(readFileSync(path, 'utf8'));
-	const findings: Finding[] = [];
-	for (const [group, entries] of Object.entries(catalogsFor(cfg, dir))) {
-		for (const [name, version] of Object.entries(entries)) {
-			const current = doc.getIn(['catalogs', group, name]);
-			if (current != null && displayValue(current) === version) continue;
-			findings.push({
-				code: current == null ? 'catalog-missing' : 'catalog-drift',
+			const from = current == null ? undefined : displayValue(current);
+			plan.push({
+				code: from == null ? 'catalog-missing' : 'catalog-drift',
 				target: `catalogs.${group}.${name}`,
 				message:
-					current == null
+					from == null
 						? `catalog entry missing: expected ${version}`
-						: `${displayValue(current)} instead of ${version}`,
+						: `${from} instead of ${version}`,
 				address: { catalog: group, name },
+				fix: `catalog ${group}.${name}: ${from ?? '—'} → ${version}`,
+				apply() {
+					// setIn создаёт недостающие узлы и не трогает соседей и их комментарии.
+					doc.setIn(['catalogs', group, name], version);
+					// singleQuote: oxfmt (canon .oxfmtrc.jsonc) formats YAML with singleQuote:true, and
+					// this file's own pre-existing catalogs already use single quotes for scoped names.
+					// New scoped-package keys (@foo/bar isn't a plain-scalar-safe start char) default to
+					// double quotes otherwise, so a freshly-synced workspace fails `oxfmt --check`.
+					// ponytail: doc общий на весь план, файл пишется на каждую запись; один flush в
+					// конце, если ~40 записей первого sync станут заметны.
+					writeFileSync(path, doc.toString({ singleQuote: true }));
+				},
 			});
 		}
 	}
-	return findings;
+	return plan;
 }

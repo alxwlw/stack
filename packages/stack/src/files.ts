@@ -2,74 +2,33 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
 import type { StackConfig } from './config.ts';
-import type { Finding } from './findings.ts';
+import type { Drift } from './findings.ts';
 import { canonDir, filesFor } from './manifest.ts';
 
-export interface FileChange {
-	dest: string;
-	action: 'written' | 'seeded' | 'unchanged';
-}
-
-export function syncFiles(
-	repoRoot: string,
-	cfg: StackConfig,
-	dir: string = canonDir(),
-): FileChange[] {
-	const changes: FileChange[] = [];
+// Один проход и один предикат дрейфа для check и sync: check печатает план, sync его применяет,
+// поэтому «после sync — check зелёный» для файлов выполняется по построению.
+export function planFiles(repoRoot: string, cfg: StackConfig, dir: string = canonDir()): Drift[] {
+	const plan: Drift[] = [];
 	for (const f of filesFor(cfg, dir)) {
 		const target = join(repoRoot, f.dest);
 		const want = readFileSync(join(dir, f.src), 'utf8');
 		const exists = existsSync(target);
-		if (f.strategy === 'create-if-absent') {
-			// Файл принадлежит репозиторию после первого засева — содержимое не трогаем.
-			if (exists) {
-				changes.push({ dest: f.dest, action: 'unchanged' });
-				continue;
-			}
-			mkdirSync(dirname(target), { recursive: true });
-			writeFileSync(target, want);
-			changes.push({ dest: f.dest, action: 'seeded' });
+		// create-if-absent принадлежит репозиторию после первого засева: расхождением считается
+		// только отсутствие, содержимое не трогаем.
+		if (exists && (f.strategy === 'create-if-absent' || readFileSync(target, 'utf8') === want)) {
 			continue;
 		}
-		if (exists && readFileSync(target, 'utf8') === want) {
-			changes.push({ dest: f.dest, action: 'unchanged' });
-			continue;
-		}
-		mkdirSync(dirname(target), { recursive: true });
-		writeFileSync(target, want);
-		changes.push({ dest: f.dest, action: 'written' });
+		plan.push({
+			code: exists ? 'file-drift' : 'file-missing',
+			target: f.dest,
+			message: exists ? `${f.dest} differs from canon` : `canon file missing: ${f.dest}`,
+			address: { file: f.dest },
+			fix: `${f.strategy === 'create-if-absent' ? 'seeded' : 'updated'} ${f.dest}`,
+			apply() {
+				mkdirSync(dirname(target), { recursive: true });
+				writeFileSync(target, want);
+			},
+		});
 	}
-	return changes;
-}
-
-export function checkFiles(
-	repoRoot: string,
-	cfg: StackConfig,
-	dir: string = canonDir(),
-): Finding[] {
-	const findings: Finding[] = [];
-	for (const f of filesFor(cfg, dir)) {
-		const target = join(repoRoot, f.dest);
-		const address = { file: f.dest };
-		if (!existsSync(target)) {
-			findings.push({
-				code: 'file-missing',
-				target: f.dest,
-				message: `canon file missing: ${f.dest}`,
-				address,
-			});
-			continue;
-		}
-		// create-if-absent принадлежит репозиторию: расхождением считается только отсутствие.
-		if (f.strategy === 'create-if-absent') continue;
-		if (readFileSync(target, 'utf8') !== readFileSync(join(dir, f.src), 'utf8')) {
-			findings.push({
-				code: 'file-drift',
-				target: f.dest,
-				message: `${f.dest} differs from canon`,
-				address,
-			});
-		}
-	}
-	return findings;
+	return plan;
 }

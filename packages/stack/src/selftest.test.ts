@@ -4,10 +4,9 @@ import { join } from 'node:path';
 
 import { expect, test } from 'bun:test';
 
-import { syncCatalogs } from './catalogs.ts';
-import { checkRepo } from './check.ts';
-import { readStackConfig } from './config.ts';
-import { syncFiles } from './files.ts';
+import { planCatalogs } from './catalogs.ts';
+import { checkRepo, planRepo } from './check.ts';
+import { readStackConfig, type StackConfig } from './config.ts';
 
 const FIXTURES = join(import.meta.dir, '..', '..', '..', 'fixtures');
 
@@ -17,30 +16,31 @@ function copyFixture(profile: string): string {
 	return dir;
 }
 
+// Применить план — то, что делает `stack sync`.
+function sync(dir: string, cfg: StackConfig): void {
+	for (const d of planRepo(dir, cfg)) d.apply();
+}
+
 for (const profile of ['node', 'contracts', 'infra']) {
 	test(`${profile}: sync идемпотентен, после него check зелёный`, () => {
 		const dir = copyFixture(profile);
 		const cfg = readStackConfig(dir);
-		syncFiles(dir, cfg);
-		syncCatalogs(dir, cfg);
-		expect(syncFiles(dir, cfg).every((c) => c.action === 'unchanged')).toBe(true);
-		expect(syncCatalogs(dir, cfg)).toEqual([]);
+		sync(dir, cfg);
+		expect(planRepo(dir, cfg)).toEqual([]);
+		// Правила deps.ts в план не входят: для них check зелёный по факту фикстуры, не по построению.
 		expect(checkRepo(dir, cfg).filter((f) => !f.suppressedBy)).toEqual([]);
 	});
 
 	test(`${profile}: закоммиченная фикстура уже синхронизирована`, () => {
 		const dir = copyFixture(profile);
-		const cfg = readStackConfig(dir);
-		expect(syncFiles(dir, cfg).every((c) => c.action === 'unchanged')).toBe(true);
-		expect(syncCatalogs(dir, cfg)).toEqual([]);
+		expect(planRepo(dir, readStackConfig(dir))).toEqual([]);
 	});
 }
 
 test('check краснеет на каждой категории нарушения', () => {
 	const dir = copyFixture('node');
 	const cfg = readStackConfig(dir);
-	syncFiles(dir, cfg);
-	syncCatalogs(dir, cfg);
+	sync(dir, cfg);
 
 	writeFileSync(join(dir, '.editorconfig'), 'сломали\n');
 	expect(checkRepo(dir, cfg).map((f) => f.code)).toContain('file-drift');
@@ -62,23 +62,23 @@ test('check краснеет на каждой категории нарушен
 	expect(checkRepo(dir, cfg).map((f) => f.code)).toContain('engines-node');
 });
 
-// infra не имеет pnpm-workspace.yaml вовсе: syncCatalogs должен вернуть [] потому что каталогов
+// infra не имеет pnpm-workspace.yaml вовсе: planCatalogs должен вернуть [] потому что каталогов
 // синхронизировать некуда — а не потому что профиль infra тихо пропущен внутри функции.
 test('infra: без pnpm-workspace.yaml синхронизация каталогов — no-op на самом первом вызове', () => {
 	const dir = copyFixture('infra');
 	const cfg = readStackConfig(dir);
 	expect(existsSync(join(dir, 'pnpm-workspace.yaml'))).toBe(false);
 	expect(existsSync(join(dir, 'package.json'))).toBe(false);
-	expect(syncCatalogs(dir, cfg)).toEqual([]);
+	expect(planCatalogs(dir, cfg)).toEqual([]);
 });
 
 // Тот же профиль infra, но с pnpm-workspace.yaml — доказывает, что no-op выше вызван
-// отсутствием файла, а не строкой "profile === 'infra'" где-то внутри syncCatalogs.
+// отсутствием файла, а не строкой "profile === 'infra'" где-то внутри planCatalogs.
 test('infra: появился pnpm-workspace.yaml — синхронизация каталогов больше не no-op', () => {
 	const dir = copyFixture('infra');
 	const cfg = readStackConfig(dir);
 	writeFileSync(join(dir, 'pnpm-workspace.yaml'), 'packages:\n  - packages/*\n');
-	expect(syncCatalogs(dir, cfg).length).toBeGreaterThan(0);
+	expect(planCatalogs(dir, cfg).length).toBeGreaterThan(0);
 });
 
 // node несёт живое исключение на inline-version (packages/app/package.json держит "knip" не

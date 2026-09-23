@@ -21,6 +21,13 @@ export interface Finding {
 	suppressedBy?: Exception;
 }
 
+// Расхождение, которое sync умеет закрыть: находка плюс действие. check печатает message,
+// sync — fix после apply(). Правила из deps.ts дают Finding без действия — только отчёт.
+export interface Drift extends Finding {
+	fix: string;
+	apply(): void;
+}
+
 function covers(e: Exception, f: Finding): boolean {
 	const a = f.address;
 	if (!a) return false;
