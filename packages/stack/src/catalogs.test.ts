@@ -116,29 +116,16 @@ test('check краснеет на устаревшей версии и на от
 	expect(checkCatalogs(repo, cfg(), canon)).toEqual([]);
 });
 
-test('исключение на запись каталога гасит находку', () => {
-	const canon = canonFixture();
-	const repo = repoFixture(
-		'packages:\n  - packages/*\n\ncatalogs:\n  dev:\n    oxlint: 1.74.0\n    typescript: 7.0.2\n',
-	);
-	const c = cfg({ exceptions: [{ catalog: 'dev', name: 'oxlint', reason: 'ждём фикс правила' }] });
-	const found = checkCatalogs(repo, c, canon);
-	expect(found).toHaveLength(1);
-	expect(found[0]?.suppressedBy?.reason).toBe('ждём фикс правила');
-});
-
-test('исключение адресует только свою запись: dev.typescript остаётся немой находкой', () => {
+test('находка о записи каталога несёт адрес для исключения: catalog+name своей записи', () => {
 	const canon = canonFixture();
 	const repo = repoFixture(
 		'packages:\n  - packages/*\n\ncatalogs:\n  dev:\n    oxlint: 1.74.0\n    typescript: 7.0.1\n',
 	);
-	const c = cfg({ exceptions: [{ catalog: 'dev', name: 'oxlint', reason: 'ждём фикс правила' }] });
-	const found = checkCatalogs(repo, c, canon);
-	const oxlint = found.find((f) => f.target === 'catalogs.dev.oxlint');
-	const typescript = found.find((f) => f.target === 'catalogs.dev.typescript');
-	expect(oxlint?.suppressedBy?.reason).toBe('ждём фикс правила');
-	expect(typescript?.code).toBe('catalog-drift');
-	expect(typescript?.suppressedBy).toBeUndefined();
+	const found = checkCatalogs(repo, cfg(), canon);
+	expect(found.map((f) => [f.code, f.address])).toEqual([
+		['catalog-drift', { catalog: 'dev', name: 'oxlint' }],
+		['catalog-drift', { catalog: 'dev', name: 'typescript' }],
+	]);
 });
 
 test('запись каталога, сломанная в YAML-мэппинг, не превращается в "[object Object]"', () => {

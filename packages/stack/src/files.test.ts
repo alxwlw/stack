@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -109,26 +109,15 @@ test('check находит расхождение и отсутствие', () =
 	expect(found[0]?.target).toBe('.editorconfig');
 });
 
-test('исключение гасит находку, но остаётся видимым', () => {
+test('находка о файле несёт адрес для исключения: file = dest', () => {
 	const canon = canonFixture();
 	const repo = mkdtempSync(join(tmpdir(), 'stack-repo-'));
 	syncFiles(repo, cfg(), canon);
 	writeFileSync(join(repo, '.editorconfig'), 'свой\n');
-	const c = cfg({ exceptions: [{ file: '.editorconfig', reason: 'исторический отступ' }] });
-	const found = checkFiles(repo, c, canon);
-	expect(found).toHaveLength(1);
-	expect(found[0]?.suppressedBy?.reason).toBe('исторический отступ');
-});
-
-test('исключение гасит file-missing, но остаётся видимым', () => {
-	const canon = canonFixture();
-	const repo = mkdtempSync(join(tmpdir(), 'stack-repo-'));
-	const c = cfg({ exceptions: [{ file: '.editorconfig', reason: 'временно без файла' }] });
-	const found = checkFiles(repo, c, canon);
-	const missing = found.find((f) => f.target === '.editorconfig');
-	expect(missing?.code).toBe('file-missing');
-	expect(missing?.suppressedBy?.reason).toBe('временно без файла');
-	const other = found.find((f) => f.target === '.gitleaks.toml');
-	expect(other?.code).toBe('file-missing');
-	expect(other?.suppressedBy).toBeUndefined();
+	rmSync(join(repo, '.gitleaks.toml'));
+	const found = checkFiles(repo, cfg(), canon);
+	expect(found.map((f) => [f.code, f.address])).toEqual([
+		['file-drift', { file: '.editorconfig' }],
+		['file-missing', { file: '.gitleaks.toml' }],
+	]);
 });

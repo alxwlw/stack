@@ -45,12 +45,11 @@ export function checkInlineVersions(
 				if (!canonNames.has(name) || spec.startsWith('catalog:') || spec.startsWith('workspace:')) {
 					continue;
 				}
-				const exception = cfg.exceptions.find((e) => e.name === name);
 				findings.push({
 					code: 'inline-version',
 					target: `${file}:${name}`,
 					message: `${name} is declared as "${spec}" instead of catalog:`,
-					...(exception ? { suppressedBy: exception } : {}),
+					address: { name },
 				});
 			}
 		}

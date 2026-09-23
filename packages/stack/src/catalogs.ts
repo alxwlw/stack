@@ -85,7 +85,6 @@ export function checkCatalogs(
 		for (const [name, version] of Object.entries(entries)) {
 			const current = doc.getIn(['catalogs', group, name]);
 			if (current != null && displayValue(current) === version) continue;
-			const exception = cfg.exceptions.find((e) => e.catalog === group && e.name === name);
 			findings.push({
 				code: current == null ? 'catalog-missing' : 'catalog-drift',
 				target: `catalogs.${group}.${name}`,
@@ -93,7 +92,7 @@ export function checkCatalogs(
 					current == null
 						? `catalog entry missing: expected ${version}`
 						: `${displayValue(current)} instead of ${version}`,
-				...(exception ? { suppressedBy: exception } : {}),
+				address: { catalog: group, name },
 			});
 		}
 	}

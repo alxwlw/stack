@@ -127,6 +127,10 @@ suppressed by an exception in `.stack.jsonc` — one exception per file or per c
 }
 ```
 
+A `catalog`+`name` exception also covers that package declared with an inline version instead of
+`catalog:` in any `package.json`: a package held back from the canon is declared directly, and one
+reason covers both symptoms of the same decision.
+
 Not every `check` finding is suppressible this way: a `package.json#engines.node` range that the
 canon's node pin doesn't satisfy, and a missing `@alxwlw/*` ignore in `.github/dependabot.yml`,
 always block — there's no exception shape for either. `check` prints every exception it actually
