@@ -4,8 +4,7 @@ import { join } from 'node:path';
 import { expect, test } from 'bun:test';
 import { parse as parseYaml } from 'yaml';
 
-import { loadCatalogs } from './catalogs.ts';
-import { canonDir } from './manifest.ts';
+import { canonDir, loadCatalogs } from './canon.ts';
 
 // Репозиторий канона сознательно не вызывает `stack sync` на себе (его каталог dev называет
 // версии @alxwlw/* как workspace:*, sync их сломает) — поэтому ничто не мешает корневым файлам

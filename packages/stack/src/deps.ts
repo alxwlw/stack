@@ -4,28 +4,14 @@ import { join } from 'node:path';
 import { Glob } from 'bun';
 import { parse as parseYaml } from 'yaml';
 
-import { catalogsFor } from './catalogs.ts';
-import type { StackConfig } from './config.ts';
+import type { Canon } from './canon.ts';
 import type { Finding } from './findings.ts';
-import { canonDir, filesFor } from './manifest.ts';
 
 const SKIP = /node_modules|\.worktrees|\.moon\/cache|(^|\/)(dist|build)\//;
 
-export function canonNodePin(cfg: StackConfig, dir: string = canonDir()): string {
-	const entry = filesFor(cfg, dir).find((f) => f.dest === '.prototools');
-	if (!entry) throw new Error('canon manifest has no .prototools entry for profile ' + cfg.profile);
-	const pin = /^node\s*=\s*"([^"]+)"/m.exec(readFileSync(join(dir, entry.src), 'utf8'));
-	if (!pin?.[1]) throw new Error('canon .prototools has no node pin');
-	return pin[1];
-}
-
-export function checkInlineVersions(
-	repoRoot: string,
-	cfg: StackConfig,
-	dir: string = canonDir(),
-): Finding[] {
+export function checkInlineVersions(repoRoot: string, canon: Canon): Finding[] {
 	if (!existsSync(join(repoRoot, 'pnpm-workspace.yaml'))) return [];
-	const canonNames = new Set(Object.values(catalogsFor(cfg, dir)).flatMap((e) => Object.keys(e)));
+	const canonNames = new Set(Object.values(canon.catalogs).flatMap((e) => Object.keys(e)));
 	const findings: Finding[] = [];
 	for (const file of new Glob('**/package.json').scanSync({ cwd: repoRoot })) {
 		if (SKIP.test(file)) continue;
@@ -57,11 +43,7 @@ export function checkInlineVersions(
 	return findings;
 }
 
-export function checkEnginesNode(
-	repoRoot: string,
-	cfg: StackConfig,
-	dir: string = canonDir(),
-): Finding[] {
+export function checkEnginesNode(repoRoot: string, canon: Canon): Finding[] {
 	const path = join(repoRoot, 'package.json');
 	if (!existsSync(path)) return [];
 	let pkg: { engines?: { node?: string } };
@@ -78,13 +60,12 @@ export function checkEnginesNode(
 	}
 	const range = pkg.engines?.node;
 	if (!range) return [];
-	const pin = canonNodePin(cfg, dir);
-	if (Bun.semver.satisfies(pin, range)) return [];
+	if (Bun.semver.satisfies(canon.nodePin, range)) return [];
 	return [
 		{
 			code: 'engines-node',
 			target: 'package.json:engines.node',
-			message: `"${range}" doesn't cover the canon pin ${pin} — proto will rewrite .prototools from engines`,
+			message: `"${range}" doesn't cover the canon pin ${canon.nodePin} — proto will rewrite .prototools from engines`,
 		},
 	];
 }
@@ -108,7 +89,7 @@ function ignoresAlxwlw(doc: unknown): boolean {
 	});
 }
 
-export function checkDependabotIgnore(repoRoot: string, _cfg: StackConfig): Finding[] {
+export function checkDependabotIgnore(repoRoot: string): Finding[] {
 	if (!existsSync(join(repoRoot, 'pnpm-workspace.yaml'))) return [];
 	const path = join(repoRoot, '.github/dependabot.yml');
 	if (!existsSync(path)) return [];
