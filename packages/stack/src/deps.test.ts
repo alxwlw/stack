@@ -50,6 +50,7 @@ test('пакет канона, объявленный версией вмест�
 	expect(found).toHaveLength(1);
 	expect(found[0]?.code).toBe('inline-version');
 	expect(found[0]?.target).toBe('packages/a/package.json:oxlint');
+	expect(found[0]?.address).toEqual({ name: 'oxlint' });
 });
 
 test('catalog: нарушением не считается', () => {

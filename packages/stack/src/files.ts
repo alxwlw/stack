@@ -50,13 +50,13 @@ export function checkFiles(
 	const findings: Finding[] = [];
 	for (const f of filesFor(cfg, dir)) {
 		const target = join(repoRoot, f.dest);
-		const exception = cfg.exceptions.find((e) => e.file === f.dest);
+		const address = { file: f.dest };
 		if (!existsSync(target)) {
 			findings.push({
 				code: 'file-missing',
 				target: f.dest,
 				message: `canon file missing: ${f.dest}`,
-				...(exception ? { suppressedBy: exception } : {}),
+				address,
 			});
 			continue;
 		}
@@ -67,7 +67,7 @@ export function checkFiles(
 				code: 'file-drift',
 				target: f.dest,
 				message: `${f.dest} differs from canon`,
-				...(exception ? { suppressedBy: exception } : {}),
+				address,
 			});
 		}
 	}
