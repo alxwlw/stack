@@ -3,11 +3,8 @@ import { join } from 'node:path';
 
 import { parseDocument } from 'yaml';
 
-import type { StackConfig } from './config.ts';
+import type { Canon } from './canon.ts';
 import type { Drift } from './findings.ts';
-import { canonDir } from './manifest.ts';
-
-export type CanonCatalogs = Record<string, Record<string, string>>;
 
 const WORKSPACE_FILE = 'pnpm-workspace.yaml';
 
@@ -21,29 +18,13 @@ function displayValue(v: unknown): string {
 	return JSON.stringify(v);
 }
 
-export function loadCatalogs(dir: string = canonDir()): CanonCatalogs {
-	return JSON.parse(readFileSync(join(dir, 'catalogs.json'), 'utf8')) as CanonCatalogs;
-}
-
-export function catalogsFor(cfg: StackConfig, dir: string = canonDir()): CanonCatalogs {
-	const all = loadCatalogs(dir);
-	const groups = ['dev', ...cfg.with.filter((g) => g in all && g !== 'dev')];
-	return Object.fromEntries(
-		groups.filter((g) => all[g]).map((g) => [g, all[g] as Record<string, string>]),
-	);
-}
-
 // Один проход и один предикат для check и sync — см. planFiles.
-export function planCatalogs(
-	repoRoot: string,
-	cfg: StackConfig,
-	dir: string = canonDir(),
-): Drift[] {
+export function planCatalogs(repoRoot: string, canon: Canon): Drift[] {
 	const path = join(repoRoot, WORKSPACE_FILE);
 	if (!existsSync(path)) return [];
 	const doc = parseDocument(readFileSync(path, 'utf8'));
 	const plan: Drift[] = [];
-	for (const [group, entries] of Object.entries(catalogsFor(cfg, dir))) {
+	for (const [group, entries] of Object.entries(canon.catalogs)) {
 		for (const [name, version] of Object.entries(entries)) {
 			const current = doc.getIn(['catalogs', group, name]);
 			// YAML разбирает `typescript: 7` и `26.1` как числа — сравниваем строками.

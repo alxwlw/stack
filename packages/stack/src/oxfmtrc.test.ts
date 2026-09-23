@@ -13,7 +13,7 @@ import { join } from 'node:path';
 
 import { expect, test } from 'bun:test';
 
-import { canonDir } from './manifest.ts';
+import { canonDir } from './canon.ts';
 
 const ROOT = join(import.meta.dir, '..', '..', '..');
 const OXFMT_BIN = join(ROOT, 'node_modules', '.bin', 'oxfmt');

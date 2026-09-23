@@ -4,30 +4,16 @@ import { join } from 'node:path';
 
 import { expect, test } from 'bun:test';
 
-import type { StackConfig } from './config.ts';
-import {
-	canonNodePin,
-	checkDependabotIgnore,
-	checkEnginesNode,
-	checkInlineVersions,
-} from './deps.ts';
-import { canonDir } from './manifest.ts';
+import { type Canon, canonDir } from './canon.ts';
+import { checkDependabotIgnore, checkEnginesNode, checkInlineVersions } from './deps.ts';
 
-const cfg: StackConfig = { profile: 'node', with: [], exceptions: [] };
-
-function canonFixture(): string {
-	const dir = mkdtempSync(join(tmpdir(), 'stack-canon-'));
-	mkdirSync(join(dir, 'files'), { recursive: true });
-	writeFileSync(join(dir, 'files', 'prototools-node'), 'node = "26.8.1"\npnpm = "11.15.0"\n');
-	writeFileSync(
-		join(dir, 'manifest.json'),
-		JSON.stringify({
-			files: [{ src: 'files/prototools-node', dest: '.prototools', appliesTo: ['node', 'infra'] }],
-		}),
-	);
-	writeFileSync(join(dir, 'catalogs.json'), JSON.stringify({ dev: { oxlint: '1.83.0' } }));
-	return dir;
-}
+// Пин нарочно не совпадает с реальным каноном (26.x): иначе тест engines-node не отличит
+// canon.nodePin от зашитой константы.
+const canon: Canon = {
+	files: [],
+	catalogs: { dev: { oxlint: '1.83.0' }, libs: { react: '19.2.7' } },
+	nodePin: '25.4.1',
+};
 
 function repo(files: Record<string, string>): string {
 	const dir = mkdtempSync(join(tmpdir(), 'stack-repo-'));
@@ -43,14 +29,14 @@ test('пакет канона, объявленный версией вмест�
 		'pnpm-workspace.yaml': 'packages:\n  - packages/*\n',
 		'package.json': '{ "name": "root" }',
 		'packages/a/package.json':
-			'{ "name": "a", "devDependencies": { "oxlint": "1.70.0", "lodash": "4.17.21" } }',
+			'{ "name": "a", "dependencies": { "react": "18.3.1" }, "devDependencies": { "oxlint": "1.70.0", "lodash": "4.17.21" } }',
 		'node_modules/x/package.json': '{ "name": "x", "devDependencies": { "oxlint": "1.60.0" } }',
 	});
-	const found = checkInlineVersions(dir, cfg, canonFixture());
-	expect(found).toHaveLength(1);
-	expect(found[0]?.code).toBe('inline-version');
-	expect(found[0]?.target).toBe('packages/a/package.json:oxlint');
-	expect(found[0]?.address).toEqual({ name: 'oxlint' });
+	// Имена берутся из всех групп канона (dev и libs), lodash в каноне нет, node_modules пропущен.
+	expect(checkInlineVersions(dir, canon).map((f) => [f.code, f.target, f.address])).toEqual([
+		['inline-version', 'packages/a/package.json:react', { name: 'react' }],
+		['inline-version', 'packages/a/package.json:oxlint', { name: 'oxlint' }],
+	]);
 });
 
 test('catalog: нарушением не считается', () => {
@@ -59,7 +45,7 @@ test('catalog: нарушением не считается', () => {
 		'package.json': '{ "name": "root" }',
 		'packages/a/package.json': '{ "name": "a", "devDependencies": { "oxlint": "catalog:dev" } }',
 	});
-	expect(checkInlineVersions(dir, cfg, canonFixture())).toEqual([]);
+	expect(checkInlineVersions(dir, canon)).toEqual([]);
 });
 
 test('workspace: тоже не нарушение', () => {
@@ -68,37 +54,22 @@ test('workspace: тоже не нарушение', () => {
 		'package.json': '{ "name": "root" }',
 		'packages/a/package.json': '{ "name": "a", "devDependencies": { "oxlint": "workspace:*" } }',
 	});
-	expect(checkInlineVersions(dir, cfg, canonFixture())).toEqual([]);
+	expect(checkInlineVersions(dir, canon)).toEqual([]);
 });
 
 test('engines.node, не покрывающий пин, — находка', () => {
 	const bad = repo({ 'package.json': '{ "name": "r", "engines": { "node": "^24" } }' });
-	expect(checkEnginesNode(bad, cfg, canonFixture())[0]?.code).toBe('engines-node');
-	const good = repo({ 'package.json': '{ "name": "r", "engines": { "node": ">=26.8.1" } }' });
-	expect(checkEnginesNode(good, cfg, canonFixture())).toEqual([]);
+	expect(checkEnginesNode(bad, canon).map((f) => [f.code, f.message])).toEqual([
+		[
+			'engines-node',
+			'"^24" doesn\'t cover the canon pin 25.4.1 — proto will rewrite .prototools from engines',
+		],
+	]);
+	// ^25 покрывает пин фикстуры, но не реальный 26.x — константа вместо canon.nodePin красит тест.
+	const good = repo({ 'package.json': '{ "name": "r", "engines": { "node": "^25" } }' });
+	expect(checkEnginesNode(good, canon)).toEqual([]);
 	const none = repo({ 'package.json': '{ "name": "r" }' });
-	expect(checkEnginesNode(none, cfg, canonFixture())).toEqual([]);
-});
-
-test('canonNodePin: в манифесте нет .prototools для профиля — ошибка', () => {
-	const dir = mkdtempSync(join(tmpdir(), 'stack-canon-'));
-	writeFileSync(join(dir, 'manifest.json'), JSON.stringify({ files: [] }));
-	expect(() => canonNodePin(cfg, dir)).toThrow(
-		'canon manifest has no .prototools entry for profile node',
-	);
-});
-
-test('canonNodePin: в каноне .prototools нет пина node — ошибка', () => {
-	const dir = mkdtempSync(join(tmpdir(), 'stack-canon-'));
-	mkdirSync(join(dir, 'files'), { recursive: true });
-	writeFileSync(join(dir, 'files', 'prototools-node'), 'pnpm = "11.15.0"\n');
-	writeFileSync(
-		join(dir, 'manifest.json'),
-		JSON.stringify({
-			files: [{ src: 'files/prototools-node', dest: '.prototools', appliesTo: ['node'] }],
-		}),
-	);
-	expect(() => canonNodePin(cfg, dir)).toThrow('canon .prototools has no node pin');
+	expect(checkEnginesNode(none, canon)).toEqual([]);
 });
 
 test('dependabot без ignore для @alxwlw/* — находка', () => {
@@ -107,24 +78,24 @@ test('dependabot без ignore для @alxwlw/* — находка', () => {
 		'.github/dependabot.yml':
 			'version: 2\nupdates:\n  - package-ecosystem: npm\n    directory: /\n',
 	});
-	expect(checkDependabotIgnore(bad, cfg)[0]?.code).toBe('dependabot-ignore');
+	expect(checkDependabotIgnore(bad)[0]?.code).toBe('dependabot-ignore');
 	const good = repo({
 		'pnpm-workspace.yaml': 'packages: []\n',
 		'.github/dependabot.yml':
 			'version: 2\nupdates:\n  - package-ecosystem: npm\n    directory: /\n    ignore:\n      - dependency-name: "@alxwlw/*"\n',
 	});
-	expect(checkDependabotIgnore(good, cfg)).toEqual([]);
+	expect(checkDependabotIgnore(good)).toEqual([]);
 });
 
 test('dependabot: без файла на репозитории с workspace — молчит', () => {
 	const dir = repo({ 'pnpm-workspace.yaml': 'packages: []\n' });
-	expect(checkDependabotIgnore(dir, cfg)).toEqual([]);
+	expect(checkDependabotIgnore(dir)).toEqual([]);
 });
 
 test('dependabot: сид канона проходит проверку', () => {
 	const template = readFileSync(join(canonDir(), 'files', 'dependabot.template.yml'), 'utf8');
 	const dir = repo({ 'pnpm-workspace.yaml': 'packages: []\n', '.github/dependabot.yml': template });
-	expect(checkDependabotIgnore(dir, cfg)).toEqual([]);
+	expect(checkDependabotIgnore(dir)).toEqual([]);
 });
 
 test('dependabot: закомментированный ignore — находка', () => {
@@ -133,7 +104,7 @@ test('dependabot: закомментированный ignore — находка
 		'.github/dependabot.yml':
 			'version: 2\nupdates:\n  - package-ecosystem: npm\n    directory: /\n    ignore:\n      # - dependency-name: "@alxwlw/*"\n',
 	});
-	expect(checkDependabotIgnore(dir, cfg)[0]?.code).toBe('dependabot-ignore');
+	expect(checkDependabotIgnore(dir)[0]?.code).toBe('dependabot-ignore');
 });
 
 test('dependabot: ignore на чужом пакете — находка', () => {
@@ -142,7 +113,7 @@ test('dependabot: ignore на чужом пакете — находка', () =>
 		'.github/dependabot.yml':
 			'version: 2\nupdates:\n  - package-ecosystem: npm\n    directory: /\n    ignore:\n      - dependency-name: "lodash"\n',
 	});
-	expect(checkDependabotIgnore(dir, cfg)[0]?.code).toBe('dependabot-ignore');
+	expect(checkDependabotIgnore(dir)[0]?.code).toBe('dependabot-ignore');
 });
 
 test('dependabot: битый YAML — находка, а не исключение', () => {
@@ -150,8 +121,8 @@ test('dependabot: битый YAML — находка, а не исключени
 		'pnpm-workspace.yaml': 'packages: []\n',
 		'.github/dependabot.yml': 'version: 2\nupdates: [\n  - broken: [\n',
 	});
-	expect(() => checkDependabotIgnore(dir, cfg)).not.toThrow();
-	expect(checkDependabotIgnore(dir, cfg)[0]?.code).toBe('unreadable-file');
+	expect(() => checkDependabotIgnore(dir)).not.toThrow();
+	expect(checkDependabotIgnore(dir)[0]?.code).toBe('unreadable-file');
 });
 
 test('битый package.json — находка unreadable-file, остальные пакеты проверяются дальше', () => {
@@ -163,7 +134,7 @@ test('битый package.json — находка unreadable-file, остальн
 		'packages/broken/package.json': '{ "name": "broken", ',
 		'packages/a/package.json': '{ "name": "a", "devDependencies": { "oxlint": "1.70.0" } }',
 	});
-	const found = checkInlineVersions(dir, cfg, canonFixture());
+	const found = checkInlineVersions(dir, canon);
 	const unreadable = found.find((f) => f.code === 'unreadable-file');
 	expect(unreadable?.target).toBe('packages/broken/package.json');
 	const inline = found.find((f) => f.code === 'inline-version');
@@ -172,8 +143,8 @@ test('битый package.json — находка unreadable-file, остальн
 
 test('битый корневой package.json — checkEnginesNode находка, не исключение', () => {
 	const dir = repo({ 'package.json': '{ "name": "r", ' });
-	expect(() => checkEnginesNode(dir, cfg, canonFixture())).not.toThrow();
-	expect(checkEnginesNode(dir, cfg, canonFixture())[0]?.code).toBe('unreadable-file');
+	expect(() => checkEnginesNode(dir, canon)).not.toThrow();
+	expect(checkEnginesNode(dir, canon)[0]?.code).toBe('unreadable-file');
 });
 
 test('без pnpm-workspace.yaml правила каталогов и dependabot молчат', () => {
@@ -182,7 +153,6 @@ test('без pnpm-workspace.yaml правила каталогов и dependabot
 		'.github/dependabot.yml':
 			'version: 2\nupdates:\n  - package-ecosystem: npm\n    directory: /\n',
 	});
-	const infra: StackConfig = { profile: 'infra', with: [], exceptions: [] };
-	expect(checkInlineVersions(dir, infra, canonFixture())).toEqual([]);
-	expect(checkDependabotIgnore(dir, infra)).toEqual([]);
+	expect(checkInlineVersions(dir, canon)).toEqual([]);
+	expect(checkDependabotIgnore(dir)).toEqual([]);
 });

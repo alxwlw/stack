@@ -2,6 +2,7 @@
 import { existsSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 
+import { loadCanon } from './canon.ts';
 import { checkRepo, planRepo } from './check.ts';
 import { type Profile, PROFILES, readStackConfig, StackConfigError } from './config.ts';
 import { initConfig } from './init.ts';
@@ -45,7 +46,7 @@ try {
 		console.log(`created ${path}`);
 	} else if (command === 'sync') {
 		const cfg = readStackConfig(repoRoot);
-		const plan = planRepo(repoRoot, cfg);
+		const plan = planRepo(repoRoot, loadCanon(cfg));
 		for (const d of plan) {
 			d.apply();
 			console.log(d.fix);
@@ -53,7 +54,7 @@ try {
 		console.log(`canon ${plan.length === 0 ? 'already up to date' : 'applied'}`);
 	} else if (command === 'check') {
 		const cfg = readStackConfig(repoRoot);
-		const findings = checkRepo(repoRoot, cfg);
+		const findings = checkRepo(repoRoot, loadCanon(cfg), cfg.exceptions);
 		const blocking = findings.filter((f) => !f.suppressedBy);
 		for (const f of findings.filter((f) => f.suppressedBy)) {
 			console.warn(`allowed (${f.suppressedBy?.reason}): ${f.target} — ${f.message}`);
