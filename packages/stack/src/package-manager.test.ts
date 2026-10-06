@@ -7,7 +7,9 @@ import { expect, test } from 'bun:test';
 import type { Canon } from './canon.ts';
 import { planPackageManager } from './package-manager.ts';
 
-const canon: Canon = { files: [], catalogs: {}, nodePin: '26.8.1', pnpmPin: '11.15.0' };
+// pnpmPin не равен реальному пину канона: иначе зашитая в package-manager.ts константа 11.15.0
+// осталась бы незамеченной (то же для node в deps.test.ts).
+const canon: Canon = { files: [], catalogs: {}, nodePin: '26.8.1', pnpmPin: '10.99.0' };
 
 function repoWith(packageJson: string): string {
 	const dir = mkdtempSync(join(tmpdir(), 'stack-pm-'));
@@ -28,12 +30,12 @@ test('packageManager на другой версии pnpm — дрейф, apply �
 		['package-manager', 'package.json:packageManager', { file: '.prototools' }],
 	]);
 	plan[0]?.apply();
-	expect(packageManagerOf(dir)).toBe('pnpm@11.15.0');
+	expect(packageManagerOf(dir)).toBe('pnpm@10.99.0');
 	expect(planPackageManager(dir, canon)).toEqual([]);
 });
 
 test('суффикс +sha512 у той же версии — не дрейф', () => {
-	const dir = repoWith('{ "packageManager": "pnpm@11.15.0+sha512.abc123" }');
+	const dir = repoWith('{ "packageManager": "pnpm@10.99.0+sha512.abc123" }');
 	expect(planPackageManager(dir, canon)).toEqual([]);
 });
 
@@ -53,6 +55,6 @@ test('apply меняет одну строку: 4-пробельные отст�
 	const dir = repoWith(before);
 	planPackageManager(dir, canon)[0]?.apply();
 	expect(readFileSync(join(dir, 'package.json'), 'utf8')).toBe(
-		before.replace('pnpm@11.1.2', 'pnpm@11.15.0'),
+		before.replace('pnpm@11.1.2', 'pnpm@10.99.0'),
 	);
 });

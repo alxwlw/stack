@@ -43,4 +43,5 @@ function formatWithCanonConfig(pkg: Record<string, unknown>): string[] {
 test('canon oxfmtrc: sortPackageJson:false — oxfmt --write не трогает порядок ключей package.json', () => {
 	const keysAfter = formatWithCanonConfig(SHUFFLED_PACKAGE_JSON);
 	expect(keysAfter).toEqual(Object.keys(SHUFFLED_PACKAGE_JSON));
-});
+	// Таймаут 30 с: тест запускает oxfmt, на CI-раннере это упирается в 5 с по умолчанию.
+}, 30_000);

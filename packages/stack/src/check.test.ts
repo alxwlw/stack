@@ -11,14 +11,15 @@ const canon: Canon = {
 	files: [{ dest: '.editorconfig', content: 'root = true\n' }],
 	catalogs: { dev: { oxlint: '1.83.0' } },
 	nodePin: '26.8.1',
-	pnpmPin: '11.15.0',
+	// Не реальный пин канона — см. package-manager.test.ts.
+	pnpmPin: '10.99.0',
 };
 
 test('исключение на .prototools держит и packageManager — в sync и в check', () => {
 	const repo = mkdtempSync(join(tmpdir(), 'stack-repo-'));
 	const withPrototools: Canon = {
 		...canon,
-		files: [{ dest: '.prototools', content: 'pnpm = "11.15.0"\n' }],
+		files: [{ dest: '.prototools', content: 'pnpm = "10.99.0"\n' }],
 	};
 	writeFileSync(join(repo, '.prototools'), 'pnpm = "11.1.2"\n');
 	writeFileSync(join(repo, 'package.json'), '{ "name": "r", "packageManager": "pnpm@11.1.2" }');
@@ -89,14 +90,21 @@ test('sync оставляет запись каталога, удержанну�
 		join(repo, 'pnpm-workspace.yaml'),
 		'packages:\n  - packages/*\n\ncatalogs:\n  dev:\n    oxlint: 1.70.0\n',
 	);
+	// Вторая запись dev-каталога: соседняя запись в том же файле не должна затереть удержанную
+	// (planCatalogs делит один doc на все записи, apply пишет файл целиком).
+	const twoEntries: Canon = {
+		...canon,
+		catalogs: { dev: { oxlint: '1.83.0', typescript: '7.0.2' } },
+	};
 	const exceptions = [{ catalog: 'dev', name: 'oxlint', reason: 'ждём апстрим-фикс' }];
-	const { applied, held } = syncRepo(repo, canon, exceptions);
-	// .editorconfig не удержан — он засеян; oxlint удержан — остался 1.70.0.
-	expect(applied.map((d) => d.target)).toEqual(['.editorconfig']);
+	const { applied, held } = syncRepo(repo, twoEntries, exceptions);
+	expect(applied.map((d) => d.target).sort()).toEqual(['.editorconfig', 'catalogs.dev.typescript']);
 	expect(held.map((f) => f.target)).toEqual(['catalogs.dev.oxlint']);
 	expect(readFileSync(join(repo, '.editorconfig'), 'utf8')).toBe('root = true\n');
-	expect(readFileSync(join(repo, 'pnpm-workspace.yaml'), 'utf8')).toContain('oxlint: 1.70.0');
-	expect(checkRepo(repo, canon, exceptions).filter((f) => !f.suppressedBy)).toEqual([]);
+	const workspace = readFileSync(join(repo, 'pnpm-workspace.yaml'), 'utf8');
+	expect(workspace).toContain('oxlint: 1.70.0');
+	expect(workspace).toContain('typescript: 7.0.2');
+	expect(checkRepo(repo, twoEntries, exceptions).filter((f) => !f.suppressedBy)).toEqual([]);
 });
 
 test('sync без исключений применяет весь план — как раньше', () => {

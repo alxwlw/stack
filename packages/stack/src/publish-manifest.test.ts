@@ -33,5 +33,6 @@ for (const pkg of ['stack', 'oxlint-config', 'tsconfig']) {
 			.split('\n')
 			.filter((l) => l.includes('auto-corrected') || l.includes('was invalid and removed'));
 		expect(corrections).toEqual([]);
-	});
+		// Таймаут 30 с: npm ходит в реестр, на CI-раннере это упирается в 5 с по умолчанию.
+	}, 30_000);
 }
