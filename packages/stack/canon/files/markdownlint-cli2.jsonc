@@ -1,6 +1,8 @@
 // markdownlint-cli2 config — stack canon (sync-managed verbatim; never edit
-// in a repo — repo-local ignore paths go in .markdownlintignore, which
-// markdownlint-cli2 honors natively).
+// in a repo). markdownlint-cli2 has no ignore file of its own (it does not
+// read .markdownlintignore): a repo-specific ignore goes into the repo's own
+// markdownlint-cli2 command as a negated glob, e.g.
+//   markdownlint-cli2 "**/*.md" "!vendor/**"
 //
 // Scope: **semantic** markdown linting only. Formatting (line wrap,
 // list marker style, trailing whitespace, etc.) is handled by oxfmt
@@ -107,6 +109,9 @@
 		// their commit history for no benefit.
 		"docs/specs/**",
 		"docs/plans/**",
+		// The same records under the superpowers plugin's default layout.
+		"docs/superpowers/specs/**",
+		"docs/superpowers/plans/**",
 		".superpowers/**",
 		// Brainstorming docs — idea exploration, not operational
 		"docs/ideas/**",

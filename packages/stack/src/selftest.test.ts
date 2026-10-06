@@ -112,3 +112,10 @@ test('node: исключение inline-version подавляет находк�
 	expect(findings.some((f) => f.code === 'stale-exception')).toBe(false);
 	expect(findings.filter((f) => !f.suppressedBy)).toEqual([]);
 });
+
+test('осиротевший .markdownlintignore от прошлых версий — не находка', () => {
+	const dir = copyFixture('node');
+	const cfg = readStackConfig(dir);
+	writeFileSync(join(dir, '.markdownlintignore'), '# засеян stack 1.1.0\n');
+	expect(planRepo(dir, loadCanon(cfg))).toEqual([]);
+});
