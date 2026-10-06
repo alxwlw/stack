@@ -24,10 +24,10 @@ test('.stack.jsonc: короткий "with" — одной строкой, ка�
 	const dir = mkdtempSync(join(tmpdir(), 'stack-init-'));
 	const path = initConfig(dir, {
 		profile: 'node',
-		with: ['libs', 'moon-tasks', 'knip', 'depcruise'],
+		with: ['libs', 'moon-tasks', 'knip', 'depcruise', 'renovate'],
 	});
 	const text = readFileSync(path, 'utf8');
-	expect(text).toContain('"with": ["libs", "moon-tasks", "knip", "depcruise"],');
+	expect(text).toContain('"with": ["libs", "moon-tasks", "knip", "depcruise", "renovate"],');
 	expect(text).not.toMatch(/"with": \[\s*\n/);
 });
 

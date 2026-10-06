@@ -114,17 +114,21 @@ export function checkDependabotIgnore(repoRoot: string): Finding[] {
 	return ignoresAlxwlw(doc) ? [] : [finding];
 }
 
-// Порядок поиска — как у самого Renovate (первый найденный файл и есть конфиг), без устаревшего
-// package.json#renovate.
+// Имена и порядок поиска — как у самого Renovate (renovate.json{,c,5} для каждого места; первый
+// найденный файл и есть конфиг), без устаревшего package.json#renovate. JSON5.parse читает и JSONC.
 const RENOVATE_CONFIGS = [
 	'renovate.json',
+	'renovate.jsonc',
 	'renovate.json5',
 	'.github/renovate.json',
+	'.github/renovate.jsonc',
 	'.github/renovate.json5',
 	'.gitlab/renovate.json',
+	'.gitlab/renovate.jsonc',
 	'.gitlab/renovate.json5',
 	'.renovaterc',
 	'.renovaterc.json',
+	'.renovaterc.jsonc',
 	'.renovaterc.json5',
 ];
 // matchPackageNames — glob'ы: для скоупа одного уровня `@alxwlw/*` и `@alxwlw/**` равносильны.

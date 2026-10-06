@@ -26,7 +26,7 @@ export interface Canon {
 	catalogs: CanonCatalogs;
 	nodePin: string;
 	pnpmPin: string;
-	/** Бот зависимостей репо: группа renovate переключает правило с dependabot-ignore на renovate-ignore. */
+	/** Бот зависимостей репо. renovate добавляет правило renovate-ignore (конфиг Renovate должен отключать `@alxwlw/*`); dependabot-ignore по-прежнему проверяет .github/dependabot.yml, если файл есть. */
 	bot?: 'dependabot' | 'renovate';
 }
 

@@ -262,3 +262,24 @@ test('renovate: несколько имён в matchPackageNames, включая
 	});
 	expect(checkRenovateIgnore(dir)).toEqual([]);
 });
+
+test('renovate: renovate.jsonc с комментарием и отключением @alxwlw/** — без находки', () => {
+	const dir = repo({
+		'pnpm-workspace.yaml': 'packages: []\n',
+		'renovate.jsonc':
+			'{\n\t// канон двигает stack sync\n\t"packageRules": [{ "matchPackageNames": ["@alxwlw/**"], "enabled": false }]\n}\n',
+	});
+	expect(checkRenovateIgnore(dir)).toEqual([]);
+});
+
+test('renovate: .jsonc читается раньше .json5 — плохой .jsonc решает', () => {
+	const dir = repo({
+		'pnpm-workspace.yaml': 'packages: []\n',
+		'renovate.jsonc': '{ "packageRules": [] }\n',
+		'renovate.json5': RENOVATE_OK_JSON5,
+	});
+	const found = checkRenovateIgnore(dir);
+	expect(found).toHaveLength(1);
+	expect(found[0]?.code).toBe('renovate-ignore');
+	expect(found[0]?.target).toBe('renovate.jsonc');
+});
