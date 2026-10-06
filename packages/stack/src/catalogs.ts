@@ -48,7 +48,9 @@ export function planCatalogs(repoRoot: string, canon: Canon): Drift[] {
 					// double quotes otherwise, so a freshly-synced workspace fails `oxfmt --check`.
 					// ponytail: doc общий на весь план, файл пишется на каждую запись; один flush в
 					// конце, если ~40 записей первого sync станут заметны.
-					writeFileSync(path, doc.toString({ singleQuote: true }));
+					// lineWidth: 0 — без переноса: по умолчанию yaml режет скаляры длиннее 80 колонок во
+					// всём документе, и sync переписал бы строки, к каталогам не относящиеся.
+					writeFileSync(path, doc.toString({ singleQuote: true, lineWidth: 0 }));
 				},
 			});
 		}

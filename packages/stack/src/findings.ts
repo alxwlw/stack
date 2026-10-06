@@ -29,6 +29,11 @@ export interface Drift extends Finding {
 	apply(): void;
 }
 
+// Drift — находка, которую закрывает `stack sync` (у неё есть apply); остальное правят руками.
+export function isDrift(f: Finding): f is Drift {
+	return typeof (f as Partial<Drift>).apply === 'function';
+}
+
 export function covers(e: Exception, f: Finding): boolean {
 	const a = f.address;
 	if (!a) return false;

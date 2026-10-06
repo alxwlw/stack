@@ -5,6 +5,7 @@ import { parseArgs } from 'node:util';
 import { loadCanon } from './canon.ts';
 import { checkRepo, syncRepo } from './check.ts';
 import { type Profile, PROFILES, readStackConfig, StackConfigError } from './config.ts';
+import { type Finding, isDrift } from './findings.ts';
 import { initConfig } from './init.ts';
 
 function fail(message: string): never {
@@ -27,6 +28,17 @@ function parseCliArgs() {
 		// Usage error, same bucket as an unknown command — code 2, never an unhandled crash.
 		fail(error instanceof Error ? error.message : String(error));
 	}
+}
+
+// Подсказка под находками: stack sync закрывает только Drift; правила deps.ts — отчёт без действия.
+function fixHint(blocking: Finding[]): string {
+	const total = blocking.length;
+	const bySync = blocking.filter(isDrift).length;
+	if (bySync === total) return `${total} finding(s). Fix with: stack sync`;
+	if (bySync === 0) {
+		return `${total} finding(s). stack sync does not fix these — fix them by hand (see above)`;
+	}
+	return `${total} finding(s): ${bySync} fixable with: stack sync, ${total - bySync} to fix by hand (see above)`;
 }
 
 const { values, positionals } = parseCliArgs();
@@ -61,7 +73,7 @@ try {
 		}
 		for (const f of blocking) console.error(`${f.code}: ${f.target} — ${f.message}`);
 		if (blocking.length) {
-			console.error(`\n${blocking.length} finding(s). Fix with: stack sync`);
+			console.error(`\n${fixHint(blocking)}`);
 			process.exit(1);
 		}
 		console.log('canon: no drift');
