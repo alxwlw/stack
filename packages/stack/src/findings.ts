@@ -9,6 +9,7 @@ export type FindingCode =
 	| 'engines-node'
 	| 'package-manager'
 	| 'dependabot-ignore'
+	| 'renovate-ignore'
 	| 'unreadable-file'
 	| 'stale-exception';
 

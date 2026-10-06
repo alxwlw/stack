@@ -5,7 +5,12 @@ import { join } from 'node:path';
 import { expect, test } from 'bun:test';
 
 import { type Canon, canonDir } from './canon.ts';
-import { checkDependabotIgnore, checkEnginesNode, checkInlineVersions } from './deps.ts';
+import {
+	checkDependabotIgnore,
+	checkEnginesNode,
+	checkInlineVersions,
+	checkRenovateIgnore,
+} from './deps.ts';
 
 // Пин нарочно не совпадает с реальным каноном (26.x): иначе тест engines-node не отличит
 // canon.nodePin от зашитой константы.
@@ -156,4 +161,65 @@ test('без pnpm-workspace.yaml правила каталогов и dependabot
 	});
 	expect(checkInlineVersions(dir, canon)).toEqual([]);
 	expect(checkDependabotIgnore(dir)).toEqual([]);
+});
+
+// Renovate: порядок поиска конфига — как у самого Renovate; JSON5 — ключи без кавычек,
+// одинарные кавычки, комментарии, висячие запятые.
+const RENOVATE_OK_JSON5 = `{
+	// канон двигает stack sync
+	extends: ['config:recommended'],
+	packageRules: [
+		{ groupName: 'types', matchPackageNames: ['@types/**'] },
+		{ matchPackageNames: ['@alxwlw/**'], enabled: false },
+	],
+}
+`;
+
+test('renovate: JSON5 с отключённым @alxwlw/** — без находки', () => {
+	const dir = repo({
+		'pnpm-workspace.yaml': 'packages: []\n',
+		'renovate.json5': RENOVATE_OK_JSON5,
+	});
+	expect(checkRenovateIgnore(dir)).toEqual([]);
+});
+
+test('renovate: .github/renovate.json с @alxwlw/* — без находки', () => {
+	const dir = repo({
+		'pnpm-workspace.yaml': 'packages: []\n',
+		'.github/renovate.json':
+			'{ "packageRules": [{ "matchPackageNames": ["@alxwlw/*"], "enabled": false }] }\n',
+	});
+	expect(checkRenovateIgnore(dir)).toEqual([]);
+});
+
+test('renovate: группировка @alxwlw/** без enabled: false — находка', () => {
+	const dir = repo({
+		'pnpm-workspace.yaml': 'packages: []\n',
+		'renovate.json':
+			'{ "packageRules": [{ "groupName": "canon", "matchPackageNames": ["@alxwlw/**"] }] }\n',
+	});
+	const [f] = checkRenovateIgnore(dir);
+	expect(f?.code).toBe('renovate-ignore');
+	expect(f?.target).toBe('renovate.json');
+});
+
+test('renovate: конфига нет — находка с местами поиска', () => {
+	const dir = repo({ 'pnpm-workspace.yaml': 'packages: []\n' });
+	const [f] = checkRenovateIgnore(dir);
+	expect(f?.code).toBe('renovate-ignore');
+	expect(f?.message).toContain('.github/renovate.json5');
+});
+
+test('renovate: битый JSON5 — unreadable-file', () => {
+	const dir = repo({
+		'pnpm-workspace.yaml': 'packages: []\n',
+		'renovate.json5': '{ packageRules: [ \n',
+	});
+	expect(checkRenovateIgnore(dir).map((f) => [f.code, f.target])).toEqual([
+		['unreadable-file', 'renovate.json5'],
+	]);
+});
+
+test('renovate: репо без pnpm-workspace.yaml — молчит', () => {
+	expect(checkRenovateIgnore(repo({}))).toEqual([]);
 });

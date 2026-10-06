@@ -115,3 +115,13 @@ test('sync без исключений применяет весь план — 
 	expect(held).toEqual([]);
 	expect(readFileSync(join(repo, '.editorconfig'), 'utf8')).toBe('root = true\n');
 });
+
+test('checkRepo: renovate-ignore только у репо с bot renovate', () => {
+	const repo = mkdtempSync(join(tmpdir(), 'stack-repo-'));
+	writeFileSync(join(repo, 'pnpm-workspace.yaml'), 'packages: []\n');
+	const codes = (bot?: Canon['bot']) =>
+		checkRepo(repo, { ...canon, files: [], catalogs: {}, bot }, []).map((f) => f.code);
+	expect(codes('renovate')).toContain('renovate-ignore');
+	expect(codes('dependabot')).not.toContain('renovate-ignore');
+	expect(codes(undefined)).not.toContain('renovate-ignore');
+});

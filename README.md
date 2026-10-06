@@ -75,7 +75,7 @@ from that point on). Running `sync` again with nothing changed touches nothing (
 Anything held by an exception (see [Exceptions](#exceptions)) is left as it is: `sync` prints it
 as `allowed (<reason>): …` and moves on, and `check` reports the same item as allowed — `sync`
 never turns a held item into a stale exception. (`check`'s report-only rules — `engines.node`,
-the dependabot ignore, inline versions — are not something `sync` fixes.)
+the dependabot / renovate ignore, inline versions — are not something `sync` fixes.)
 
 `sync` also keeps `package.json#packageManager` on the canon's pnpm pin whenever that field names
 pnpm (a `+sha512…` suffix on the same version is fine) — otherwise pnpm switches itself to the
@@ -144,7 +144,8 @@ A `catalog`+`name` exception also covers that package declared with an inline ve
 reason covers both symptoms of the same decision.
 
 Not every `check` finding is suppressible this way: a `package.json#engines.node` range that the
-canon's node pin doesn't satisfy, and a missing `@alxwlw/*` ignore in `.github/dependabot.yml`,
+canon's node pin doesn't satisfy, and a missing `@alxwlw/*` ignore in `.github/dependabot.yml` (or, with the
+`renovate` group, a Renovate config without a `packageRules` entry that disables `@alxwlw/**`),
 always block — there's no exception shape for either. `check` prints every exception it actually
 suppressed as a warning, and fails on one that no longer suppresses anything — the canon moved on
 and the exception is now stale, so it gets deleted, not carried forward silently.
