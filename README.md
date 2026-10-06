@@ -72,6 +72,15 @@ canon's dependency versions into `pnpm-workspace.yaml#catalogs`. Some files are 
 (canon owns the content forever, e.g. `.prototools`, `.oxfmtrc.jsonc`); others are **seeded once**
 and then left alone (`create-if-absent`, e.g. `.gitleaks.toml`, `.oxlintrc.json` — the repo owns them
 from that point on). Running `sync` again with nothing changed touches nothing (idempotent).
+Anything held by an exception (see [Exceptions](#exceptions)) is left as it is: `sync` prints it
+as `allowed (<reason>): …` and moves on, and `check` reports the same item as allowed — `sync`
+never turns a held item into a stale exception. (`check`'s report-only rules — `engines.node`,
+the dependabot ignore, inline versions — are not something `sync` fixes.)
+
+`sync` also keeps `package.json#packageManager` on the canon's pnpm pin whenever that field names
+pnpm (a `+sha512…` suffix on the same version is fine) — otherwise pnpm switches itself to the
+version in the field and the `.prototools` pin silently stops applying. An exception on
+`.prototools` holds this field back too.
 
 Wire `check` into CI to fail the build on drift instead of finding out later:
 
@@ -110,9 +119,9 @@ npx stack init --profile node --with libs --with moon-tasks
 
 ## Exceptions
 
-A drifted or missing canon **file**, or a catalog entry that's missing or off-version, can be
-suppressed by an exception in `.stack.jsonc` — one exception per file or per catalog entry,
-`reason` required on both shapes:
+A drifted or missing canon **file**, or a catalog entry that's missing or off-version, can be held
+back by an exception in `.stack.jsonc` — one exception per file or per catalog entry, `reason`
+required on both shapes. A held item is suppressed in `check` and left untouched by `sync`:
 
 ```jsonc
 {
@@ -136,6 +145,36 @@ canon's node pin doesn't satisfy, and a missing `@alxwlw/*` ignore in `.github/d
 always block — there's no exception shape for either. `check` prints every exception it actually
 suppressed as a warning, and fails on one that no longer suppresses anything — the canon moved on
 and the exception is now stale, so it gets deleted, not carried forward silently.
+
+## CI
+
+`alxwlw/stack/.github/actions/setup@v1` installs the toolchain pinned in `.prototools` (via
+`moonrepo/setup-toolchain`) and runs `pnpm install --frozen-lockfile` unless `install: false`.
+
+For a private npm registry, pass its host and the **name** of the job's env var that holds the
+token. The action writes a reference (`${NODE_AUTH_TOKEN}`), never the value, to the user-level
+`~/.npmrc` — pnpm >= 11.15 ignores env-var credentials in a committed project `.npmrc`:
+
+```yaml
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    env:
+      NODE_AUTH_TOKEN: ${{ secrets.NPM_READ_TOKEN }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: alxwlw/stack/.github/actions/setup@v1
+        with:
+          registry: npm.pkg.github.com
+          registry-token-var: NODE_AUTH_TOKEN
+```
+
+The project `.npmrc` must still map the scope to the registry (e.g.
+`@acme:registry=https://npm.pkg.github.com`); the action only adds the auth line.
+
+The action also exports `ACTIONLINT_BIN` / `SHELLCHECK_BIN` — the real binaries behind the proto
+shims, which race each other when run in parallel — only for those two tools, and only when the
+repository-root `.prototools` pins them.
 
 ## Releases
 

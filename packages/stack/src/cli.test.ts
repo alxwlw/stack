@@ -119,3 +119,18 @@ test('init с несуществующим --repo — код 2, без стек�
 	expect(r.err).not.toContain('cli.ts');
 	expect(r.err).not.toContain('ENOENT');
 });
+
+test('sync с исключением на файл: файл не тронут, строка allowed, check — код 0', async () => {
+	const dir = emptyRepo();
+	writeFileSync(
+		join(dir, '.stack.jsonc'),
+		'{ "profile": "node", "with": [], "exceptions": [{ "file": ".editorconfig", "reason": "свой отступ" }] }',
+	);
+	writeFileSync(join(dir, '.editorconfig'), 'свой\n');
+	const synced = await run(['sync'], dir);
+	expect(synced.code).toBe(0);
+	expect(synced.out).not.toContain('updated .editorconfig');
+	expect(synced.err).toContain('allowed (свой отступ): .editorconfig');
+	expect(readFileSync(join(dir, '.editorconfig'), 'utf8')).toBe('свой\n');
+	expect((await run(['check'], dir)).code).toBe(0);
+});

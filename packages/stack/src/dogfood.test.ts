@@ -4,8 +4,7 @@ import { join } from 'node:path';
 import { expect, test } from 'bun:test';
 import { parse as parseYaml } from 'yaml';
 
-import { loadCatalogs } from './catalogs.ts';
-import { canonDir } from './manifest.ts';
+import { canonDir, loadCatalogs } from './canon.ts';
 
 // Репозиторий канона сознательно не вызывает `stack sync` на себе (его каталог dev называет
 // версии @alxwlw/* как workspace:*, sync их сломает) — поэтому ничто не мешает корневым файлам
@@ -46,4 +45,15 @@ test('корневой pnpm-workspace.yaml catalogs.dev — версии инс�
 		expect(expected).toBeDefined();
 		expect(String(version)).toBe(expected as string);
 	}
+});
+
+test('корневой package.json#packageManager — pnpm на пине канона', () => {
+	const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as {
+		packageManager?: string;
+	};
+	const pin = /^pnpm\s*=\s*"([^"]+)"/m.exec(
+		readFileSync(join(canonDir(), 'files', 'prototools'), 'utf8'),
+	)?.[1];
+	expect(pin).toBeDefined();
+	expect(pkg.packageManager).toBe(`pnpm@${pin}`);
 });

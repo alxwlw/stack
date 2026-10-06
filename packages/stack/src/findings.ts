@@ -7,6 +7,7 @@ export type FindingCode =
 	| 'catalog-missing'
 	| 'inline-version'
 	| 'engines-node'
+	| 'package-manager'
 	| 'dependabot-ignore'
 	| 'unreadable-file'
 	| 'stale-exception';
@@ -21,7 +22,14 @@ export interface Finding {
 	suppressedBy?: Exception;
 }
 
-function covers(e: Exception, f: Finding): boolean {
+// Расхождение, которое sync умеет закрыть: находка плюс действие. check печатает message,
+// sync — fix после apply(). Правила из deps.ts дают Finding без действия — только отчёт.
+export interface Drift extends Finding {
+	fix: string;
+	apply(): void;
+}
+
+export function covers(e: Exception, f: Finding): boolean {
 	const a = f.address;
 	if (!a) return false;
 	if (e.file != null) return a.file === e.file;

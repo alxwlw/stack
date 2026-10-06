@@ -19,7 +19,7 @@
 		},
 		"exceptions": {
 			"type": "array",
-			"description": "Suppressed `stack check` findings. Each exception addresses exactly one canon file or exactly one catalog entry.",
+			"description": "An exception holds its item back in both `stack check` (the finding is suppressed and reported as allowed) and `stack sync` (the item is left untouched). Each exception addresses exactly one canon file or exactly one catalog entry.",
 			"items": {
 				"type": "object",
 				"additionalProperties": false,
