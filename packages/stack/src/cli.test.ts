@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -133,4 +133,56 @@ test('sync с исключением на файл: файл не тронут, 
 	expect(synced.err).toContain('allowed (свой отступ): .editorconfig');
 	expect(readFileSync(join(dir, '.editorconfig'), 'utf8')).toBe('свой\n');
 	expect((await run(['check'], dir)).code).toBe(0);
+});
+
+// dependabot.yml без ignore @alxwlw/* — находка dependabot-ignore: её правят руками, sync не трогает
+// уже засеянный (create-if-absent) файл.
+const DEPENDABOT_NO_IGNORE =
+	"version: 2\nupdates:\n  - package-ecosystem: 'npm'\n    directory: '/'\n    schedule:\n      interval: 'weekly'\n";
+
+async function syncedRepo(): Promise<string> {
+	const dir = emptyRepo();
+	await run(['init', '--profile', 'node'], dir);
+	await run(['sync'], dir);
+	mkdirSync(join(dir, '.github'), { recursive: true });
+	writeFileSync(join(dir, '.github/dependabot.yml'), DEPENDABOT_NO_IGNORE);
+	return dir;
+}
+
+test('check: находка, которую sync не чинит, — без совета stack sync', async () => {
+	const r = await run(['check'], await syncedRepo());
+	expect(r.code).toBe(1);
+	expect(r.err).toContain('dependabot-ignore');
+	expect(r.err).not.toContain('Fix with: stack sync');
+	expect(r.err).toContain('1 finding(s). stack sync does not fix these — fix them by hand');
+});
+
+test('check: смесь — в подсказке оба числа', async () => {
+	const dir = await syncedRepo();
+	rmSync(join(dir, '.editorconfig'));
+	const r = await run(['check'], dir);
+	expect(r.code).toBe(1);
+	expect(r.err).toContain('2 finding(s): 1 fixable with: stack sync, 1 to fix by hand');
+});
+
+test('check: подавленная находка не входит в числа подсказки', async () => {
+	const dir = await syncedRepo();
+	rmSync(join(dir, '.editorconfig'));
+	const cfg = parseJsonc(readFileSync(join(dir, '.stack.jsonc'), 'utf8')) as Record<
+		string,
+		unknown
+	>;
+	cfg.exceptions = [{ file: '.editorconfig', reason: 'тест: подавлено' }];
+	writeFileSync(join(dir, '.stack.jsonc'), JSON.stringify(cfg, null, '\t'));
+	const r = await run(['check'], dir);
+	expect(r.code).toBe(1);
+	expect(r.err).toContain('1 finding(s). stack sync does not fix these');
+});
+
+test('check: всё чинит sync — подсказка прежняя', async () => {
+	const dir = emptyRepo();
+	await run(['init', '--profile', 'node'], dir);
+	const r = await run(['check'], dir);
+	expect(r.code).toBe(1);
+	expect(r.err).toMatch(/\n\d+ finding\(s\)\. Fix with: stack sync\n/);
 });
