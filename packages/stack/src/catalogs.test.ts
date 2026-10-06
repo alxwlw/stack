@@ -57,7 +57,7 @@ test('пин строк fix: dev.oxlint — апдейт, dev.typescript — н�
 	]);
 });
 
-// Вне каталогов sync не меняет ни байта. У yaml lineWidth по умолчанию 80: без lineWidth: 0
+// Вне каталогов sync не переносит длинные строки. У yaml lineWidth по умолчанию 80: без lineWidth: 0
 // длинный override на git-URL уходил в `\`-перенос, а длинный plain-скаляр — на вторую строку.
 const LONG_URL = `"git+https://github.com/example/some-long-fork-name.git#${'a'.repeat(40)}"`;
 const WS_WITH_LONG_LINES = `${WS_WITH_COMMENT}

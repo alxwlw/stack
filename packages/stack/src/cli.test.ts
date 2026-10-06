@@ -160,9 +160,10 @@ test('check: находка, которую sync не чинит, — без с�
 test('check: смесь — в подсказке оба числа', async () => {
 	const dir = await syncedRepo();
 	rmSync(join(dir, '.editorconfig'));
+	rmSync(join(dir, '.oxfmtrc.jsonc'));
 	const r = await run(['check'], dir);
 	expect(r.code).toBe(1);
-	expect(r.err).toContain('2 finding(s): 1 fixable with: stack sync, 1 to fix by hand');
+	expect(r.err).toContain('3 finding(s): 2 fixable with: stack sync, 1 to fix by hand');
 });
 
 test('check: подавленная находка не входит в числа подсказки', async () => {
