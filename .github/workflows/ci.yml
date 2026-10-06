@@ -14,3 +14,65 @@ jobs:
       - run: pnpm exec oxfmt --check .
       - run: pnpm exec tsc --build
       - run: proto run actionlint -- -color
+
+  setup-action:
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    env:
+      TEST_TOKEN: not-a-real-token
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup
+        with:
+          install: false
+          registry: npm.pkg.github.com
+          registry-token-var: TEST_TOKEN
+      - name: в ~/.npmrc ссылка на переменную, а не её значение
+        run: |
+          # shellcheck disable=SC2016 # ${TEST_TOKEN} должен остаться литералом
+          grep -qxF '//npm.pkg.github.com/:_authToken=${TEST_TOKEN}' "$HOME/.npmrc"
+          if grep -qF 'not-a-real-token' "$HOME/.npmrc"; then exit 1; fi
+      - name: пути к бинарникам экспортированы
+        run: test -x "$ACTIONLINT_BIN" && test -x "$SHELLCHECK_BIN"
+      - name: повторный вызов
+        uses: ./.github/actions/setup
+        with:
+          install: false
+          registry: npm.pkg.github.com
+          registry-token-var: TEST_TOKEN
+      - name: строка не задублировалась
+        run: |
+          # shellcheck disable=SC2016
+          test "$(grep -cxF '//npm.pkg.github.com/:_authToken=${TEST_TOKEN}' "$HOME/.npmrc")" = 1
+      - id: bad-var
+        continue-on-error: true
+        uses: ./.github/actions/setup
+        with:
+          install: false
+          registry: npm.pkg.github.com
+          registry-token-var: 'X; touch /tmp/pwned'
+      - id: half
+        continue-on-error: true
+        uses: ./.github/actions/setup
+        with:
+          install: false
+          registry: npm.pkg.github.com
+      - name: неверные входы отклонены, инъекции не было
+        env:
+          BAD_VAR: ${{ steps.bad-var.outcome }}
+          HALF: ${{ steps.half.outcome }}
+        run: |
+          test "$BAD_VAR" = failure
+          test "$HALF" = failure
+          test ! -e /tmp/pwned
+
+  setup-action-bare:
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: .prototools ещё не на каноне — без actionlint и shellcheck
+        run: sed -i -E '/^(actionlint|shellcheck)[[:space:]]*=/d' .prototools
+      - uses: ./.github/actions/setup
+        with:
+          install: false
+      - name: action не упал и ничего не экспортировал
+        run: test -z "${ACTIONLINT_BIN:-}" && test -z "${SHELLCHECK_BIN:-}"
