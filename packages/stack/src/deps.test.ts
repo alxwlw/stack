@@ -223,3 +223,42 @@ test('renovate: битый JSON5 — unreadable-file', () => {
 test('renovate: репо без pnpm-workspace.yaml — молчит', () => {
 	expect(checkRenovateIgnore(repo({}))).toEqual([]);
 });
+
+test('renovate: отключение чужого scope не подходит — находка', () => {
+	const dir = repo({
+		'pnpm-workspace.yaml': 'packages: []\n',
+		'renovate.json':
+			'{ "packageRules": [{ "matchPackageNames": ["@types/**"], "enabled": false }] }\n',
+	});
+	expect(checkRenovateIgnore(dir)[0]?.code).toBe('renovate-ignore');
+});
+
+test('renovate: @alxwlw-evil не совпадает с @alxwlw — находка', () => {
+	const dir = repo({
+		'pnpm-workspace.yaml': 'packages: []\n',
+		'renovate.json':
+			'{ "packageRules": [{ "matchPackageNames": ["@alxwlw-evil/**"], "enabled": false }] }\n',
+	});
+	expect(checkRenovateIgnore(dir)[0]?.code).toBe('renovate-ignore');
+});
+
+test('renovate: первый конфиг в порядке поиска решает, даже если другой лучше', () => {
+	const dir = repo({
+		'pnpm-workspace.yaml': 'packages: []\n',
+		'renovate.json': '{ "packageRules": [] }\n',
+		'renovate.json5':
+			'{ "packageRules": [{ "matchPackageNames": ["@alxwlw/**"], "enabled": false }] }\n',
+	});
+	const [f] = checkRenovateIgnore(dir);
+	expect(f?.code).toBe('renovate-ignore');
+	expect(f?.target).toBe('renovate.json');
+});
+
+test('renovate: несколько имён в matchPackageNames, включая @alxwlw/** — без находки', () => {
+	const dir = repo({
+		'pnpm-workspace.yaml': 'packages: []\n',
+		'renovate.json':
+			'{ "packageRules": [{ "matchPackageNames": ["@types/**", "@alxwlw/**"], "enabled": false }] }\n',
+	});
+	expect(checkRenovateIgnore(dir)).toEqual([]);
+});
