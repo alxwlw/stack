@@ -151,13 +151,22 @@ test('канон markdownlint: игноры планов и спек superpowers
 	);
 });
 
-// markdownlint-cli2 не читает .markdownlintignore (README cli2: «not supported») — засевать его
-// значит обещать шов, которого нет.
-test('канон не засевает .markdownlintignore ни в одном профиле и группе', () => {
+test('канон markdownlint: опция gitignore указывает на .markdownlintignore', () => {
+	const cfg = parseJsonc(
+		readFileSync(join(canonDir(), 'files', 'markdownlint-cli2.jsonc'), 'utf8'),
+	) as { gitignore?: string };
+	expect(cfg.gitignore).toBe('.markdownlintignore');
+});
+
+// Шов репо-локальных игноров: cli2 читает .markdownlintignore через опцию gitignore, файл
+// засевается один раз (create-if-absent) и дальше принадлежит репо.
+test('канон засевает .markdownlintignore как create-if-absent в каждом профиле', () => {
 	const manifest = loadManifest();
 	const allGroups = [...new Set(manifest.map((f) => f.group).filter((g) => g != null))];
 	for (const profile of PROFILES) {
-		const dests = filesFor({ profile, with: allGroups, exceptions: [] }).map((f) => f.dest);
-		expect(dests).not.toContain('.markdownlintignore');
+		const entry = filesFor({ profile, with: allGroups, exceptions: [] }).find(
+			(f) => f.dest === '.markdownlintignore',
+		);
+		expect(entry?.strategy).toBe('create-if-absent');
 	}
 });

@@ -22,6 +22,12 @@
 			"appliesTo": ["node", "contracts", "infra"]
 		},
 		{
+			"src": "files/markdownlintignore.template",
+			"dest": ".markdownlintignore",
+			"appliesTo": ["node", "contracts", "infra"],
+			"strategy": "create-if-absent"
+		},
+		{
 			"src": "files/yamllint",
 			"dest": ".yamllint",
 			"appliesTo": ["node", "contracts", "infra"]

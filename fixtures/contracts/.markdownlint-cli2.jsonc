@@ -1,8 +1,7 @@
 // markdownlint-cli2 config — stack canon (sync-managed verbatim; never edit
-// in a repo). markdownlint-cli2 has no ignore file of its own (it does not
-// read .markdownlintignore): a repo-specific ignore goes into the repo's own
-// markdownlint-cli2 command as a negated glob, e.g.
-//   markdownlint-cli2 "**/*.md" "!vendor/**"
+// in a repo). Repo-specific ignore paths go in .markdownlintignore (gitignore
+// syntax; seeded once by `stack sync`, repo-owned afterwards): markdownlint-cli2
+// has no ignore file by default, so the `gitignore` option below points it there.
 //
 // Scope: **semantic** markdown linting only. Formatting (line wrap,
 // list marker style, trailing whitespace, etc.) is handled by oxfmt
@@ -92,6 +91,8 @@
 		"MD045": false, // no-alt-text: too many screenshots lack alt
 	},
 	"globs": ["**/*.md", "**/*.mdx"],
+	// Makes cli2 read the repo-owned ignore file (gitignore syntax).
+	"gitignore": ".markdownlintignore",
 	"ignores": [
 		// Build artifacts
 		"**/node_modules/**",

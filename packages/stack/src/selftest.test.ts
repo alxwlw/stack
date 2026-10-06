@@ -113,9 +113,9 @@ test('node: исключение inline-version подавляет находк�
 	expect(findings.filter((f) => !f.suppressedBy)).toEqual([]);
 });
 
-test('осиротевший .markdownlintignore от прошлых версий — не находка', () => {
+test('свой .markdownlintignore с другим содержимым — не находка (create-if-absent)', () => {
 	const dir = copyFixture('node');
 	const cfg = readStackConfig(dir);
-	writeFileSync(join(dir, '.markdownlintignore'), '# засеян stack 1.1.0\n');
+	writeFileSync(join(dir, '.markdownlintignore'), '# свои игноры репозитория\nvendor\n');
 	expect(planRepo(dir, loadCanon(cfg))).toEqual([]);
 });
