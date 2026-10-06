@@ -11,6 +11,7 @@ const canon: Canon = {
 	files: [],
 	catalogs: { dev: { oxlint: '1.83.0', typescript: '7.0.2' } },
 	nodePin: '26.8.1',
+	pnpmPin: '11.15.0',
 };
 const withCatalogs = (catalogs: Canon['catalogs']): Canon => ({ ...canon, catalogs });
 

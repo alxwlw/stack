@@ -4,10 +4,15 @@ import type { Exception } from './config.ts';
 import { checkDependabotIgnore, checkEnginesNode, checkInlineVersions } from './deps.ts';
 import { planFiles } from './files.ts';
 import { applyExceptions, covers, type Drift, type Finding } from './findings.ts';
+import { planPackageManager } from './package-manager.ts';
 
-// План дрейфа: всё, что sync умеет закрыть, в порядке применения — файлы, затем каталоги.
+// План дрейфа: всё, что sync умеет закрыть, в порядке применения — файлы, каталоги, packageManager.
 export function planRepo(repoRoot: string, canon: Canon): Drift[] {
-	return [...planFiles(repoRoot, canon), ...planCatalogs(repoRoot, canon)];
+	return [
+		...planFiles(repoRoot, canon),
+		...planCatalogs(repoRoot, canon),
+		...planPackageManager(repoRoot, canon),
+	];
 }
 
 export interface SyncResult {

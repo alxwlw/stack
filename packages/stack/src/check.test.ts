@@ -11,7 +11,28 @@ const canon: Canon = {
 	files: [{ dest: '.editorconfig', content: 'root = true\n' }],
 	catalogs: { dev: { oxlint: '1.83.0' } },
 	nodePin: '26.8.1',
+	pnpmPin: '11.15.0',
 };
+
+test('исключение на .prototools держит и packageManager — в sync и в check', () => {
+	const repo = mkdtempSync(join(tmpdir(), 'stack-repo-'));
+	const withPrototools: Canon = {
+		...canon,
+		files: [{ dest: '.prototools', content: 'pnpm = "11.15.0"\n' }],
+	};
+	writeFileSync(join(repo, '.prototools'), 'pnpm = "11.1.2"\n');
+	writeFileSync(join(repo, 'package.json'), '{ "name": "r", "packageManager": "pnpm@11.1.2" }');
+	const exceptions = [{ file: '.prototools', reason: 'новый пин ещё не проверен' }];
+
+	const { applied, held } = syncRepo(repo, withPrototools, exceptions);
+	expect(applied).toEqual([]);
+	expect(held.map((f) => f.code).sort()).toEqual(['file-drift', 'package-manager']);
+	expect(readFileSync(join(repo, 'package.json'), 'utf8')).toContain('pnpm@11.1.2');
+
+	const findings = checkRepo(repo, withPrototools, exceptions);
+	expect(findings.filter((f) => !f.suppressedBy)).toEqual([]);
+	expect(findings.map((f) => f.code).sort()).toEqual(['file-drift', 'package-manager']);
+});
 
 test('исключение, которое ни к чему не подошло, — единственная находка: stale-exception', () => {
 	const repo = mkdtempSync(join(tmpdir(), 'stack-repo-'));

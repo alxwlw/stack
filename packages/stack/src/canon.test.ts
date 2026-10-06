@@ -30,7 +30,10 @@ function canonFixture(): string {
 	writeFileSync(join(dir, 'files', 'editorconfig'), 'root = true\n');
 	writeFileSync(join(dir, 'files', 'gitleaks-local.toml'), '[extend]\n');
 	writeFileSync(join(dir, 'files', 'prototools'), 'node = "26.8.1"\npnpm = "11.15.0"\n');
-	writeFileSync(join(dir, 'files', 'contracts.prototools'), 'node = "0.0.0-fixture"\n');
+	writeFileSync(
+		join(dir, 'files', 'contracts.prototools'),
+		'node = "0.0.0-fixture"\npnpm = "0.0.0-fixture"\n',
+	);
 	writeFileSync(join(dir, 'files', 'moon-task.yml'), 'tasks: {}\n');
 	writeFileSync(
 		join(dir, 'manifest.json'),
@@ -101,6 +104,18 @@ test('loadCanon: пин node берётся из канон-.prototools свое
 	const dir = canonFixture();
 	expect(loadCanon(cfg(), dir).nodePin).toBe('26.8.1');
 	expect(loadCanon(cfg({ profile: 'contracts' }), dir).nodePin).toBe('0.0.0-fixture');
+});
+
+test('loadCanon: пин pnpm берётся из канон-.prototools своего профиля', () => {
+	const dir = canonFixture();
+	expect(loadCanon(cfg(), dir).pnpmPin).toBe('11.15.0');
+	expect(loadCanon(cfg({ profile: 'contracts' }), dir).pnpmPin).toBe('0.0.0-fixture');
+});
+
+test('loadCanon: в каноне .prototools нет пина pnpm — ошибка', () => {
+	const dir = canonFixture();
+	writeFileSync(join(dir, 'files', 'prototools'), 'node = "26.8.1"\n');
+	expect(() => loadCanon(cfg(), dir)).toThrow('canon .prototools has no pnpm pin');
 });
 
 test('loadCanon: в манифесте нет .prototools для профиля — ошибка', () => {

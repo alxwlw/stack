@@ -70,6 +70,11 @@ test('check краснеет на каждой категории нарушен
 	expect(checkRepo(dir, loadCanon(cfg), cfg.exceptions).map((f) => f.code)).toContain(
 		'engines-node',
 	);
+
+	writeFileSync(join(dir, 'package.json'), '{ "name": "f", "packageManager": "pnpm@11.1.2" }');
+	expect(checkRepo(dir, loadCanon(cfg), cfg.exceptions).map((f) => f.code)).toContain(
+		'package-manager',
+	);
 });
 
 // infra не имеет pnpm-workspace.yaml вовсе: planCatalogs должен вернуть [] потому что каталогов

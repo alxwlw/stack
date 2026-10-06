@@ -46,3 +46,14 @@ test('корневой pnpm-workspace.yaml catalogs.dev — версии инс�
 		expect(String(version)).toBe(expected as string);
 	}
 });
+
+test('корневой package.json#packageManager — pnpm на пине канона', () => {
+	const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as {
+		packageManager?: string;
+	};
+	const pin = /^pnpm\s*=\s*"([^"]+)"/m.exec(
+		readFileSync(join(canonDir(), 'files', 'prototools'), 'utf8'),
+	)?.[1];
+	expect(pin).toBeDefined();
+	expect(pkg.packageManager).toBe(`pnpm@${pin}`);
+});

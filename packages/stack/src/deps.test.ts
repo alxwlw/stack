@@ -13,6 +13,7 @@ const canon: Canon = {
 	files: [],
 	catalogs: { dev: { oxlint: '1.83.0' }, libs: { react: '19.2.7' } },
 	nodePin: '25.4.1',
+	pnpmPin: '11.15.0',
 };
 
 function repo(files: Record<string, string>): string {

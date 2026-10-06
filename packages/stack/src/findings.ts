@@ -7,6 +7,7 @@ export type FindingCode =
 	| 'catalog-missing'
 	| 'inline-version'
 	| 'engines-node'
+	| 'package-manager'
 	| 'dependabot-ignore'
 	| 'unreadable-file'
 	| 'stale-exception';

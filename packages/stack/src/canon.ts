@@ -23,6 +23,7 @@ export interface Canon {
 	files: { dest: string; content: string; strategy?: SyncStrategy }[];
 	catalogs: CanonCatalogs;
 	nodePin: string;
+	pnpmPin: string;
 }
 
 export function canonDir(): string {
@@ -58,12 +59,15 @@ export function loadCanon(cfg: StackConfig, dir: string = canonDir()): Canon {
 		groups.filter((g) => g in all).map((g) => [g, all[g] as Record<string, string>]),
 	);
 	// Единственное место, где канон-файл читается как данные, а не копируется: пин node нужен
-	// правилу engines-node, и он одинаков во всех профилях.
+	// правилу engines-node и пин pnpm — правилу package-manager, они одинаковы во всех профилях.
 	const prototools = files.find((f) => f.dest === '.prototools');
 	if (!prototools) {
 		throw new Error('canon manifest has no .prototools entry for profile ' + cfg.profile);
 	}
 	const pin = /^node\s*=\s*"([^"]+)"/m.exec(prototools.content);
 	if (!pin?.[1]) throw new Error('canon .prototools has no node pin');
-	return { files, catalogs, nodePin: pin[1] };
+	// Пин pnpm нужен правилу package-manager: поле packageManager — второй источник версии pnpm.
+	const pnpm = /^pnpm\s*=\s*"([^"]+)"/m.exec(prototools.content);
+	if (!pnpm?.[1]) throw new Error('canon .prototools has no pnpm pin');
+	return { files, catalogs, nodePin: pin[1], pnpmPin: pnpm[1] };
 }

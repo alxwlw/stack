@@ -77,6 +77,11 @@ as `allowed (<reason>): …` and moves on, and `check` reports the same item as 
 never turns a held item into a stale exception. (`check`'s report-only rules — `engines.node`,
 the dependabot ignore, inline versions — are not something `sync` fixes.)
 
+`sync` also keeps `package.json#packageManager` on the canon's pnpm pin whenever that field names
+pnpm (a `+sha512…` suffix on the same version is fine) — otherwise pnpm switches itself to the
+version in the field and the `.prototools` pin silently stops applying. An exception on
+`.prototools` holds this field back too.
+
 Wire `check` into CI to fail the build on drift instead of finding out later:
 
 ```bash
