@@ -78,7 +78,8 @@
 			"src": "files/dependabot.template.yml",
 			"dest": ".github/dependabot.yml",
 			"appliesTo": ["node", "contracts"],
-			"strategy": "create-if-absent"
+			"strategy": "create-if-absent",
+			"unlessWith": "renovate"
 		},
 		{
 			"src": "files/oxlintrc.template.json",

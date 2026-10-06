@@ -104,16 +104,17 @@ profile needs.
 
 | Profile     | For                                                                                                                                                                                                                                                                   |
 | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `node`      | A TypeScript/Node service or library — the full canon: oxlint, oxfmt, tsconfig, moon tasks, dependabot.                                                                                                                                                               |
+| `node`      | A TypeScript/Node service or library — the full canon: oxlint, oxfmt, tsconfig, moon tasks, a dependency-bot config (dependabot, or renovate via the group).                                                                                                          |
 | `contracts` | A Hardhat/Solidity repo with a TypeScript test/deploy layer — same JS/TS canon as `node`.                                                                                                                                                                             |
 | `infra`     | A repo with no pnpm workspace/TS toolchain — canon reduces to what's stack-agnostic (editorconfig, gitleaks, yamllint, markdownlint, `.prototools`, one moon task, its own `stack-check` workflow). Catalog checks are skipped when there's no `pnpm-workspace.yaml`. |
 
-| Group        | Adds                                                                                                                                                      | Profiles                     |
-| ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- |
-| `libs`       | Catalog pins for common application libraries (a NestJS/Prisma/React-ish stack) — grows over time                                                         | any                          |
-| `moon-tasks` | Seeds `.moon/tasks/*.yml` — typescript/oxlint/oxfmt/bun-test/stack for `node`/`contracts`, `stack` only for `infra` (skip it if you hand-roll moon tasks) | `node`, `contracts`, `infra` |
-| `knip`       | Seeds `knip.base.json` (unused-code detection base config)                                                                                                | `node`                       |
-| `depcruise`  | Seeds `.dependency-cruiser.base.cjs` (import/architecture boundary rules)                                                                                 | `node`, `contracts`          |
+| Group        | Adds                                                                                                                                                                                  | Profiles                     |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- |
+| `libs`       | Catalog pins for common application libraries (a NestJS/Prisma/React-ish stack) — grows over time                                                                                     | any                          |
+| `moon-tasks` | Seeds `.moon/tasks/*.yml` — typescript/oxlint/oxfmt/bun-test/stack for `node`/`contracts`, `stack` only for `infra` (skip it if you hand-roll moon tasks)                             | `node`, `contracts`, `infra` |
+| `knip`       | Seeds `knip.base.json` (unused-code detection base config)                                                                                                                            | `node`                       |
+| `depcruise`  | Seeds `.dependency-cruiser.base.cjs` (import/architecture boundary rules)                                                                                                             | `node`, `contracts`          |
+| `renovate`   | The repo runs Renovate instead of Dependabot: `.github/dependabot.yml` is not seeded, and `check` requires the Renovate config to disable `@alxwlw/*` (see [Exceptions](#exceptions)) | `node`, `contracts`          |
 
 ```bash
 npx stack init --profile node --with libs --with moon-tasks

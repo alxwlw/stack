@@ -13,6 +13,8 @@ export interface CanonFile {
 	strategy?: SyncStrategy;
 	/** Группа, включаемая через `with` в .stack.jsonc. Без группы файл обязателен всем. */
 	group?: string;
+	/** Группа, при включении которой файл НЕ применяется (альтернатива: renovate вместо dependabot). */
+	unlessWith?: string;
 }
 
 export type CanonCatalogs = Record<string, Record<string, string>>;
@@ -24,6 +26,8 @@ export interface Canon {
 	catalogs: CanonCatalogs;
 	nodePin: string;
 	pnpmPin: string;
+	/** Бот зависимостей репо: группа renovate переключает правило с dependabot-ignore на renovate-ignore. */
+	bot?: 'dependabot' | 'renovate';
 }
 
 export function canonDir(): string {
@@ -39,7 +43,10 @@ export function loadManifest(dir: string = canonDir()): CanonFile[] {
 
 export function filesFor(cfg: StackConfig, dir: string = canonDir()): CanonFile[] {
 	return loadManifest(dir).filter(
-		(f) => f.appliesTo.includes(cfg.profile) && (f.group == null || cfg.with.includes(f.group)),
+		(f) =>
+			f.appliesTo.includes(cfg.profile) &&
+			(f.group == null || cfg.with.includes(f.group)) &&
+			(f.unlessWith == null || !cfg.with.includes(f.unlessWith)),
 	);
 }
 
@@ -69,5 +76,11 @@ export function loadCanon(cfg: StackConfig, dir: string = canonDir()): Canon {
 	// Пин pnpm нужен правилу package-manager: поле packageManager — второй источник версии pnpm.
 	const pnpm = /^pnpm\s*=\s*"([^"]+)"/m.exec(prototools.content);
 	if (!pnpm?.[1]) throw new Error('canon .prototools has no pnpm pin');
-	return { files, catalogs, nodePin: pin[1], pnpmPin: pnpm[1] };
+	return {
+		files,
+		catalogs,
+		nodePin: pin[1],
+		pnpmPin: pnpm[1],
+		bot: cfg.with.includes('renovate') ? 'renovate' : 'dependabot',
+	};
 }

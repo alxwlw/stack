@@ -170,3 +170,21 @@ test('канон засевает .markdownlintignore как create-if-absent в
 		expect(entry?.strategy).toBe('create-if-absent');
 	}
 });
+
+// Группа renovate: репо ведёт зависимости Renovate — канон не засевает .github/dependabot.yml
+// (два бота дрались бы за одни PR), а правило renovate-ignore включается через canon.bot.
+test('filesFor: with renovate — без dependabot.yml; без группы — с ним', () => {
+	for (const profile of ['node', 'contracts'] as const) {
+		const plain = filesFor({ profile, with: [], exceptions: [] }).map((f) => f.dest);
+		expect(plain).toContain('.github/dependabot.yml');
+		const renovate = filesFor({ profile, with: ['renovate'], exceptions: [] }).map((f) => f.dest);
+		expect(renovate).not.toContain('.github/dependabot.yml');
+		// Остальной набор не меняется: группа гасит ровно один файл.
+		expect(renovate).toEqual(plain.filter((d) => d !== '.github/dependabot.yml'));
+	}
+});
+
+test('loadCanon: bot — renovate с группой, dependabot без неё', () => {
+	expect(loadCanon({ profile: 'node', with: ['renovate'], exceptions: [] }).bot).toBe('renovate');
+	expect(loadCanon({ profile: 'node', with: [], exceptions: [] }).bot).toBe('dependabot');
+});
