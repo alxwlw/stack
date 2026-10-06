@@ -51,7 +51,7 @@ runs:
         # proto-шимы этих двух гоняются при параллельном запуске за общий временный файл плагина —
         # CI зовёт реальные бинарники по путям. Инструмента нет в .prototools — переменной нет.
         for tool in actionlint shellcheck; do
-          if bin="$(proto bin "$tool" 2>/dev/null)"; then
+          if grep -qE "^${tool}[[:space:]]*=" .prototools 2>/dev/null && bin="$(proto bin "$tool" 2>/dev/null)"; then
             echo "${tool^^}_BIN=$bin" >> "$GITHUB_ENV"
           fi
         done
