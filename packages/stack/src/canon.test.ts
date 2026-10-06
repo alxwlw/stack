@@ -1,10 +1,11 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { expect, test } from 'bun:test';
+import { parse as parseJsonc } from 'jsonc-parser';
 
-import { filesFor, loadCanon, loadManifest } from './canon.ts';
+import { canonDir, filesFor, loadCanon, loadManifest } from './canon.ts';
 import { PROFILES, type StackConfig } from './config.ts';
 
 // Ruling 33: filesFor() только фильтрует список канон-файлов — оно не замечает, если два
@@ -139,4 +140,33 @@ test('loadCanon: в каноне .prototools нет пина node — ошибк
 	);
 	writeFileSync(join(dir, 'catalogs.json'), '{}');
 	expect(() => loadCanon(cfg(), dir)).toThrow('canon .prototools has no node pin');
+});
+
+test('канон markdownlint: игноры планов и спек superpowers на месте', () => {
+	const cfg = parseJsonc(
+		readFileSync(join(canonDir(), 'files', 'markdownlint-cli2.jsonc'), 'utf8'),
+	) as { ignores?: string[] };
+	expect(cfg.ignores).toEqual(
+		expect.arrayContaining(['docs/superpowers/plans/**', 'docs/superpowers/specs/**']),
+	);
+});
+
+test('канон markdownlint: опция gitignore указывает на .markdownlintignore', () => {
+	const cfg = parseJsonc(
+		readFileSync(join(canonDir(), 'files', 'markdownlint-cli2.jsonc'), 'utf8'),
+	) as { gitignore?: string };
+	expect(cfg.gitignore).toBe('.markdownlintignore');
+});
+
+// Шов репо-локальных игноров: cli2 читает .markdownlintignore через опцию gitignore, файл
+// засевается один раз (create-if-absent) и дальше принадлежит репо.
+test('канон засевает .markdownlintignore как create-if-absent в каждом профиле', () => {
+	const manifest = loadManifest();
+	const allGroups = [...new Set(manifest.map((f) => f.group).filter((g) => g != null))];
+	for (const profile of PROFILES) {
+		const entry = filesFor({ profile, with: allGroups, exceptions: [] }).find(
+			(f) => f.dest === '.markdownlintignore',
+		);
+		expect(entry?.strategy).toBe('create-if-absent');
+	}
 });
