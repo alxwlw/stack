@@ -18,7 +18,7 @@ export interface CanonFile {
 export type CanonCatalogs = Record<string, Record<string, string>>;
 
 // Канон одного прогона как значение: уже отфильтрован под профиль и группы, содержимое файлов
-// прочитано, пин node вычислен. Правила и план принимают его и не знают, где лежит каталог.
+// прочитано, пины node и pnpm вычислены. Правила и план принимают его и не знают, где лежит каталог.
 export interface Canon {
 	files: { dest: string; content: string; strategy?: SyncStrategy }[];
 	catalogs: CanonCatalogs;

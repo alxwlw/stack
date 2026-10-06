@@ -169,8 +169,12 @@ jobs:
           registry-token-var: NODE_AUTH_TOKEN
 ```
 
+The project `.npmrc` must still map the scope to the registry (e.g.
+`@acme:registry=https://npm.pkg.github.com`); the action only adds the auth line.
+
 The action also exports `ACTIONLINT_BIN` / `SHELLCHECK_BIN` — the real binaries behind the proto
-shims, which race each other when run in parallel — for every tool `.prototools` pins.
+shims, which race each other when run in parallel — only for those two tools, and only when the
+repository-root `.prototools` pins them.
 
 ## Releases
 
