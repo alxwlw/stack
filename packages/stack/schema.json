@@ -14,7 +14,7 @@
 			"description": "Opt-in canon groups.",
 			"items": {
 				"type": "string",
-				"enum": ["moon-tasks", "libs", "knip", "depcruise"]
+				"enum": ["moon-tasks", "libs", "knip", "depcruise", "renovate"]
 			}
 		},
 		"exceptions": {

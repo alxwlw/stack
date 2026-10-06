@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { expect, test } from 'bun:test';
 import { parse as parseJsonc } from 'jsonc-parser';
 
-import { canonDir, filesFor, loadCanon, loadManifest } from './canon.ts';
+import { canonDir, filesFor, loadCanon, loadCatalogs, loadManifest } from './canon.ts';
 import { PROFILES, type StackConfig } from './config.ts';
 
 // Ruling 33: filesFor() только фильтрует список канон-файлов — оно не замечает, если два
@@ -169,4 +169,43 @@ test('канон засевает .markdownlintignore как create-if-absent в
 		);
 		expect(entry?.strategy).toBe('create-if-absent');
 	}
+});
+
+// Группа renovate: репо ведёт зависимости Renovate — канон не засевает .github/dependabot.yml
+// (два бота дрались бы за одни PR), а правило renovate-ignore включается через canon.bot.
+test('filesFor: with renovate — без dependabot.yml; без группы — с ним', () => {
+	for (const profile of ['node', 'contracts'] as const) {
+		const plain = filesFor({ profile, with: [], exceptions: [] }).map((f) => f.dest);
+		expect(plain).toContain('.github/dependabot.yml');
+		const renovate = filesFor({ profile, with: ['renovate'], exceptions: [] }).map((f) => f.dest);
+		expect(renovate).not.toContain('.github/dependabot.yml');
+		// Остальной набор не меняется: группа гасит ровно один файл.
+		expect(renovate).toEqual(plain.filter((d) => d !== '.github/dependabot.yml'));
+	}
+});
+
+test('loadCanon: bot — renovate с группой, dependabot без неё', () => {
+	expect(loadCanon({ profile: 'node', with: ['renovate'], exceptions: [] }).bot).toBe('renovate');
+	expect(loadCanon({ profile: 'node', with: [], exceptions: [] }).bot).toBe('dependabot');
+});
+
+// `init` пишет `$schema` в .stack.jsonc, редактор валидирует против него: enum групп в schema.json
+// должен покрывать все group и unlessWith из манифеста и каталоги кроме dev.
+test('schema.json: enum групп with = группы манифеста ∪ unlessWith ∪ каталоги (кроме dev)', () => {
+	const manifest = loadManifest();
+	const manifestGroups = new Set<string>();
+	for (const file of manifest) {
+		if (file.group) manifestGroups.add(file.group);
+		if (file.unlessWith) manifestGroups.add(file.unlessWith);
+	}
+	const catalogs = loadCatalogs();
+	const catalogGroups = Object.keys(catalogs).filter((g) => g !== 'dev');
+	const expectedGroups = Array.from(new Set([...manifestGroups, ...catalogGroups])).sort();
+
+	const schema = JSON.parse(readFileSync(join(canonDir(), '..', 'schema.json'), 'utf8')) as {
+		properties?: { with?: { items?: { enum?: string[] } } };
+	};
+	const schemaEnum = schema.properties?.with?.items?.enum;
+	expect(schemaEnum).toBeDefined();
+	expect((schemaEnum ?? []).sort()).toEqual(expectedGroups);
 });

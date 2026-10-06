@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -114,4 +114,43 @@ test('sync без исключений применяет весь план — 
 	expect(applied.map((d) => d.code)).toEqual(['file-drift']);
 	expect(held).toEqual([]);
 	expect(readFileSync(join(repo, '.editorconfig'), 'utf8')).toBe('root = true\n');
+});
+
+test('checkRepo: renovate-ignore только у репо с bot renovate', () => {
+	const repo = mkdtempSync(join(tmpdir(), 'stack-repo-'));
+	writeFileSync(join(repo, 'pnpm-workspace.yaml'), 'packages: []\n');
+	const codes = (bot?: Canon['bot']) =>
+		checkRepo(repo, { ...canon, files: [], catalogs: {}, bot }, []).map((f) => f.code);
+	expect(codes('renovate')).toContain('renovate-ignore');
+	expect(codes('dependabot')).not.toContain('renovate-ignore');
+	expect(codes(undefined)).not.toContain('renovate-ignore');
+});
+
+test('renovate-ignore не подавляется исключением — и исключение выходит stale-exception', () => {
+	const repo = mkdtempSync(join(tmpdir(), 'stack-repo-'));
+	writeFileSync(join(repo, 'pnpm-workspace.yaml'), 'packages: []\n');
+	const findings = checkRepo(repo, { ...canon, files: [], catalogs: {}, bot: 'renovate' }, [
+		{ file: 'renovate.json', reason: 'r' },
+	]);
+	const ignore = findings.find((f) => f.code === 'renovate-ignore');
+	expect(ignore).toBeDefined();
+	expect(ignore?.suppressedBy).toBeUndefined();
+	expect(findings.some((f) => f.code === 'stale-exception')).toBe(true);
+});
+
+test('dependabot-ignore не подавляется исключением — и исключение выходит stale-exception', () => {
+	const repo = mkdtempSync(join(tmpdir(), 'stack-repo-'));
+	writeFileSync(join(repo, 'pnpm-workspace.yaml'), 'packages: []\n');
+	mkdirSync(join(repo, '.github'));
+	writeFileSync(
+		join(repo, '.github/dependabot.yml'),
+		'version: 2\nupdates:\n  - package-ecosystem: npm\n    directory: /\n',
+	);
+	const findings = checkRepo(repo, { ...canon, files: [], catalogs: {} }, [
+		{ file: '.github/dependabot.yml', reason: 'r' },
+	]);
+	const ignore = findings.find((f) => f.code === 'dependabot-ignore');
+	expect(ignore).toBeDefined();
+	expect(ignore?.suppressedBy).toBeUndefined();
+	expect(findings.some((f) => f.code === 'stale-exception')).toBe(true);
 });

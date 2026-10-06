@@ -75,7 +75,7 @@ from that point on). Running `sync` again with nothing changed touches nothing (
 Anything held by an exception (see [Exceptions](#exceptions)) is left as it is: `sync` prints it
 as `allowed (<reason>): …` and moves on, and `check` reports the same item as allowed — `sync`
 never turns a held item into a stale exception. (`check`'s report-only rules — `engines.node`,
-the dependabot ignore, inline versions — are not something `sync` fixes.)
+the dependabot / renovate ignore, inline versions — are not something `sync` fixes.)
 
 `sync` also keeps `package.json#packageManager` on the canon's pnpm pin whenever that field names
 pnpm (a `+sha512…` suffix on the same version is fine) — otherwise pnpm switches itself to the
@@ -104,16 +104,17 @@ profile needs.
 
 | Profile     | For                                                                                                                                                                                                                                                                   |
 | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `node`      | A TypeScript/Node service or library — the full canon: oxlint, oxfmt, tsconfig, moon tasks, dependabot.                                                                                                                                                               |
+| `node`      | A TypeScript/Node service or library — the full canon: oxlint, oxfmt, tsconfig, moon tasks, a Dependabot config — or, with the `renovate` group, a check that your own Renovate config disables `@alxwlw/*`.                                                          |
 | `contracts` | A Hardhat/Solidity repo with a TypeScript test/deploy layer — same JS/TS canon as `node`.                                                                                                                                                                             |
 | `infra`     | A repo with no pnpm workspace/TS toolchain — canon reduces to what's stack-agnostic (editorconfig, gitleaks, yamllint, markdownlint, `.prototools`, one moon task, its own `stack-check` workflow). Catalog checks are skipped when there's no `pnpm-workspace.yaml`. |
 
-| Group        | Adds                                                                                                                                                      | Profiles                     |
-| ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- |
-| `libs`       | Catalog pins for common application libraries (a NestJS/Prisma/React-ish stack) — grows over time                                                         | any                          |
-| `moon-tasks` | Seeds `.moon/tasks/*.yml` — typescript/oxlint/oxfmt/bun-test/stack for `node`/`contracts`, `stack` only for `infra` (skip it if you hand-roll moon tasks) | `node`, `contracts`, `infra` |
-| `knip`       | Seeds `knip.base.json` (unused-code detection base config)                                                                                                | `node`                       |
-| `depcruise`  | Seeds `.dependency-cruiser.base.cjs` (import/architecture boundary rules)                                                                                 | `node`, `contracts`          |
+| Group        | Adds                                                                                                                                                                                                                                                                                                                                                       | Profiles                     |
+| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- |
+| `libs`       | Catalog pins for common application libraries (a NestJS/Prisma/React-ish stack) — grows over time                                                                                                                                                                                                                                                          | any                          |
+| `moon-tasks` | Seeds `.moon/tasks/*.yml` — typescript/oxlint/oxfmt/bun-test/stack for `node`/`contracts`, `stack` only for `infra` (skip it if you hand-roll moon tasks)                                                                                                                                                                                                  | `node`, `contracts`, `infra` |
+| `knip`       | Seeds `knip.base.json` (unused-code detection base config)                                                                                                                                                                                                                                                                                                 | `node`                       |
+| `depcruise`  | Seeds `.dependency-cruiser.base.cjs` (import/architecture boundary rules)                                                                                                                                                                                                                                                                                  | `node`, `contracts`          |
+| `renovate`   | The repo runs Renovate instead of Dependabot: `.github/dependabot.yml` is not seeded (delete one seeded earlier — `check` still applies the Dependabot rule to it while it exists), and `check` requires your Renovate config to have a `packageRules` entry with `matchPackageNames: ["@alxwlw/**"]` and `enabled: false` (see [Exceptions](#exceptions)) | `node`, `contracts`          |
 
 ```bash
 npx stack init --profile node --with libs --with moon-tasks
@@ -143,8 +144,9 @@ A `catalog`+`name` exception also covers that package declared with an inline ve
 reason covers both symptoms of the same decision.
 
 Not every `check` finding is suppressible this way: a `package.json#engines.node` range that the
-canon's node pin doesn't satisfy, and a missing `@alxwlw/*` ignore in `.github/dependabot.yml`,
-always block — there's no exception shape for either. `check` prints every exception it actually
+canon's node pin doesn't satisfy, a `.github/dependabot.yml` without an `@alxwlw/*` ignore, and (with
+the `renovate` group) a Renovate config without a `packageRules` entry disabling `@alxwlw/**` — these
+always block; there's no exception shape for any of them. `check` prints every exception it actually
 suppressed as a warning, and fails on one that no longer suppresses anything — the canon moved on
 and the exception is now stale, so it gets deleted, not carried forward silently.
 

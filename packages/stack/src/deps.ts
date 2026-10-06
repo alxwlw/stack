@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { Glob } from 'bun';
+import JSON5 from 'json5';
 import { parse as parseYaml } from 'yaml';
 
 import type { Canon } from './canon.ts';
@@ -111,4 +112,72 @@ export function checkDependabotIgnore(repoRoot: string): Finding[] {
 		];
 	}
 	return ignoresAlxwlw(doc) ? [] : [finding];
+}
+
+// Имена и порядок поиска — как у самого Renovate (renovate.json{,c,5} для каждого места; первый
+// найденный файл и есть конфиг), без устаревшего package.json#renovate. JSON5.parse читает и JSONC.
+const RENOVATE_CONFIGS = [
+	'renovate.json',
+	'renovate.jsonc',
+	'renovate.json5',
+	'.github/renovate.json',
+	'.github/renovate.jsonc',
+	'.github/renovate.json5',
+	'.gitlab/renovate.json',
+	'.gitlab/renovate.jsonc',
+	'.gitlab/renovate.json5',
+	'.renovaterc',
+	'.renovaterc.json',
+	'.renovaterc.jsonc',
+	'.renovaterc.json5',
+];
+// matchPackageNames — glob'ы: для скоупа одного уровня `@alxwlw/*` и `@alxwlw/**` равносильны.
+const ALXWLW_GLOBS = new Set(['@alxwlw/**', '@alxwlw/*']);
+
+function disablesAlxwlw(doc: unknown): boolean {
+	const rules = (doc as { packageRules?: unknown } | null)?.packageRules;
+	if (!Array.isArray(rules)) return false;
+	return rules.some((r) => {
+		const rule = r as { enabled?: unknown; matchPackageNames?: unknown } | null;
+		return (
+			rule?.enabled === false &&
+			Array.isArray(rule.matchPackageNames) &&
+			rule.matchPackageNames.some((n) => typeof n === 'string' && ALXWLW_GLOBS.has(n))
+		);
+	});
+}
+
+// Группа renovate: версии @alxwlw/* двигает stack sync, бот должен их не трогать — иначе его PR
+// разводят каталог с каноном и check краснеет. Группировка (groupName) не мешает боту — нужен
+// enabled: false.
+export function checkRenovateIgnore(repoRoot: string): Finding[] {
+	if (!existsSync(join(repoRoot, 'pnpm-workspace.yaml'))) return [];
+	const found = RENOVATE_CONFIGS.find((p) => existsSync(join(repoRoot, p)));
+	if (!found) {
+		return [
+			{
+				code: 'renovate-ignore',
+				target: 'renovate.json',
+				message: `no Renovate config found (${RENOVATE_CONFIGS.join(', ')}) — the renovate group expects one that disables "@alxwlw/*"`,
+			},
+		];
+	}
+	let doc: unknown;
+	try {
+		doc = JSON5.parse(readFileSync(join(repoRoot, found), 'utf8'));
+	} catch {
+		return [
+			{ code: 'unreadable-file', target: found, message: `${found} does not parse as JSON5` },
+		];
+	}
+	return disablesAlxwlw(doc)
+		? []
+		: [
+				{
+					code: 'renovate-ignore',
+					target: found,
+					message:
+						'no packageRules entry with matchPackageNames "@alxwlw/**" and enabled: false — the bot will fight the canon rollout',
+				},
+			];
 }
