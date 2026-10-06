@@ -57,6 +57,33 @@ test('пин строк fix: dev.oxlint — апдейт, dev.typescript — н�
 	]);
 });
 
+// Вне каталогов sync не меняет ни байта. У yaml lineWidth по умолчанию 80: без lineWidth: 0
+// длинный override на git-URL уходил в `\`-перенос, а длинный plain-скаляр — на вторую строку.
+const LONG_URL = `"git+https://github.com/example/some-long-fork-name.git#${'a'.repeat(40)}"`;
+const WS_WITH_LONG_LINES = `${WS_WITH_COMMENT}
+overrides:
+  "pkg>dep": ${LONG_URL}
+  # длинный plain-скаляр
+  plain: some very long plain scalar value that goes well past the eighty column limit of yaml
+`;
+const fromOverrides = (s: string) => s.slice(s.indexOf('\noverrides:'));
+
+test('sync не переносит длинные строки вне каталогов', () => {
+	const repo = repoFixture(WS_WITH_LONG_LINES);
+	sync(repo);
+	const out = readFileSync(join(repo, 'pnpm-workspace.yaml'), 'utf8');
+	expect(out).toContain('typescript: 7.0.2');
+	expect(fromOverrides(out)).toBe(fromOverrides(WS_WITH_LONG_LINES));
+});
+
+test('повторный sync — пустой план, файл байт-в-байт тот же', () => {
+	const repo = repoFixture(WS_WITH_LONG_LINES);
+	sync(repo);
+	const once = readFileSync(join(repo, 'pnpm-workspace.yaml'), 'utf8');
+	expect(sync(repo)).toEqual([]);
+	expect(readFileSync(join(repo, 'pnpm-workspace.yaml'), 'utf8')).toBe(once);
+});
+
 // Task 13: a scoped name (`@foo/bar`) isn't a plain-scalar-safe YAML key, so the `yaml` package
 // quotes it either way — but its default is double quotes, and oxfmt (canon .oxfmtrc.jsonc,
 // singleQuote:true) then reformats it right back, painting a workspace file `sync` just wrote.
