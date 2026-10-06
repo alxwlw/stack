@@ -28,7 +28,7 @@ export interface Drift extends Finding {
 	apply(): void;
 }
 
-function covers(e: Exception, f: Finding): boolean {
+export function covers(e: Exception, f: Finding): boolean {
 	const a = f.address;
 	if (!a) return false;
 	if (e.file != null) return a.file === e.file;

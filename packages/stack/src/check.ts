@@ -3,11 +3,32 @@ import { planCatalogs } from './catalogs.ts';
 import type { Exception } from './config.ts';
 import { checkDependabotIgnore, checkEnginesNode, checkInlineVersions } from './deps.ts';
 import { planFiles } from './files.ts';
-import { applyExceptions, type Drift, type Finding } from './findings.ts';
+import { applyExceptions, covers, type Drift, type Finding } from './findings.ts';
 
 // План дрейфа: всё, что sync умеет закрыть, в порядке применения — файлы, затем каталоги.
 export function planRepo(repoRoot: string, canon: Canon): Drift[] {
 	return [...planFiles(repoRoot, canon), ...planCatalogs(repoRoot, canon)];
+}
+
+export interface SyncResult {
+	applied: Drift[];
+	held: Finding[];
+}
+
+// sync — тот же план, но удержанное исключением не применяется: иначе исключению после sync
+// нечего покрывать, и следующий check краснеет на stale-exception. Исключение держит и check, и sync.
+export function syncRepo(repoRoot: string, canon: Canon, exceptions: Exception[]): SyncResult {
+	const result: SyncResult = { applied: [], held: [] };
+	for (const d of planRepo(repoRoot, canon)) {
+		const e = exceptions.find((e) => covers(e, d));
+		if (e) {
+			result.held.push({ ...d, suppressedBy: e });
+			continue;
+		}
+		d.apply();
+		result.applied.push(d);
+	}
+	return result;
 }
 
 // Тот же план плюс правила «только отчёт» из deps.ts, пропущенные через исключения.

@@ -6,7 +6,7 @@ import { expect, test } from 'bun:test';
 
 import { loadCanon } from './canon.ts';
 import { planCatalogs } from './catalogs.ts';
-import { checkRepo, planRepo } from './check.ts';
+import { checkRepo, planRepo, syncRepo } from './check.ts';
 import { readStackConfig, type StackConfig } from './config.ts';
 
 const FIXTURES = join(import.meta.dir, '..', '..', '..', 'fixtures');
@@ -17,9 +17,9 @@ function copyFixture(profile: string): string {
 	return dir;
 }
 
-// Применить план — то, что делает `stack sync`.
+// Применить план с учётом исключений — то, что делает `stack sync`.
 function sync(dir: string, cfg: StackConfig): void {
-	for (const d of planRepo(dir, loadCanon(cfg))) d.apply();
+	syncRepo(dir, loadCanon(cfg), cfg.exceptions);
 }
 
 for (const profile of ['node', 'contracts', 'infra']) {

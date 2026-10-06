@@ -72,6 +72,10 @@ canon's dependency versions into `pnpm-workspace.yaml#catalogs`. Some files are 
 (canon owns the content forever, e.g. `.prototools`, `.oxfmtrc.jsonc`); others are **seeded once**
 and then left alone (`create-if-absent`, e.g. `.gitleaks.toml`, `.oxlintrc.json` — the repo owns them
 from that point on). Running `sync` again with nothing changed touches nothing (idempotent).
+Anything held by an exception (see [Exceptions](#exceptions)) is left as it is: `sync` prints it
+as `allowed (<reason>): …` and moves on, and `check` reports the same item as allowed — `sync`
+never turns a held item into a stale exception. (`check`'s report-only rules — `engines.node`,
+the dependabot ignore, inline versions — are not something `sync` fixes.)
 
 Wire `check` into CI to fail the build on drift instead of finding out later:
 
@@ -110,9 +114,9 @@ npx stack init --profile node --with libs --with moon-tasks
 
 ## Exceptions
 
-A drifted or missing canon **file**, or a catalog entry that's missing or off-version, can be
-suppressed by an exception in `.stack.jsonc` — one exception per file or per catalog entry,
-`reason` required on both shapes:
+A drifted or missing canon **file**, or a catalog entry that's missing or off-version, can be held
+back by an exception in `.stack.jsonc` — one exception per file or per catalog entry, `reason`
+required on both shapes. A held item is suppressed in `check` and left untouched by `sync`:
 
 ```jsonc
 {
