@@ -146,6 +146,32 @@ always block — there's no exception shape for either. `check` prints every exc
 suppressed as a warning, and fails on one that no longer suppresses anything — the canon moved on
 and the exception is now stale, so it gets deleted, not carried forward silently.
 
+## CI
+
+`alxwlw/stack/.github/actions/setup@v1` installs the toolchain pinned in `.prototools` (via
+`moonrepo/setup-toolchain`) and runs `pnpm install --frozen-lockfile` unless `install: false`.
+
+For a private npm registry, pass its host and the **name** of the job's env var that holds the
+token. The action writes a reference (`${NODE_AUTH_TOKEN}`), never the value, to the user-level
+`~/.npmrc` — pnpm >= 11.15 ignores env-var credentials in a committed project `.npmrc`:
+
+```yaml
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    env:
+      NODE_AUTH_TOKEN: ${{ secrets.NPM_READ_TOKEN }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: alxwlw/stack/.github/actions/setup@v1
+        with:
+          registry: npm.pkg.github.com
+          registry-token-var: NODE_AUTH_TOKEN
+```
+
+The action also exports `ACTIONLINT_BIN` / `SHELLCHECK_BIN` — the real binaries behind the proto
+shims, which race each other when run in parallel — for every tool `.prototools` pins.
+
 ## Releases
 
 All three packages share one semver version, tagged `vX.Y.Z`. Publishing runs through npm's trusted

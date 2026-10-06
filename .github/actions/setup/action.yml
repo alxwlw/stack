@@ -1,5 +1,7 @@
 name: setup
-description: proto-тулчейн по .prototools и, по желанию, установка зависимостей pnpm
+description: >-
+  proto-тулчейн по .prototools; по желанию — токен приватного npm-реестра в user-level ~/.npmrc и
+  pnpm install
 inputs:
   install:
     description: запускать ли pnpm install --frozen-lockfile
@@ -7,12 +9,52 @@ inputs:
   working-directory:
     description: рабочий каталог
     default: '.'
+  registry:
+    description: хост приватного npm-реестра без схемы (npm.pkg.github.com); пусто — не настраивать
+    default: ''
+  registry-token-var:
+    description: >-
+      ИМЯ env-переменной джобы с токеном реестра. В ~/.npmrc пишется ссылка ${ИМЯ}, не значение:
+      pnpm >= 11.15 игнорирует env-креды в закоммиченном проектном .npmrc.
+    default: ''
 runs:
   using: composite
   steps:
     - uses: moonrepo/setup-toolchain@261c62cb5b0f580c7be7c8cd0f023a2e96756095 # v0
       with:
         auto-install: true
+    - name: токен реестра в ~/.npmrc
+      if: inputs.registry != '' || inputs.registry-token-var != ''
+      shell: bash
+      env:
+        REGISTRY: ${{ inputs.registry }}
+        TOKEN_VAR: ${{ inputs.registry-token-var }}
+      run: |
+        if [ -z "$REGISTRY" ] || [ -z "$TOKEN_VAR" ]; then
+          echo "::error::registry и registry-token-var задаются только вместе"
+          exit 1
+        fi
+        if ! [[ "$TOKEN_VAR" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+          echo "::error::registry-token-var — имя переменной окружения, получено: $TOKEN_VAR"
+          exit 1
+        fi
+        if ! [[ "$REGISTRY" =~ ^[A-Za-z0-9.-]+(:[0-9]+)?(/[A-Za-z0-9._~-]+)*$ ]]; then
+          echo "::error::registry — хост без схемы и завершающего /, получено: $REGISTRY"
+          exit 1
+        fi
+        line="//${REGISTRY}/:_authToken=\${${TOKEN_VAR}}"
+        touch "$HOME/.npmrc"
+        grep -qxF "$line" "$HOME/.npmrc" || echo "$line" >> "$HOME/.npmrc"
+    - name: пути к actionlint и shellcheck
+      shell: bash
+      run: |
+        # proto-шимы этих двух гоняются при параллельном запуске за общий временный файл плагина —
+        # CI зовёт реальные бинарники по путям. Инструмента нет в .prototools — переменной нет.
+        for tool in actionlint shellcheck; do
+          if bin="$(proto bin "$tool" 2>/dev/null)"; then
+            echo "${tool^^}_BIN=$bin" >> "$GITHUB_ENV"
+          fi
+        done
     - if: inputs.install == 'true'
       shell: bash
       working-directory: ${{ inputs.working-directory }}
