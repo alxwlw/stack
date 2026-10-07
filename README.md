@@ -195,6 +195,23 @@ the latest `v1.x.y` for consumers pinning a major:
 }
 ```
 
+### Rollout to consumers
+
+A release pushes itself out. When `publish` succeeds, the canon dispatches `stack-sync.yml` in every
+repository on its consumer list; that workflow runs `stack sync` for the new version and, if anything
+changed, opens a PR on branch `stack/v<version>`. Re-dispatching the same version force-updates that
+branch and reuses the open PR instead of opening a second one.
+
+The work is done by the [`alxwlw-stack-bot`](https://github.com/apps/alxwlw-stack-bot) GitHub App,
+which a consumer installs on its own repositories. It asks for exactly what opening that PR takes —
+**actions**, **contents**, **pull requests**, **workflows** (write) and metadata (read) — and nothing
+else. Tokens are minted per installation and expire within the hour, so the canon never holds a
+long-lived credential for a consumer.
+
+A repository joins the list after its first sync lands: the dispatch target
+(`.github/workflows/stack-sync.yml`) is itself a canon file, so the first adoption is a PR you open
+yourself with `stack init` and `stack sync`.
+
 ## License
 
 MIT — see each package's own `LICENSE`. `@alxwlw/oxlint-config` additionally ships a `NOTICE` for one
