@@ -187,7 +187,9 @@ test('канон Renovate: workflow и засев конфига — в кажд
 	for (const profile of PROFILES) {
 		const files = filesFor({ profile, with: [], exceptions: [] });
 		const wf = files.find((f) => f.dest === '.github/workflows/renovate.yml');
-		expect(wf?.strategy ?? 'verbatim').toBe('verbatim');
+		// Файл обязан быть в наборе профиля и быть verbatim (strategy не задан).
+		expect(wf).toBeDefined();
+		expect(wf?.strategy).toBeUndefined();
 		const seed = files.find((f) => f.dest === 'renovate.json5');
 		expect(seed?.strategy).toBe('create-if-absent');
 		// dest ∪ satisfiedBy = все места, где Renovate ищет конфиг: засев не плодит второй конфиг.
@@ -195,10 +197,8 @@ test('канон Renovate: workflow и засев конфига — в кажд
 	}
 });
 
-test('канон Renovate: workflow зовёт reusable стека @v1 с RENOVATE_TOKEN, засев подключает пресет', () => {
-	const wf = readFileSync(join(canonDir(), 'files', 'workflow-renovate.yml'), 'utf8');
-	expect(wf).toContain('uses: alxwlw/stack/.github/workflows/renovate.yml@v1');
-	expect(wf).toContain('token: ${{ secrets.RENOVATE_TOKEN }}');
+// Связка канон-файла workflow с reusable стека проверяется в dogfood.test.ts: там разбирается YAML.
+test('канон Renovate: засев конфига подключает пресет стека @v1', () => {
 	const seed = readFileSync(join(canonDir(), 'files', 'renovate.template.json5'), 'utf8');
 	expect(seed).toContain("'github>alxwlw/stack//renovate/canon.json5#v1'");
 	expect(seed).toContain("'config:recommended'");

@@ -109,3 +109,18 @@ test('create-if-absent с satisfiedBy: ничего нет — засевает�
 	expect(readFileSync(join(repo, 'renovate.json5'), 'utf8')).toBe('{}\n');
 	expect(planFiles(repo, seedWithAlternatives)).toEqual([]);
 });
+
+// satisfiedBy — свойство засева: у verbatim-записи канон владеет содержимым, и существующий
+// «альтернативный» путь не должен выключать синхронизацию dest.
+test('verbatim с satisfiedBy: существующий путь из satisfiedBy не отменяет план dest', () => {
+	const verbatimWithAlternatives: Canon = {
+		...canon,
+		files: [{ dest: 'renovate.json5', content: '{}\n', satisfiedBy: ['renovate.json'] }],
+	};
+	const repo = mkdtempSync(join(tmpdir(), 'stack-repo-'));
+	writeFileSync(join(repo, 'renovate.json'), '{}\n');
+	const plan = planFiles(repo, verbatimWithAlternatives);
+	expect(plan.map((d) => [d.code, d.target, d.fix])).toEqual([
+		['file-missing', 'renovate.json5', 'updated renovate.json5'],
+	]);
+});

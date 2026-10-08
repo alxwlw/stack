@@ -73,3 +73,37 @@ test('reusable renovate.yml: workflow_call с обязательным token, ac
 	expect(action?.uses).toMatch(/^renovatebot\/github-action@v\d+\.\d+\.\d+$/);
 	expect(action?.env?.RENOVATE_REPOSITORIES).toBe('${{ github.repository }}');
 });
+
+// Канон-файл потребителя и корневой reusable должны сходиться по контракту: with — только объявленные
+// inputs, secrets — только объявленные secrets. Иначе у потребителя workflow падает при запуске.
+test('канон-файл workflow-renovate.yml зовёт корневой reusable @v1 в рамках его inputs и secrets', () => {
+	type Workflow = {
+		on?: {
+			workflow_call?: { inputs?: Record<string, unknown>; secrets?: Record<string, unknown> };
+		};
+		jobs?: Record<
+			string,
+			{ uses?: string; with?: Record<string, unknown>; secrets?: Record<string, string> }
+		>;
+	};
+	const reusable = parseYaml(
+		readFileSync(join(ROOT, '.github', 'workflows', 'renovate.yml'), 'utf8'),
+	) as Workflow;
+	const consumer = parseYaml(
+		readFileSync(join(canonDir(), 'files', 'workflow-renovate.yml'), 'utf8'),
+	) as Workflow;
+	const job = consumer.jobs?.renovate;
+	expect(job?.uses).toBe('alxwlw/stack/.github/workflows/renovate.yml@v1');
+	const inputs = Object.keys(reusable.on?.workflow_call?.inputs ?? {});
+	const secrets = Object.keys(reusable.on?.workflow_call?.secrets ?? {});
+	expect(inputs).toContain('log-level');
+	expect(secrets).toContain('token');
+	const passedWith = Object.keys(job?.with ?? {});
+	const passedSecrets = Object.keys(job?.secrets ?? {});
+	// Непустые: пустое множество тривиально входит в любое, и тест молчал бы.
+	expect(passedWith).not.toEqual([]);
+	expect(passedSecrets).not.toEqual([]);
+	for (const k of passedWith) expect(inputs).toContain(k);
+	for (const k of passedSecrets) expect(secrets).toContain(k);
+	expect(job?.secrets?.token).toBe('${{ secrets.RENOVATE_TOKEN }}');
+});
