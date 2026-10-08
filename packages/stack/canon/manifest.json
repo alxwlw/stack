@@ -75,13 +75,6 @@
 			"strategy": "create-if-absent"
 		},
 		{
-			"src": "files/dependabot.template.yml",
-			"dest": ".github/dependabot.yml",
-			"appliesTo": ["node", "contracts"],
-			"strategy": "create-if-absent",
-			"unlessWith": "renovate"
-		},
-		{
 			"src": "files/oxlintrc.template.json",
 			"dest": ".oxlintrc.json",
 			"appliesTo": ["node", "contracts"],
@@ -154,6 +147,31 @@
 			"src": "files/workflow-stack-sync.yml",
 			"dest": ".github/workflows/stack-sync.yml",
 			"appliesTo": ["node", "contracts", "infra"]
+		},
+		{
+			"src": "files/workflow-renovate.yml",
+			"dest": ".github/workflows/renovate.yml",
+			"appliesTo": ["node", "contracts", "infra"]
+		},
+		{
+			"src": "files/renovate.template.json5",
+			"dest": "renovate.json5",
+			"appliesTo": ["node", "contracts", "infra"],
+			"strategy": "create-if-absent",
+			"satisfiedBy": [
+				"renovate.json",
+				"renovate.jsonc",
+				".github/renovate.json",
+				".github/renovate.jsonc",
+				".github/renovate.json5",
+				".gitlab/renovate.json",
+				".gitlab/renovate.jsonc",
+				".gitlab/renovate.json5",
+				".renovaterc",
+				".renovaterc.json",
+				".renovaterc.jsonc",
+				".renovaterc.json5"
+			]
 		}
 	]
 }

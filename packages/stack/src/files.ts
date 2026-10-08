@@ -10,6 +10,13 @@ export function planFiles(repoRoot: string, canon: Canon): Drift[] {
 	const plan: Drift[] = [];
 	for (const f of canon.files) {
 		const target = join(repoRoot, f.dest);
+		// Засев с альтернативами: репо уже держит тот же конфиг под другим законным именем.
+		if (
+			f.strategy === 'create-if-absent' &&
+			f.satisfiedBy?.some((p) => existsSync(join(repoRoot, p)))
+		) {
+			continue;
+		}
 		const exists = existsSync(target);
 		// create-if-absent принадлежит репозиторию после первого засева: расхождением считается
 		// только отсутствие, содержимое не трогаем.

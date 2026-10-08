@@ -1,10 +1,10 @@
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { expect, test } from 'bun:test';
 
-import { type Canon, canonDir } from './canon.ts';
+import type { Canon } from './canon.ts';
 import {
 	checkDependabotIgnore,
 	checkEnginesNode,
@@ -95,12 +95,6 @@ test('dependabot без ignore для @alxwlw/* — находка', () => {
 
 test('dependabot: без файла на репозитории с workspace — молчит', () => {
 	const dir = repo({ 'pnpm-workspace.yaml': 'packages: []\n' });
-	expect(checkDependabotIgnore(dir)).toEqual([]);
-});
-
-test('dependabot: сид канона проходит проверку', () => {
-	const template = readFileSync(join(canonDir(), 'files', 'dependabot.template.yml'), 'utf8');
-	const dir = repo({ 'pnpm-workspace.yaml': 'packages: []\n', '.github/dependabot.yml': template });
 	expect(checkDependabotIgnore(dir)).toEqual([]);
 });
 

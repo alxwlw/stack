@@ -13,8 +13,8 @@ export interface CanonFile {
 	strategy?: SyncStrategy;
 	/** Группа, включаемая через `with` в .stack.jsonc. Без группы файл обязателен всем. */
 	group?: string;
-	/** Группа, при включении которой файл НЕ применяется (альтернатива: renovate вместо dependabot). */
-	unlessWith?: string;
+	/** Для create-if-absent: другие пути, любой из которых тоже закрывает засев (у конфига несколько законных имён). */
+	satisfiedBy?: string[];
 }
 
 export type CanonCatalogs = Record<string, Record<string, string>>;
@@ -22,7 +22,7 @@ export type CanonCatalogs = Record<string, Record<string, string>>;
 // Канон одного прогона как значение: уже отфильтрован под профиль и группы, содержимое файлов
 // прочитано, пины node и pnpm вычислены. Правила и план принимают его и не знают, где лежит каталог.
 export interface Canon {
-	files: { dest: string; content: string; strategy?: SyncStrategy }[];
+	files: { dest: string; content: string; strategy?: SyncStrategy; satisfiedBy?: string[] }[];
 	catalogs: CanonCatalogs;
 	nodePin: string;
 	pnpmPin: string;
@@ -43,10 +43,7 @@ export function loadManifest(dir: string = canonDir()): CanonFile[] {
 
 export function filesFor(cfg: StackConfig, dir: string = canonDir()): CanonFile[] {
 	return loadManifest(dir).filter(
-		(f) =>
-			f.appliesTo.includes(cfg.profile) &&
-			(f.group == null || cfg.with.includes(f.group)) &&
-			(f.unlessWith == null || !cfg.with.includes(f.unlessWith)),
+		(f) => f.appliesTo.includes(cfg.profile) && (f.group == null || cfg.with.includes(f.group)),
 	);
 }
 
@@ -59,6 +56,7 @@ export function loadCanon(cfg: StackConfig, dir: string = canonDir()): Canon {
 		dest: f.dest,
 		content: readFileSync(join(dir, f.src), 'utf8'),
 		strategy: f.strategy,
+		satisfiedBy: f.satisfiedBy,
 	}));
 	const all = loadCatalogs(dir);
 	const groups = ['dev', ...cfg.with.filter((g) => g !== 'dev')];

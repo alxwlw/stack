@@ -116,7 +116,7 @@ export function checkDependabotIgnore(repoRoot: string): Finding[] {
 
 // Имена и порядок поиска — как у самого Renovate (renovate.json{,c,5} для каждого места; первый
 // найденный файл и есть конфиг), без устаревшего package.json#renovate. JSON5.parse читает и JSONC.
-const RENOVATE_CONFIGS = [
+export const RENOVATE_CONFIGS = [
 	'renovate.json',
 	'renovate.jsonc',
 	'renovate.json5',

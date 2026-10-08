@@ -57,3 +57,19 @@ test('корневой package.json#packageManager — pnpm на пине кан
 	expect(pin).toBeDefined();
 	expect(pkg.packageManager).toBe(`pnpm@${pin}`);
 });
+
+// Reusable workflow, который зовёт канон-файл .github/workflows/renovate.yml потребителя.
+test('reusable renovate.yml: workflow_call с обязательным token, action на полной версии', () => {
+	const wf = parseYaml(
+		readFileSync(join(ROOT, '.github', 'workflows', 'renovate.yml'), 'utf8'),
+	) as {
+		on?: { workflow_call?: { secrets?: { token?: { required?: boolean } } } };
+		jobs?: Record<string, { steps?: { uses?: string; env?: Record<string, string> }[] }>;
+	};
+	expect(wf.on?.workflow_call?.secrets?.token?.required).toBe(true);
+	const steps = Object.values(wf.jobs ?? {}).flatMap((j) => j.steps ?? []);
+	const action = steps.find((s) => s.uses?.startsWith('renovatebot/github-action@'));
+	// У action нет плавающего мажорного тега: @v46 не резолвится.
+	expect(action?.uses).toMatch(/^renovatebot\/github-action@v\d+\.\d+\.\d+$/);
+	expect(action?.env?.RENOVATE_REPOSITORIES).toBe('${{ github.repository }}');
+});
