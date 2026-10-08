@@ -148,6 +148,11 @@ test('свой renovate.json5: свои пакеты и ссылки на сте
 			(r.matchPackageNames ?? []).includes('alxwlw/stack'),
 	);
 	expect(rule).toBeDefined();
+	// match* внутри правила Renovate склеивает через И: лишний matchManagers/matchFileNames сузил бы
+	// правило, и ссылки alxwlw/stack@v1 в github-actions остались бы включёнными.
+	expect(Object.keys(rule ?? {}).filter((k) => k.startsWith('match'))).toEqual([
+		'matchPackageNames',
+	]);
 });
 
 test('свой renovate.json5: proto видит канон-prototools, jsonata — catalogs.json', () => {
