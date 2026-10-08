@@ -6,6 +6,13 @@ import { expect, test } from 'bun:test';
 
 import type { Canon } from './canon.ts';
 import { checkRepo, syncRepo } from './check.ts';
+import { STACK_RENOVATE_PRESET } from './deps.ts';
+
+// Репо с конфигом Renovate на пресете канона: тесты исключений и каталогов не про бота.
+function withRenovate(repo: string): string {
+	writeFileSync(join(repo, 'renovate.json5'), `{ extends: ['${STACK_RENOVATE_PRESET}'] }\n`);
+	return repo;
+}
 
 const canon: Canon = {
 	files: [{ dest: '.editorconfig', content: 'root = true\n' }],
@@ -16,7 +23,7 @@ const canon: Canon = {
 };
 
 test('исключение на .prototools держит и packageManager — в sync и в check', () => {
-	const repo = mkdtempSync(join(tmpdir(), 'stack-repo-'));
+	const repo = withRenovate(mkdtempSync(join(tmpdir(), 'stack-repo-')));
 	const withPrototools: Canon = {
 		...canon,
 		files: [{ dest: '.prototools', content: 'pnpm = "10.99.0"\n' }],
@@ -36,7 +43,7 @@ test('исключение на .prototools держит и packageManager — �
 });
 
 test('исключение, которое ни к чему не подошло, — единственная находка: stale-exception', () => {
-	const repo = mkdtempSync(join(tmpdir(), 'stack-repo-'));
+	const repo = withRenovate(mkdtempSync(join(tmpdir(), 'stack-repo-')));
 	writeFileSync(join(repo, 'package.json'), '{ "name": "r" }');
 	const empty: Canon = { ...canon, files: [], catalogs: {} };
 	const codes = checkRepo(repo, empty, [{ file: '.нет-такого', reason: 'протухло' }]).map(
@@ -72,7 +79,7 @@ test('checkRepo агрегирует находки из разных источ
 });
 
 test('sync не трогает файл, удержанный исключением, и check после него без stale-exception', () => {
-	const repo = mkdtempSync(join(tmpdir(), 'stack-repo-'));
+	const repo = withRenovate(mkdtempSync(join(tmpdir(), 'stack-repo-')));
 	writeFileSync(join(repo, '.editorconfig'), 'свой отступ\n');
 	const exceptions = [{ file: '.editorconfig', reason: 'легитимный отступ' }];
 	const { applied, held } = syncRepo(repo, canon, exceptions);
@@ -85,7 +92,7 @@ test('sync не трогает файл, удержанный исключени
 });
 
 test('sync оставляет запись каталога, удержанную catalog+name, и применяет остальное', () => {
-	const repo = mkdtempSync(join(tmpdir(), 'stack-repo-'));
+	const repo = withRenovate(mkdtempSync(join(tmpdir(), 'stack-repo-')));
 	writeFileSync(
 		join(repo, 'pnpm-workspace.yaml'),
 		'packages:\n  - packages/*\n\ncatalogs:\n  dev:\n    oxlint: 1.70.0\n',
@@ -116,41 +123,27 @@ test('sync без исключений применяет весь план — 
 	expect(readFileSync(join(repo, '.editorconfig'), 'utf8')).toBe('root = true\n');
 });
 
-test('checkRepo: renovate-ignore только у репо с bot renovate', () => {
+test('checkRepo: renovate-preset проверяется у каждого репо — без групп и без pnpm-workspace', () => {
 	const repo = mkdtempSync(join(tmpdir(), 'stack-repo-'));
-	writeFileSync(join(repo, 'pnpm-workspace.yaml'), 'packages: []\n');
-	const codes = (bot?: Canon['bot']) =>
-		checkRepo(repo, { ...canon, files: [], catalogs: {}, bot }, []).map((f) => f.code);
-	expect(codes('renovate')).toContain('renovate-ignore');
-	expect(codes('dependabot')).not.toContain('renovate-ignore');
-	expect(codes(undefined)).not.toContain('renovate-ignore');
+	const codes = checkRepo(repo, { ...canon, files: [], catalogs: {} }, []).map((f) => f.code);
+	expect(codes).toContain('renovate-preset');
 });
 
-test('renovate-ignore не подавляется исключением — и исключение выходит stale-exception', () => {
+test('renovate-preset и dependabot-config не подавляются исключением — исключения выходят stale-exception', () => {
 	const repo = mkdtempSync(join(tmpdir(), 'stack-repo-'));
-	writeFileSync(join(repo, 'pnpm-workspace.yaml'), 'packages: []\n');
-	const findings = checkRepo(repo, { ...canon, files: [], catalogs: {}, bot: 'renovate' }, [
-		{ file: 'renovate.json', reason: 'r' },
-	]);
-	const ignore = findings.find((f) => f.code === 'renovate-ignore');
-	expect(ignore).toBeDefined();
-	expect(ignore?.suppressedBy).toBeUndefined();
-	expect(findings.some((f) => f.code === 'stale-exception')).toBe(true);
-});
-
-test('dependabot-ignore не подавляется исключением — и исключение выходит stale-exception', () => {
-	const repo = mkdtempSync(join(tmpdir(), 'stack-repo-'));
-	writeFileSync(join(repo, 'pnpm-workspace.yaml'), 'packages: []\n');
 	mkdirSync(join(repo, '.github'));
 	writeFileSync(
 		join(repo, '.github/dependabot.yml'),
 		'version: 2\nupdates:\n  - package-ecosystem: npm\n    directory: /\n',
 	);
 	const findings = checkRepo(repo, { ...canon, files: [], catalogs: {} }, [
+		{ file: 'renovate.json5', reason: 'r' },
 		{ file: '.github/dependabot.yml', reason: 'r' },
 	]);
-	const ignore = findings.find((f) => f.code === 'dependabot-ignore');
-	expect(ignore).toBeDefined();
-	expect(ignore?.suppressedBy).toBeUndefined();
-	expect(findings.some((f) => f.code === 'stale-exception')).toBe(true);
+	for (const code of ['renovate-preset', 'dependabot-config'] as const) {
+		const f = findings.find((x) => x.code === code);
+		expect(f).toBeDefined();
+		expect(f?.suppressedBy).toBeUndefined();
+	}
+	expect(findings.filter((f) => f.code === 'stale-exception')).toHaveLength(2);
 });

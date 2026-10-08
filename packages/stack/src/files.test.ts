@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -74,5 +74,53 @@ test('находка о файле несёт адрес для исключен
 	expect(planFiles(repo, canon).map((f) => [f.code, f.address])).toEqual([
 		['file-drift', { file: '.editorconfig' }],
 		['file-missing', { file: '.gitleaks.toml' }],
+	]);
+});
+
+// satisfiedBy: засев конфига, у которого несколько законных имён (Renovate ищет renovate.json,
+// .github/renovate.json5 и т. д.), — любой существующий вариант закрывает засев.
+const seedWithAlternatives: Canon = {
+	...canon,
+	files: [
+		{
+			dest: 'renovate.json5',
+			content: '{}\n',
+			strategy: 'create-if-absent',
+			satisfiedBy: ['renovate.json', '.github/renovate.json5'],
+		},
+	],
+};
+
+test('create-if-absent с satisfiedBy: существующий альтернативный путь закрывает засев', () => {
+	const repo = mkdtempSync(join(tmpdir(), 'stack-repo-'));
+	mkdirSync(join(repo, '.github'));
+	writeFileSync(join(repo, '.github/renovate.json5'), '{ extends: [] }\n');
+	expect(planFiles(repo, seedWithAlternatives)).toEqual([]);
+	expect(existsSync(join(repo, 'renovate.json5'))).toBe(false);
+});
+
+test('create-if-absent с satisfiedBy: ничего нет — засевается dest', () => {
+	const repo = mkdtempSync(join(tmpdir(), 'stack-repo-'));
+	const plan = planFiles(repo, seedWithAlternatives);
+	expect(plan.map((d) => [d.code, d.target, d.fix])).toEqual([
+		['file-missing', 'renovate.json5', 'seeded renovate.json5'],
+	]);
+	for (const d of plan) d.apply();
+	expect(readFileSync(join(repo, 'renovate.json5'), 'utf8')).toBe('{}\n');
+	expect(planFiles(repo, seedWithAlternatives)).toEqual([]);
+});
+
+// satisfiedBy — свойство засева: у verbatim-записи канон владеет содержимым, и существующий
+// «альтернативный» путь не должен выключать синхронизацию dest.
+test('verbatim с satisfiedBy: существующий путь из satisfiedBy не отменяет план dest', () => {
+	const verbatimWithAlternatives: Canon = {
+		...canon,
+		files: [{ dest: 'renovate.json5', content: '{}\n', satisfiedBy: ['renovate.json'] }],
+	};
+	const repo = mkdtempSync(join(tmpdir(), 'stack-repo-'));
+	writeFileSync(join(repo, 'renovate.json'), '{}\n');
+	const plan = planFiles(repo, verbatimWithAlternatives);
+	expect(plan.map((d) => [d.code, d.target, d.fix])).toEqual([
+		['file-missing', 'renovate.json5', 'updated renovate.json5'],
 	]);
 });

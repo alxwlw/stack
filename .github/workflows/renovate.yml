@@ -1,0 +1,30 @@
+name: renovate
+on:
+  workflow_call:
+    inputs:
+      log-level:
+        description: уровень лога Renovate — info или debug
+        type: string
+        default: info
+    secrets:
+      token:
+        description: токен, от имени которого Renovate клонирует репо и открывает PR
+        required: true
+permissions:
+  contents: read
+jobs:
+  renovate:
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    # cron и ручной запуск на один репо гонялись бы за одни ветки.
+    concurrency:
+      group: renovate-${{ github.repository }}
+      cancel-in-progress: false
+    steps:
+      # Без checkout: action запускает образ renovate/renovate, тот сам клонирует репо по токену
+      # и читает его конфиг. Полная версия: плавающего @v46 у action нет.
+      - uses: renovatebot/github-action@v46.3.7
+        with:
+          token: ${{ secrets.token }}
+        env:
+          RENOVATE_REPOSITORIES: ${{ github.repository }}
+          LOG_LEVEL: ${{ inputs.log-level }}

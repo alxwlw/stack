@@ -6,10 +6,11 @@ import { expect, test } from 'bun:test';
 
 import { type Canon, canonDir } from './canon.ts';
 import {
-	checkDependabotIgnore,
+	checkDependabot,
 	checkEnginesNode,
 	checkInlineVersions,
-	checkRenovateIgnore,
+	checkRenovatePreset,
+	STACK_RENOVATE_PRESET,
 } from './deps.ts';
 
 // Пин нарочно не совпадает с реальным каноном (26.x): иначе тест engines-node не отличит
@@ -78,59 +79,6 @@ test('engines.node, не покрывающий пин, — находка', () 
 	expect(checkEnginesNode(none, canon)).toEqual([]);
 });
 
-test('dependabot без ignore для @alxwlw/* — находка', () => {
-	const bad = repo({
-		'pnpm-workspace.yaml': 'packages: []\n',
-		'.github/dependabot.yml':
-			'version: 2\nupdates:\n  - package-ecosystem: npm\n    directory: /\n',
-	});
-	expect(checkDependabotIgnore(bad)[0]?.code).toBe('dependabot-ignore');
-	const good = repo({
-		'pnpm-workspace.yaml': 'packages: []\n',
-		'.github/dependabot.yml':
-			'version: 2\nupdates:\n  - package-ecosystem: npm\n    directory: /\n    ignore:\n      - dependency-name: "@alxwlw/*"\n',
-	});
-	expect(checkDependabotIgnore(good)).toEqual([]);
-});
-
-test('dependabot: без файла на репозитории с workspace — молчит', () => {
-	const dir = repo({ 'pnpm-workspace.yaml': 'packages: []\n' });
-	expect(checkDependabotIgnore(dir)).toEqual([]);
-});
-
-test('dependabot: сид канона проходит проверку', () => {
-	const template = readFileSync(join(canonDir(), 'files', 'dependabot.template.yml'), 'utf8');
-	const dir = repo({ 'pnpm-workspace.yaml': 'packages: []\n', '.github/dependabot.yml': template });
-	expect(checkDependabotIgnore(dir)).toEqual([]);
-});
-
-test('dependabot: закомментированный ignore — находка', () => {
-	const dir = repo({
-		'pnpm-workspace.yaml': 'packages: []\n',
-		'.github/dependabot.yml':
-			'version: 2\nupdates:\n  - package-ecosystem: npm\n    directory: /\n    ignore:\n      # - dependency-name: "@alxwlw/*"\n',
-	});
-	expect(checkDependabotIgnore(dir)[0]?.code).toBe('dependabot-ignore');
-});
-
-test('dependabot: ignore на чужом пакете — находка', () => {
-	const dir = repo({
-		'pnpm-workspace.yaml': 'packages: []\n',
-		'.github/dependabot.yml':
-			'version: 2\nupdates:\n  - package-ecosystem: npm\n    directory: /\n    ignore:\n      - dependency-name: "lodash"\n',
-	});
-	expect(checkDependabotIgnore(dir)[0]?.code).toBe('dependabot-ignore');
-});
-
-test('dependabot: битый YAML — находка, а не исключение', () => {
-	const dir = repo({
-		'pnpm-workspace.yaml': 'packages: []\n',
-		'.github/dependabot.yml': 'version: 2\nupdates: [\n  - broken: [\n',
-	});
-	expect(() => checkDependabotIgnore(dir)).not.toThrow();
-	expect(checkDependabotIgnore(dir)[0]?.code).toBe('unreadable-file');
-});
-
 test('битый package.json — находка unreadable-file, остальные пакеты проверяются дальше', () => {
 	// Порядок Glob.scanSync не гарантирован (эмпирически — не алфавитный и не по времени
 	// создания), поэтому находки ищем через .find по code, а не по позиции в массиве.
@@ -153,133 +101,110 @@ test('битый корневой package.json — checkEnginesNode находк
 	expect(checkEnginesNode(dir, canon)[0]?.code).toBe('unreadable-file');
 });
 
-test('без pnpm-workspace.yaml правила каталогов и dependabot молчат', () => {
+test('без pnpm-workspace.yaml правила каталогов молчат', () => {
 	const dir = repo({
 		'package.json': '{ "name": "infra", "devDependencies": { "oxlint": "1.70.0" } }',
-		'.github/dependabot.yml':
-			'version: 2\nupdates:\n  - package-ecosystem: npm\n    directory: /\n',
 	});
 	expect(checkInlineVersions(dir, canon)).toEqual([]);
-	expect(checkDependabotIgnore(dir)).toEqual([]);
 });
 
-// Renovate: порядок поиска конфига — как у самого Renovate; JSON5 — ключи без кавычек,
-// одинарные кавычки, комментарии, висячие запятые.
-const RENOVATE_OK_JSON5 = `{
-	// канон двигает stack sync
-	extends: ['config:recommended'],
-	packageRules: [
-		{ groupName: 'types', matchPackageNames: ['@types/**'] },
-		{ matchPackageNames: ['@alxwlw/**'], enabled: false },
-	],
+// renovate-preset: конфиг ищется в порядке самого Renovate (первый найденный — и есть конфиг),
+// extends должен содержать пресет канона ровно с тегом #v1.
+const WITH_PRESET = `{
+	// свои правила потребителя
+	extends: ['config:recommended', '${STACK_RENOVATE_PRESET}'],
+	packageRules: [{ groupName: 'types', matchPackageNames: ['@types/**'] }],
 }
 `;
 
-test('renovate: JSON5 с отключённым @alxwlw/** — без находки', () => {
-	const dir = repo({
-		'pnpm-workspace.yaml': 'packages: []\n',
-		'renovate.json5': RENOVATE_OK_JSON5,
-	});
-	expect(checkRenovateIgnore(dir)).toEqual([]);
+test('renovate-preset: renovate.json5 с пресетом — без находки', () => {
+	expect(checkRenovatePreset(repo({ 'renovate.json5': WITH_PRESET }))).toEqual([]);
 });
 
-test('renovate: .github/renovate.json с @alxwlw/* — без находки', () => {
+test('renovate-preset: .github/renovate.json с пресетом — без находки', () => {
 	const dir = repo({
-		'pnpm-workspace.yaml': 'packages: []\n',
-		'.github/renovate.json':
-			'{ "packageRules": [{ "matchPackageNames": ["@alxwlw/*"], "enabled": false }] }\n',
+		'.github/renovate.json': `{ "extends": ["config:recommended", "${STACK_RENOVATE_PRESET}"] }\n`,
 	});
-	expect(checkRenovateIgnore(dir)).toEqual([]);
+	expect(checkRenovatePreset(dir)).toEqual([]);
 });
 
-test('renovate: группировка @alxwlw/** без enabled: false — находка', () => {
-	const dir = repo({
-		'pnpm-workspace.yaml': 'packages: []\n',
-		'renovate.json':
-			'{ "packageRules": [{ "groupName": "canon", "matchPackageNames": ["@alxwlw/**"] }] }\n',
-	});
-	const [f] = checkRenovateIgnore(dir);
-	expect(f?.code).toBe('renovate-ignore');
+// Профиль infra: pnpm-workspace.yaml нет, а пресет всё равно нужен — он выключает proto.
+test('renovate-preset: работает и без pnpm-workspace.yaml', () => {
+	const [f] = checkRenovatePreset(
+		repo({ 'renovate.json': '{ "extends": ["config:recommended"] }\n' }),
+	);
+	expect(f?.code).toBe('renovate-preset');
 	expect(f?.target).toBe('renovate.json');
 });
 
-test('renovate: конфига нет — находка с местами поиска', () => {
-	const dir = repo({ 'pnpm-workspace.yaml': 'packages: []\n' });
-	const [f] = checkRenovateIgnore(dir);
-	expect(f?.code).toBe('renovate-ignore');
-	expect(f?.message).toContain('.github/renovate.json5');
+test('renovate-preset: пресет без тега, с #main или с чужим мажором — находка', () => {
+	for (const ref of [
+		'github>alxwlw/stack//renovate/canon.json5',
+		'github>alxwlw/stack//renovate/canon.json5#main',
+		'github>alxwlw/stack//renovate/canon.json5#v0',
+	]) {
+		const [f] = checkRenovatePreset(repo({ 'renovate.json5': `{ extends: ['${ref}'] }\n` }));
+		expect(f?.code).toBe('renovate-preset');
+		expect(f?.message).toContain(STACK_RENOVATE_PRESET);
+	}
 });
 
-test('renovate: битый JSON5 — unreadable-file', () => {
+test('renovate-preset: первый конфиг в порядке поиска решает, даже если другой с пресетом', () => {
 	const dir = repo({
-		'pnpm-workspace.yaml': 'packages: []\n',
-		'renovate.json5': '{ packageRules: [ \n',
+		'renovate.json': '{ "extends": ["config:recommended"] }\n',
+		'renovate.json5': WITH_PRESET,
 	});
-	expect(checkRenovateIgnore(dir).map((f) => [f.code, f.target])).toEqual([
-		['unreadable-file', 'renovate.json5'],
+	expect(checkRenovatePreset(dir).map((f) => [f.code, f.target])).toEqual([
+		['renovate-preset', 'renovate.json'],
 	]);
 });
 
-test('renovate: репо без pnpm-workspace.yaml — молчит', () => {
-	expect(checkRenovateIgnore(repo({}))).toEqual([]);
+// extends нет или он не массив — типичный вход при миграции с Dependabot: находка, а не TypeError.
+test('renovate-preset: конфиг без extends — находка, не исключение', () => {
+	for (const body of ['{ "packageRules": [] }\n', '{}\n']) {
+		const dir = repo({ 'renovate.json': body });
+		expect(() => checkRenovatePreset(dir)).not.toThrow();
+		const found = checkRenovatePreset(dir);
+		expect(found).toHaveLength(1);
+		expect(found[0]?.code).toBe('renovate-preset');
+		expect(found[0]?.target).toBe('renovate.json');
+	}
 });
 
-test('renovate: отключение чужого scope не подходит — находка', () => {
-	const dir = repo({
-		'pnpm-workspace.yaml': 'packages: []\n',
-		'renovate.json':
-			'{ "packageRules": [{ "matchPackageNames": ["@types/**"], "enabled": false }] }\n',
-	});
-	expect(checkRenovateIgnore(dir)[0]?.code).toBe('renovate-ignore');
-});
-
-test('renovate: @alxwlw-evil не совпадает с @alxwlw — находка', () => {
-	const dir = repo({
-		'pnpm-workspace.yaml': 'packages: []\n',
-		'renovate.json':
-			'{ "packageRules": [{ "matchPackageNames": ["@alxwlw-evil/**"], "enabled": false }] }\n',
-	});
-	expect(checkRenovateIgnore(dir)[0]?.code).toBe('renovate-ignore');
-});
-
-test('renovate: первый конфиг в порядке поиска решает, даже если другой лучше', () => {
-	const dir = repo({
-		'pnpm-workspace.yaml': 'packages: []\n',
-		'renovate.json': '{ "packageRules": [] }\n',
-		'renovate.json5':
-			'{ "packageRules": [{ "matchPackageNames": ["@alxwlw/**"], "enabled": false }] }\n',
-	});
-	const [f] = checkRenovateIgnore(dir);
-	expect(f?.code).toBe('renovate-ignore');
-	expect(f?.target).toBe('renovate.json');
-});
-
-test('renovate: несколько имён в matchPackageNames, включая @alxwlw/** — без находки', () => {
-	const dir = repo({
-		'pnpm-workspace.yaml': 'packages: []\n',
-		'renovate.json':
-			'{ "packageRules": [{ "matchPackageNames": ["@types/**", "@alxwlw/**"], "enabled": false }] }\n',
-	});
-	expect(checkRenovateIgnore(dir)).toEqual([]);
-});
-
-test('renovate: renovate.jsonc с комментарием и отключением @alxwlw/** — без находки', () => {
-	const dir = repo({
-		'pnpm-workspace.yaml': 'packages: []\n',
-		'renovate.jsonc':
-			'{\n\t// канон двигает stack sync\n\t"packageRules": [{ "matchPackageNames": ["@alxwlw/**"], "enabled": false }]\n}\n',
-	});
-	expect(checkRenovateIgnore(dir)).toEqual([]);
-});
-
-test('renovate: .jsonc читается раньше .json5 — плохой .jsonc решает', () => {
-	const dir = repo({
-		'pnpm-workspace.yaml': 'packages: []\n',
-		'renovate.jsonc': '{ "packageRules": [] }\n',
-		'renovate.json5': RENOVATE_OK_JSON5,
-	});
-	const found = checkRenovateIgnore(dir);
+test('renovate-preset: extends строкой, даже равной пресету, — находка', () => {
+	const dir = repo({ 'renovate.json': `{ "extends": "${STACK_RENOVATE_PRESET}" }\n` });
+	const found = checkRenovatePreset(dir);
 	expect(found).toHaveLength(1);
-	expect(found[0]?.code).toBe('renovate-ignore');
-	expect(found[0]?.target).toBe('renovate.jsonc');
+	expect(found[0]?.code).toBe('renovate-preset');
+	expect(found[0]?.target).toBe('renovate.json');
+});
+
+test('renovate-preset: конфига нет — находка с подсказкой про stack sync', () => {
+	const [f] = checkRenovatePreset(repo({}));
+	expect(f?.code).toBe('renovate-preset');
+	expect(f?.message).toContain('stack sync');
+});
+
+test('renovate-preset: битый JSON5 — unreadable-file', () => {
+	expect(
+		checkRenovatePreset(repo({ 'renovate.json5': '{ extends: [ \n' })).map((f) => [
+			f.code,
+			f.target,
+		]),
+	).toEqual([['unreadable-file', 'renovate.json5']]);
+});
+
+test('renovate-preset: засев канона проходит проверку', () => {
+	const seed = readFileSync(join(canonDir(), 'files', 'renovate.template.json5'), 'utf8');
+	expect(checkRenovatePreset(repo({ 'renovate.json5': seed }))).toEqual([]);
+});
+
+test('dependabot-config: .yml и .yaml — по находке на файл, без файлов — молчит', () => {
+	const cfg = 'version: 2\nupdates:\n  - package-ecosystem: npm\n    directory: /\n';
+	expect(checkDependabot(repo({}))).toEqual([]);
+	const dir = repo({ '.github/dependabot.yml': cfg, '.github/dependabot.yaml': cfg });
+	expect(checkDependabot(dir).map((f) => [f.code, f.target])).toEqual([
+		['dependabot-config', '.github/dependabot.yml'],
+		['dependabot-config', '.github/dependabot.yaml'],
+	]);
 });

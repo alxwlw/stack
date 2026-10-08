@@ -1,0 +1,43 @@
+// Renovate самого alxwlw/stack: свои зависимости и пины канона. Пресет канона здесь не подключён —
+// он выключает ровно то, что этот репо двигает. Обновления пинов → merge → тег → publish → rollout.
+{
+	$schema: 'https://docs.renovatebot.com/renovate-schema.json',
+	extends: ['config:recommended'],
+	// Заменяет, а не дополняет ignorePaths из config:recommended. fixtures/ не игнорируется:
+	// фикстуры — синхронизированные копии канона и двигаются вместе с ним.
+	ignorePaths: ['**/node_modules/**', 'fixtures/node/packages/**'],
+	proto: {
+		// Дополняет '**/.prototools' по умолчанию: канон-файл назван без точки.
+		managerFilePatterns: ['/^packages/stack/canon/files/prototools$/'],
+	},
+	customManagers: [
+		{
+			customType: 'jsonata',
+			description: 'Каталоги канона: { <каталог>: { <пакет>: <точная версия> } }',
+			fileFormat: 'json',
+			managerFilePatterns: ['/^packages/stack/canon/catalogs\\.json$/'],
+			matchStrings: ['*.$each(function($v, $k) { { "depName": $k, "currentValue": $v } })'],
+			datasourceTemplate: 'npm',
+			versioningTemplate: 'npm',
+		},
+	],
+	packageRules: [
+		{
+			description: 'Свои пакеты и ссылки на себя: версии ставит scripts/version.ts, v1 двигает релиз',
+			matchPackageNames: ['@alxwlw/**', 'alxwlw/stack'],
+			enabled: false,
+		},
+		{
+			description: 'Одна группа на класс обновления: minor/patch и major идут отдельными ветками, каждая сдвигает зависимость во всех местах сразу — dogfood/selftest требуют, чтобы канон, корень и фикстуры совпадали',
+			groupName: 'canon pins',
+			matchFileNames: [
+				'packages/stack/canon/files/prototools',
+				'packages/stack/canon/catalogs.json',
+				'.prototools',
+				'pnpm-workspace.yaml',
+				'package.json',
+				'fixtures/**',
+			],
+		},
+	],
+}

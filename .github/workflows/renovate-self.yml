@@ -1,0 +1,17 @@
+name: renovate (self)
+on:
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+    inputs:
+      log-level:
+        type: choice
+        options: [info, debug]
+        default: info
+jobs:
+  renovate:
+    uses: ./.github/workflows/renovate.yml
+    with:
+      log-level: ${{ inputs.log-level || 'info' }}
+    secrets:
+      token: ${{ secrets.RENOVATE_TOKEN }}

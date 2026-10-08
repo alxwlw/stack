@@ -8,8 +8,8 @@ export type FindingCode =
 	| 'inline-version'
 	| 'engines-node'
 	| 'package-manager'
-	| 'dependabot-ignore'
-	| 'renovate-ignore'
+	| 'renovate-preset'
+	| 'dependabot-config'
 	| 'unreadable-file'
 	| 'stale-exception';
 

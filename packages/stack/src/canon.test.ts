@@ -7,6 +7,7 @@ import { parse as parseJsonc } from 'jsonc-parser';
 
 import { canonDir, filesFor, loadCanon, loadCatalogs, loadManifest } from './canon.ts';
 import { PROFILES, type StackConfig } from './config.ts';
+import { RENOVATE_CONFIGS } from './deps.ts';
 
 // Ruling 33: filesFor() только фильтрует список канон-файлов — оно не замечает, если два
 // файла манифеста целят в один и тот же dest внутри одного профиля. planFiles() в этом случае
@@ -171,36 +172,52 @@ test('канон засевает .markdownlintignore как create-if-absent в
 	}
 });
 
-// Группа renovate: репо ведёт зависимости Renovate — канон не засевает .github/dependabot.yml
-// (два бота дрались бы за одни PR), а правило renovate-ignore включается через canon.bot.
-test('filesFor: with renovate — без dependabot.yml; без группы — с ним', () => {
-	for (const profile of ['node', 'contracts'] as const) {
+// Renovate — единственный бот канона: dependabot.yml не засевается никому, а группа renovate
+// осталась допустимым значением для старых .stack.jsonc и ничего не меняет.
+test('filesFor: dependabot.yml не засевается; with renovate не меняет набор файлов', () => {
+	for (const profile of PROFILES) {
 		const plain = filesFor({ profile, with: [], exceptions: [] }).map((f) => f.dest);
-		expect(plain).toContain('.github/dependabot.yml');
+		expect(plain).not.toContain('.github/dependabot.yml');
 		const renovate = filesFor({ profile, with: ['renovate'], exceptions: [] }).map((f) => f.dest);
-		expect(renovate).not.toContain('.github/dependabot.yml');
-		// Остальной набор не меняется: группа гасит ровно один файл.
-		expect(renovate).toEqual(plain.filter((d) => d !== '.github/dependabot.yml'));
+		expect(renovate).toEqual(plain);
 	}
 });
 
-test('loadCanon: bot — renovate с группой, dependabot без неё', () => {
-	expect(loadCanon({ profile: 'node', with: ['renovate'], exceptions: [] }).bot).toBe('renovate');
-	expect(loadCanon({ profile: 'node', with: [], exceptions: [] }).bot).toBe('dependabot');
+test('канон Renovate: workflow и засев конфига — в каждом профиле', () => {
+	for (const profile of PROFILES) {
+		const files = filesFor({ profile, with: [], exceptions: [] });
+		const wf = files.find((f) => f.dest === '.github/workflows/renovate.yml');
+		// Файл обязан быть в наборе профиля и быть verbatim (strategy не задан).
+		expect(wf).toBeDefined();
+		expect(wf?.strategy).toBeUndefined();
+		const seed = files.find((f) => f.dest === 'renovate.json5');
+		expect(seed?.strategy).toBe('create-if-absent');
+		// dest ∪ satisfiedBy = все места, где Renovate ищет конфиг: засев не плодит второй конфиг.
+		expect(new Set([seed?.dest, ...(seed?.satisfiedBy ?? [])])).toEqual(new Set(RENOVATE_CONFIGS));
+	}
+});
+
+// Связка канон-файла workflow с reusable стека проверяется в dogfood.test.ts: там разбирается YAML.
+test('канон Renovate: засев конфига подключает пресет стека @v1', () => {
+	const seed = readFileSync(join(canonDir(), 'files', 'renovate.template.json5'), 'utf8');
+	expect(seed).toContain("'github>alxwlw/stack//renovate/canon.json5#v1'");
+	expect(seed).toContain("'config:recommended'");
 });
 
 // `init` пишет `$schema` в .stack.jsonc, редактор валидирует против него: enum групп в schema.json
-// должен покрывать все group и unlessWith из манифеста и каталоги кроме dev.
-test('schema.json: enum групп with = группы манифеста ∪ unlessWith ∪ каталоги (кроме dev)', () => {
+// должен покрывать все group из манифеста, каталоги кроме dev и устаревшие группы.
+test('schema.json: enum групп with = группы манифеста ∪ каталоги (кроме dev) ∪ устаревшие', () => {
 	const manifest = loadManifest();
 	const manifestGroups = new Set<string>();
 	for (const file of manifest) {
 		if (file.group) manifestGroups.add(file.group);
-		if (file.unlessWith) manifestGroups.add(file.unlessWith);
 	}
 	const catalogs = loadCatalogs();
 	const catalogGroups = Object.keys(catalogs).filter((g) => g !== 'dev');
-	const expectedGroups = Array.from(new Set([...manifestGroups, ...catalogGroups])).sort();
+	const deprecatedGroups = ['renovate']; // принимается ради старых .stack.jsonc, ничего не делает
+	const expectedGroups = Array.from(
+		new Set([...manifestGroups, ...catalogGroups, ...deprecatedGroups]),
+	).sort();
 
 	const schema = JSON.parse(readFileSync(join(canonDir(), '..', 'schema.json'), 'utf8')) as {
 		properties?: { with?: { items?: { enum?: string[] } } };

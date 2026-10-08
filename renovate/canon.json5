@@ -1,0 +1,24 @@
+// Канон alxwlw/stack для Renovate: всё, что двигает `stack sync`, бот у потребителя не трогает —
+// иначе его PR разводят репо с каноном, а следующий sync откатывает их обратно.
+// Подключение: extends: ['config:recommended', 'github>alxwlw/stack//renovate/canon.json5#v1'].
+// Только `enabled: false`: группы, расписание, ignorePaths и прочее остаются за потребителем.
+{
+	$schema: 'https://docs.renovatebot.com/renovate-schema.json',
+	packageRules: [
+		{
+			description: 'Пакеты канона и ссылки на workflow/action стека (alxwlw/stack/...@v1) двигает stack sync',
+			matchPackageNames: ['@alxwlw/**', 'alxwlw/stack'],
+			enabled: false,
+		},
+		{
+			description: 'Каталоги канона (dev, libs), packageManager и engines принадлежат канону',
+			matchDepTypes: ['pnpm.catalog.dev', 'pnpm.catalog.libs', 'packageManager', 'engines'],
+			enabled: false,
+		},
+		{
+			description: 'Пины .prototools принадлежат канону',
+			matchManagers: ['proto'],
+			enabled: false,
+		},
+	],
+}

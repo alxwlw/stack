@@ -75,7 +75,7 @@ from that point on). Running `sync` again with nothing changed touches nothing (
 Anything held by an exception (see [Exceptions](#exceptions)) is left as it is: `sync` prints it
 as `allowed (<reason>): …` and moves on, and `check` reports the same item as allowed — `sync`
 never turns a held item into a stale exception. (`check`'s report-only rules — `engines.node`,
-the dependabot / renovate ignore, inline versions — are not something `sync` fixes.)
+a Renovate config without the canon preset, a leftover Dependabot config, inline versions — are not something `sync` fixes.)
 
 `sync` also keeps `package.json#packageManager` on the canon's pnpm pin whenever that field names
 pnpm (a `+sha512…` suffix on the same version is fine) — otherwise pnpm switches itself to the
@@ -102,23 +102,53 @@ is the only way to create the config file in the first place. All three commands
 opt-in groups layered on top — extra files, or extra catalog entries, that not every repo on a
 profile needs.
 
-| Profile     | For                                                                                                                                                                                                                                                                   |
-| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `node`      | A TypeScript/Node service or library — the full canon: oxlint, oxfmt, tsconfig, moon tasks, a Dependabot config — or, with the `renovate` group, a check that your own Renovate config disables `@alxwlw/*`.                                                          |
-| `contracts` | A Hardhat/Solidity repo with a TypeScript test/deploy layer — same JS/TS canon as `node`.                                                                                                                                                                             |
-| `infra`     | A repo with no pnpm workspace/TS toolchain — canon reduces to what's stack-agnostic (editorconfig, gitleaks, yamllint, markdownlint, `.prototools`, one moon task, its own `stack-check` workflow). Catalog checks are skipped when there's no `pnpm-workspace.yaml`. |
+| Profile     | For                                                                                                                                                                                                                                                                             |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `node`      | A TypeScript/Node service or library — the full canon: oxlint, oxfmt, tsconfig, moon tasks, Renovate (see [Dependency updates](#dependency-updates)).                                                                                                                           |
+| `contracts` | A Hardhat/Solidity repo with a TypeScript test/deploy layer — same JS/TS canon as `node`.                                                                                                                                                                                       |
+| `infra`     | A repo with no pnpm workspace/TS toolchain — canon reduces to what's stack-agnostic (editorconfig, gitleaks, yamllint, markdownlint, `.prototools`, one moon task, its own `stack-check` workflow, Renovate). Catalog checks are skipped when there's no `pnpm-workspace.yaml`. |
 
-| Group        | Adds                                                                                                                                                                                                                                                                                                                                                       | Profiles                     |
-| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- |
-| `libs`       | Catalog pins for common application libraries (a NestJS/Prisma/React-ish stack) — grows over time                                                                                                                                                                                                                                                          | any                          |
-| `moon-tasks` | Seeds `.moon/tasks/*.yml` — typescript/oxlint/oxfmt/bun-test/stack for `node`/`contracts`, `stack` only for `infra` (skip it if you hand-roll moon tasks)                                                                                                                                                                                                  | `node`, `contracts`, `infra` |
-| `knip`       | Seeds `knip.base.json` (unused-code detection base config)                                                                                                                                                                                                                                                                                                 | `node`                       |
-| `depcruise`  | Seeds `.dependency-cruiser.base.cjs` (import/architecture boundary rules)                                                                                                                                                                                                                                                                                  | `node`, `contracts`          |
-| `renovate`   | The repo runs Renovate instead of Dependabot: `.github/dependabot.yml` is not seeded (delete one seeded earlier — `check` still applies the Dependabot rule to it while it exists), and `check` requires your Renovate config to have a `packageRules` entry with `matchPackageNames: ["@alxwlw/**"]` and `enabled: false` (see [Exceptions](#exceptions)) | `node`, `contracts`          |
+| Group        | Adds                                                                                                                                                      | Profiles                     |
+| ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- |
+| `libs`       | Catalog pins for common application libraries (a NestJS/Prisma/React-ish stack) — grows over time                                                         | any                          |
+| `moon-tasks` | Seeds `.moon/tasks/*.yml` — typescript/oxlint/oxfmt/bun-test/stack for `node`/`contracts`, `stack` only for `infra` (skip it if you hand-roll moon tasks) | `node`, `contracts`, `infra` |
+| `knip`       | Seeds `knip.base.json` (unused-code detection base config)                                                                                                | `node`                       |
+| `depcruise`  | Seeds `.dependency-cruiser.base.cjs` (import/architecture boundary rules)                                                                                 | `node`, `contracts`          |
+| `renovate`   | Deprecated, does nothing: Renovate is the canon's dependency bot for every profile. Still accepted so older `.stack.jsonc` files parse                    | —                            |
 
 ```bash
 npx stack init --profile node --with libs --with moon-tasks
 ```
+
+## Dependency updates
+
+Renovate is the canon's only dependency bot; Dependabot is no longer seeded. `stack sync` brings two
+files:
+
+- `.github/workflows/renovate.yml` (canon, overwritten) runs Renovate every Monday at 06:00 UTC and on
+  demand (`workflow_dispatch`, with a `debug` log level when a run needs explaining). It calls the
+  reusable `alxwlw/stack/.github/workflows/renovate.yml@v1` and needs a `RENOVATE_TOKEN` secret
+  that can push branches and open PRs (contents, pull requests, issues, workflows: write). The job
+  runs on `vars.RUNNER_LABEL`, or `ubuntu-latest` when the variable isn't set.
+- `renovate.json5` (seeded once, yours to edit) extends `config:recommended` and the canon preset
+  `github>alxwlw/stack//renovate/canon.json5#v1`. It isn't seeded when the repo already has a
+  Renovate config under any name Renovate looks for (`renovate.json`, `.github/renovate.json5`, …).
+
+The preset turns Renovate off for everything `stack sync` moves: `@alxwlw/*` packages and
+`alxwlw/stack/...` workflow/action refs, the canon's catalogs (`dev`, and `libs` for repos with that
+group), `packageManager`, `engines` and the `.prototools` pins. Without it the bot and the rollout
+would fight: Renovate bumps a pin, the next `stack sync` reverts it. The preset is read from the
+floating `v1` tag, so a release updates it everywhere without a PR: the update arrives once the release moves
+the `v1` tag, and until then `#v1` and `@v1` still point at the previous release.
+
+`stack check` fails when the Renovate config (the first one found, in Renovate's own lookup order)
+doesn't extend the preset with exactly the `#v1` tag — no tag or `#main` would pull an unreleased
+canon — and when `.github/dependabot.yml` (or `.yaml`) exists. Neither can be held back by an exception.
+
+Upgrading an existing consumer: on the first `stack/v<version>` PR after the move to Renovate, `check` goes red
+on `renovate-preset` if the repo already has its own Renovate config without the preset (add
+`github>alxwlw/stack//renovate/canon.json5#v1` to its `extends`), and on `dependabot-config` if
+`.github/dependabot.yml` (or `.yaml`) exists (move its rules into the Renovate config and delete the file).
 
 ## Exceptions
 
@@ -144,9 +174,9 @@ A `catalog`+`name` exception also covers that package declared with an inline ve
 reason covers both symptoms of the same decision.
 
 Not every `check` finding is suppressible this way: a `package.json#engines.node` range that the
-canon's node pin doesn't satisfy, a `.github/dependabot.yml` without an `@alxwlw/*` ignore, and (with
-the `renovate` group) a Renovate config without a `packageRules` entry disabling `@alxwlw/**` — these
-always block; there's no exception shape for any of them. `check` prints every exception it actually
+canon's node pin doesn't satisfy, a Renovate config whose `extends` lacks
+`github>alxwlw/stack//renovate/canon.json5#v1` (or no Renovate config at all), and a
+`.github/dependabot.yml` (or `.yaml`) — these always block; there's no exception shape for any of them. `check` prints every exception it actually
 suppressed as a warning, and fails on one that no longer suppresses anything — the canon moved on
 and the exception is now stale, so it gets deleted, not carried forward silently.
 
@@ -194,6 +224,19 @@ the latest `v1.x.y` for consumers pinning a major:
 	},
 }
 ```
+
+### Keeping the canon current
+
+Renovate runs on this repo too (`.github/workflows/renovate-self.yml`, Mondays 06:00 UTC, needs a
+`RENOVATE_TOKEN` secret). Unlike a consumer it does not extend the canon preset — moving the
+canon's pins is its job. One version lives in several places here: the canon
+(`packages/stack/canon/files/prototools`, `canon/catalogs.json`), this repo's own toolchain
+(`.prototools`, `pnpm-workspace.yaml`, `package.json#packageManager`) and the fixtures. Renovate
+moves each dependency in all of those places at once, because the tests fail when they disagree:
+minor and patch bumps land in the `canon pins` PR, major bumps in their own `major-canon-pins` PR.
+Merge them one at a time; Renovate rebases the other on its next run or on a manual
+`workflow_dispatch`. Merging changes nothing for consumers until a release: tag it, and the rollout
+below carries the new pins out.
 
 ### Rollout to consumers
 
