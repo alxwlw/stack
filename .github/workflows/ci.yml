@@ -15,7 +15,7 @@ jobs:
       - run: pnpm exec tsc --build
       - run: proto run actionlint -- -color
       - name: конфиги Renovate валидны
-        run: npx --yes --package renovate@44.147.0 -- renovate-config-validator --strict renovate/canon.json5
+        run: npx --yes --package renovate@44.147.0 -- renovate-config-validator --strict renovate.json5 renovate/canon.json5
 
   setup-action:
     runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}

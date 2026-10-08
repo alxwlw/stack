@@ -1,7 +1,8 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { expect, test } from 'bun:test';
+import JSON5 from 'json5';
 import { parse as parseYaml } from 'yaml';
 
 import { canonDir, loadCatalogs } from './canon.ts';
@@ -106,4 +107,71 @@ test('канон-файл workflow-renovate.yml зовёт корневой reus
 	for (const k of passedWith) expect(inputs).toContain(k);
 	for (const k of passedSecrets) expect(secrets).toContain(k);
 	expect(job?.secrets?.token).toBe('${{ secrets.RENOVATE_TOKEN }}');
+});
+
+// Renovate самого стека двигает пины канона. Пресет канона он подключать не должен: тот выключает
+// proto и каталог dev — ровно то, что здесь нужно поднимать.
+const ownRenovate = JSON5.parse(readFileSync(join(ROOT, 'renovate.json5'), 'utf8')) as {
+	extends?: string[];
+	proto?: { managerFilePatterns?: string[] };
+	customManagers?: {
+		customType?: string;
+		managerFilePatterns?: string[];
+		matchStrings?: string[];
+	}[];
+	ignorePaths?: string[];
+	packageRules?: {
+		groupName?: string;
+		matchFileNames?: string[];
+		matchPackageNames?: string[];
+		enabled?: boolean;
+	}[];
+};
+
+// Паттерн Renovate вида '/regex/' → проверка, что он попадает в существующий файл (ловит переименование).
+function hits(pattern: string, file: string): boolean {
+	const m = /^\/(.*)\/$/.exec(pattern);
+	expect(m).not.toBeNull();
+	return new RegExp(m?.[1] ?? '').test(file) && existsSync(join(ROOT, file));
+}
+
+test('свой renovate.json5: без пресета канона', () => {
+	expect(ownRenovate.extends ?? []).not.toContain('github>alxwlw/stack//renovate/canon.json5#v1');
+});
+
+test('свой renovate.json5: proto видит канон-prototools, jsonata — catalogs.json', () => {
+	expect(
+		(ownRenovate.proto?.managerFilePatterns ?? []).some((p) =>
+			hits(p, 'packages/stack/canon/files/prototools'),
+		),
+	).toBe(true);
+	const jsonata = (ownRenovate.customManagers ?? []).find((c) => c.customType === 'jsonata');
+	expect(
+		(jsonata?.managerFilePatterns ?? []).some((p) => hits(p, 'packages/stack/canon/catalogs.json')),
+	).toBe(true);
+});
+
+test('свой renovate.json5: канон, корень и фикстуры — одна группа canon pins', () => {
+	const group = (ownRenovate.packageRules ?? []).find((r) => r.groupName === 'canon pins');
+	for (const f of [
+		'packages/stack/canon/files/prototools',
+		'packages/stack/canon/catalogs.json',
+		'.prototools',
+		'pnpm-workspace.yaml',
+		'package.json',
+		'fixtures/node/.prototools',
+		'fixtures/node/pnpm-workspace.yaml',
+		'fixtures/contracts/.prototools',
+		'fixtures/contracts/pnpm-workspace.yaml',
+		'fixtures/infra/.prototools',
+	]) {
+		expect(existsSync(join(ROOT, f))).toBe(true);
+		expect((group?.matchFileNames ?? []).some((g) => new Bun.Glob(g).match(f))).toBe(true);
+	}
+});
+
+test('свой renovate.json5: inline-версия фикстуры под исключением не трогается', () => {
+	expect(ownRenovate.ignorePaths ?? []).toContain('fixtures/node/packages/**');
+	// ignorePaths заменяет, а не дополняет config:recommended — node_modules надо вернуть явно.
+	expect(ownRenovate.ignorePaths ?? []).toContain('**/node_modules/**');
 });

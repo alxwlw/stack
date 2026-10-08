@@ -222,6 +222,17 @@ the latest `v1.x.y` for consumers pinning a major:
 }
 ```
 
+### Keeping the canon current
+
+Renovate runs on this repo too (`.github/workflows/renovate-self.yml`, Mondays 06:00 UTC, needs a
+`RENOVATE_TOKEN` secret). Unlike a consumer it does not extend the canon preset — moving the
+canon's pins is its job. One version lives in several places here: the canon
+(`packages/stack/canon/files/prototools`, `canon/catalogs.json`), this repo's own toolchain
+(`.prototools`, `pnpm-workspace.yaml`, `package.json#packageManager`) and the fixtures. Renovate
+moves all of them in a single `canon pins` PR (major bumps get their own `major-canon-pins` PR
+with the same file set), because the tests fail when they disagree. Merging it changes nothing for
+consumers until a release: tag it, and the rollout below carries the new pins out.
+
 ### Rollout to consumers
 
 A release pushes itself out. When `publish` succeeds, the canon dispatches `stack-sync.yml` in every
