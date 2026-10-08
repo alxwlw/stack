@@ -159,6 +159,26 @@ test('renovate-preset: первый конфиг в порядке поиска 
 	]);
 });
 
+// extends нет или он не массив — типичный вход при миграции с Dependabot: находка, а не TypeError.
+test('renovate-preset: конфиг без extends — находка, не исключение', () => {
+	for (const body of ['{ "packageRules": [] }\n', '{}\n']) {
+		const dir = repo({ 'renovate.json': body });
+		expect(() => checkRenovatePreset(dir)).not.toThrow();
+		const found = checkRenovatePreset(dir);
+		expect(found).toHaveLength(1);
+		expect(found[0]?.code).toBe('renovate-preset');
+		expect(found[0]?.target).toBe('renovate.json');
+	}
+});
+
+test('renovate-preset: extends строкой, даже равной пресету, — находка', () => {
+	const dir = repo({ 'renovate.json': `{ "extends": "${STACK_RENOVATE_PRESET}" }\n` });
+	const found = checkRenovatePreset(dir);
+	expect(found).toHaveLength(1);
+	expect(found[0]?.code).toBe('renovate-preset');
+	expect(found[0]?.target).toBe('renovate.json');
+});
+
 test('renovate-preset: конфига нет — находка с подсказкой про stack sync', () => {
 	const [f] = checkRenovatePreset(repo({}));
 	expect(f?.code).toBe('renovate-preset');

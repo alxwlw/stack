@@ -75,7 +75,7 @@ from that point on). Running `sync` again with nothing changed touches nothing (
 Anything held by an exception (see [Exceptions](#exceptions)) is left as it is: `sync` prints it
 as `allowed (<reason>): …` and moves on, and `check` reports the same item as allowed — `sync`
 never turns a held item into a stale exception. (`check`'s report-only rules — `engines.node`,
-the Renovate preset, a leftover Dependabot config, inline versions — are not something `sync` fixes.)
+a Renovate config without the canon preset, a leftover Dependabot config, inline versions — are not something `sync` fixes.)
 
 `sync` also keeps `package.json#packageManager` on the canon's pnpm pin whenever that field names
 pnpm (a `+sha512…` suffix on the same version is fine) — otherwise pnpm switches itself to the
@@ -142,9 +142,9 @@ floating `v1` tag, so a release updates it everywhere without a PR.
 
 `stack check` fails when the Renovate config (the first one found, in Renovate's own lookup order)
 doesn't extend the preset with exactly the `#v1` tag — no tag or `#main` would pull an unreleased
-canon — and when `.github/dependabot.yml` exists. Neither can be held back by an exception.
+canon — and when `.github/dependabot.yml` (or `.yaml`) exists. Neither can be held back by an exception.
 
-If the repo already has `.github/dependabot.yml`, move its rules into the Renovate config and delete
+If the repo already has `.github/dependabot.yml` (or `.yaml`), move its rules into the Renovate config and delete
 the file.
 
 ## Exceptions
@@ -173,7 +173,7 @@ reason covers both symptoms of the same decision.
 Not every `check` finding is suppressible this way: a `package.json#engines.node` range that the
 canon's node pin doesn't satisfy, a Renovate config whose `extends` lacks
 `github>alxwlw/stack//renovate/canon.json5#v1` (or no Renovate config at all), and a
-`.github/dependabot.yml` — these always block; there's no exception shape for any of them. `check` prints every exception it actually
+`.github/dependabot.yml` (or `.yaml`) — these always block; there's no exception shape for any of them. `check` prints every exception it actually
 suppressed as a warning, and fails on one that no longer suppresses anything — the canon moved on
 and the exception is now stale, so it gets deleted, not carried forward silently.
 

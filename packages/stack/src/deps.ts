@@ -91,7 +91,7 @@ export const RENOVATE_CONFIGS = [
 // получал бы неопубликованный канон, а пресет — тот же источник, что и rollout (плавающий v1).
 export const STACK_RENOVATE_PRESET = 'github>alxwlw/stack//renovate/canon.json5#v1';
 
-// Пресет выключает Renovate для всего, что двигает stack sync (proto, каталог dev, @alxwlw/*,
+// Пресет выключает Renovate для всего, что двигает stack sync (proto, каталоги канона dev и libs, @alxwlw/*,
 // ссылки alxwlw/stack) — без него бот и rollout перетягивают одни версии. Профиль не важен.
 export function checkRenovatePreset(repoRoot: string): Finding[] {
 	const found = RENOVATE_CONFIGS.find((p) => existsSync(join(repoRoot, p)));
@@ -127,7 +127,7 @@ export function checkRenovatePreset(repoRoot: string): Finding[] {
 const DEPENDABOT_CONFIGS = ['.github/dependabot.yml', '.github/dependabot.yaml'];
 
 // Renovate — единственный бот канона: второй бот открывал бы те же PR, а dependabot не умеет
-// выключить каталог dev или .prototools.
+// выключить каталоги канона или .prototools.
 export function checkDependabot(repoRoot: string): Finding[] {
 	return DEPENDABOT_CONFIGS.filter((p) => existsSync(join(repoRoot, p))).map((p) => ({
 		code: 'dependabot-config',
