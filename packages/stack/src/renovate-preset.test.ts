@@ -78,3 +78,21 @@ test('пресет: каждое правило только выключает 
 		for (const key of Object.keys(r)) expect(allowed.has(key)).toBe(true);
 	}
 });
+
+// '!имя' в match*-списке отменяет совпадение: includes(...) в тестах выше его пропускает, а правило
+// молча перестаёт выключать пакет.
+test('пресет: в match*-списках нет отрицаний (значений с «!»)', () => {
+	let checked = 0;
+	for (const r of rules) {
+		for (const [key, value] of Object.entries(r)) {
+			if (!key.startsWith('match')) continue;
+			expect(Array.isArray(value)).toBe(true);
+			for (const v of value as string[]) {
+				expect(v.startsWith('!')).toBe(false);
+				checked += 1;
+			}
+		}
+	}
+	// Непустой обход: иначе тест молчал бы при пустом пресете.
+	expect(checked).toBeGreaterThan(0);
+});

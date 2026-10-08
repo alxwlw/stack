@@ -148,9 +148,11 @@ test('свой renovate.json5: свои пакеты и ссылки на сте
 			(r.matchPackageNames ?? []).includes('alxwlw/stack'),
 	);
 	expect(rule).toBeDefined();
-	// match* внутри правила Renovate склеивает через И: лишний matchManagers/matchFileNames сузил бы
-	// правило, и ссылки alxwlw/stack@v1 в github-actions остались бы включёнными.
-	expect(Object.keys(rule ?? {}).filter((k) => k.startsWith('match'))).toEqual([
+	// Точный список: '!alxwlw/stack' в нём отменил бы отключение для ссылок на стек, а includes это пропустит.
+	expect(rule?.matchPackageNames).toEqual(['@alxwlw/**', 'alxwlw/stack']);
+	// match* внутри правила Renovate склеивает через И, exclude* вычитает: лишний matchManagers или
+	// excludePackageNames сузил бы правило, и ссылки alxwlw/stack@v1 в github-actions остались бы включёнными.
+	expect(Object.keys(rule ?? {}).filter((k) => /^(match|exclude)/.test(k))).toEqual([
 		'matchPackageNames',
 	]);
 });
@@ -184,6 +186,10 @@ test('свой renovate.json5: канон, корень и фикстуры — 
 		expect(existsSync(join(ROOT, f))).toBe(true);
 		expect((group?.matchFileNames ?? []).some((g) => new Bun.Glob(g).match(f))).toBe(true);
 	}
+	// Лишний match*/exclude* сузил бы группу: часть файлов ушла бы из canon pins в отдельные PR.
+	expect(Object.keys(group ?? {}).filter((k) => /^(match|exclude)/.test(k))).toEqual([
+		'matchFileNames',
+	]);
 });
 
 test('свой renovate.json5: inline-версия фикстуры под исключением не трогается', () => {
