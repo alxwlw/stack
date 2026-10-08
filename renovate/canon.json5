@@ -11,8 +11,8 @@
 			enabled: false,
 		},
 		{
-			description: 'Каталог dev, packageManager и engines принадлежат канону',
-			matchDepTypes: ['pnpm.catalog.dev', 'packageManager', 'engines'],
+			description: 'Каталоги канона (dev, libs), packageManager и engines принадлежат канону',
+			matchDepTypes: ['pnpm.catalog.dev', 'pnpm.catalog.libs', 'packageManager', 'engines'],
 			enabled: false,
 		},
 		{
