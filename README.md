@@ -138,14 +138,17 @@ The preset turns Renovate off for everything `stack sync` moves: `@alxwlw/*` pac
 `alxwlw/stack/...` workflow/action refs, the canon's catalogs (`dev`, and `libs` for repos with that
 group), `packageManager`, `engines` and the `.prototools` pins. Without it the bot and the rollout
 would fight: Renovate bumps a pin, the next `stack sync` reverts it. The preset is read from the
-floating `v1` tag, so a release updates it everywhere without a PR.
+floating `v1` tag, so a release updates it everywhere without a PR: the update arrives once the release moves
+the `v1` tag, and until then `#v1` and `@v1` still point at the previous release.
 
 `stack check` fails when the Renovate config (the first one found, in Renovate's own lookup order)
 doesn't extend the preset with exactly the `#v1` tag — no tag or `#main` would pull an unreleased
 canon — and when `.github/dependabot.yml` (or `.yaml`) exists. Neither can be held back by an exception.
 
-If the repo already has `.github/dependabot.yml` (or `.yaml`), move its rules into the Renovate config and delete
-the file.
+Upgrading an existing consumer: on the first `stack/v<version>` PR after the move to Renovate, `check` goes red
+on `renovate-preset` if the repo already has its own Renovate config without the preset (add
+`github>alxwlw/stack//renovate/canon.json5#v1` to its `extends`), and on `dependabot-config` if
+`.github/dependabot.yml` (or `.yaml`) exists (move its rules into the Renovate config and delete the file).
 
 ## Exceptions
 
