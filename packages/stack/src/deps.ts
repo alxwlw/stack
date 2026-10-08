@@ -3,7 +3,6 @@ import { join } from 'node:path';
 
 import { Glob } from 'bun';
 import JSON5 from 'json5';
-import { parse as parseYaml } from 'yaml';
 
 import type { Canon } from './canon.ts';
 import type { Finding } from './findings.ts';
@@ -71,49 +70,6 @@ export function checkEnginesNode(repoRoot: string, canon: Canon): Finding[] {
 	];
 }
 
-// Формы дальше — только то, что нужно прочитать; настоящий dependabot.yml несёт больше полей.
-interface DependabotYaml {
-	updates?: unknown;
-}
-
-function ignoresAlxwlw(doc: unknown): boolean {
-	const updates = (doc as DependabotYaml | null)?.updates;
-	if (!Array.isArray(updates)) return false;
-	return updates.some((u) => {
-		const ignore = (u as { ignore?: unknown } | null)?.ignore;
-		return (
-			Array.isArray(ignore) &&
-			ignore.some(
-				(i) => (i as { 'dependency-name'?: unknown } | null)?.['dependency-name'] === '@alxwlw/*',
-			)
-		);
-	});
-}
-
-export function checkDependabotIgnore(repoRoot: string): Finding[] {
-	if (!existsSync(join(repoRoot, 'pnpm-workspace.yaml'))) return [];
-	const path = join(repoRoot, '.github/dependabot.yml');
-	if (!existsSync(path)) return [];
-	const finding: Finding = {
-		code: 'dependabot-ignore',
-		target: '.github/dependabot.yml',
-		message: 'missing an ignore for "@alxwlw/*" — the bot will fight the canon rollout',
-	};
-	let doc: unknown;
-	try {
-		doc = parseYaml(readFileSync(path, 'utf8'));
-	} catch {
-		return [
-			{
-				code: 'unreadable-file',
-				target: '.github/dependabot.yml',
-				message: '.github/dependabot.yml does not parse as YAML',
-			},
-		];
-	}
-	return ignoresAlxwlw(doc) ? [] : [finding];
-}
-
 // Имена и порядок поиска — как у самого Renovate (renovate.json{,c,5} для каждого места; первый
 // найденный файл и есть конфиг), без устаревшего package.json#renovate. JSON5.parse читает и JSONC.
 export const RENOVATE_CONFIGS = [
@@ -131,34 +87,20 @@ export const RENOVATE_CONFIGS = [
 	'.renovaterc.jsonc',
 	'.renovaterc.json5',
 ];
-// matchPackageNames — glob'ы: для скоупа одного уровня `@alxwlw/*` и `@alxwlw/**` равносильны.
-const ALXWLW_GLOBS = new Set(['@alxwlw/**', '@alxwlw/*']);
+// Строка подключения пресета канона. Ровно с тегом мажора: без тега или с #main потребитель
+// получал бы неопубликованный канон, а пресет — тот же источник, что и rollout (плавающий v1).
+export const STACK_RENOVATE_PRESET = 'github>alxwlw/stack//renovate/canon.json5#v1';
 
-function disablesAlxwlw(doc: unknown): boolean {
-	const rules = (doc as { packageRules?: unknown } | null)?.packageRules;
-	if (!Array.isArray(rules)) return false;
-	return rules.some((r) => {
-		const rule = r as { enabled?: unknown; matchPackageNames?: unknown } | null;
-		return (
-			rule?.enabled === false &&
-			Array.isArray(rule.matchPackageNames) &&
-			rule.matchPackageNames.some((n) => typeof n === 'string' && ALXWLW_GLOBS.has(n))
-		);
-	});
-}
-
-// Группа renovate: версии @alxwlw/* двигает stack sync, бот должен их не трогать — иначе его PR
-// разводят каталог с каноном и check краснеет. Группировка (groupName) не мешает боту — нужен
-// enabled: false.
-export function checkRenovateIgnore(repoRoot: string): Finding[] {
-	if (!existsSync(join(repoRoot, 'pnpm-workspace.yaml'))) return [];
+// Пресет выключает Renovate для всего, что двигает stack sync (proto, каталог dev, @alxwlw/*,
+// ссылки alxwlw/stack) — без него бот и rollout перетягивают одни версии. Профиль не важен.
+export function checkRenovatePreset(repoRoot: string): Finding[] {
 	const found = RENOVATE_CONFIGS.find((p) => existsSync(join(repoRoot, p)));
 	if (!found) {
 		return [
 			{
-				code: 'renovate-ignore',
-				target: 'renovate.json',
-				message: `no Renovate config found (${RENOVATE_CONFIGS.join(', ')}) — the renovate group expects one that disables "@alxwlw/*"`,
+				code: 'renovate-preset',
+				target: 'renovate.json5',
+				message: `no Renovate config found — stack sync seeds renovate.json5; an own config must extend "${STACK_RENOVATE_PRESET}"`,
 			},
 		];
 	}
@@ -170,14 +112,26 @@ export function checkRenovateIgnore(repoRoot: string): Finding[] {
 			{ code: 'unreadable-file', target: found, message: `${found} does not parse as JSON5` },
 		];
 	}
-	return disablesAlxwlw(doc)
+	const ext = (doc as { extends?: unknown } | null)?.extends;
+	return Array.isArray(ext) && ext.includes(STACK_RENOVATE_PRESET)
 		? []
 		: [
 				{
-					code: 'renovate-ignore',
+					code: 'renovate-preset',
 					target: found,
-					message:
-						'no packageRules entry with matchPackageNames "@alxwlw/**" and enabled: false — the bot will fight the canon rollout',
+					message: `"extends" must include "${STACK_RENOVATE_PRESET}" — without the canon preset the bot fights stack sync`,
 				},
 			];
+}
+
+const DEPENDABOT_CONFIGS = ['.github/dependabot.yml', '.github/dependabot.yaml'];
+
+// Renovate — единственный бот канона: второй бот открывал бы те же PR, а dependabot не умеет
+// выключить каталог dev или .prototools.
+export function checkDependabot(repoRoot: string): Finding[] {
+	return DEPENDABOT_CONFIGS.filter((p) => existsSync(join(repoRoot, p))).map((p) => ({
+		code: 'dependabot-config',
+		target: p,
+		message: `${p}: the canon's dependency bot is Renovate — move these rules into the Renovate config and delete the file`,
+	}));
 }

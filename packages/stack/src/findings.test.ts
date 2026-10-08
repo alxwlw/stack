@@ -38,7 +38,7 @@ const inlineZod = finding({
 	target: 'packages/app/package.json:zod',
 	address: { name: 'zod' },
 });
-const dependabot = finding({ code: 'dependabot-ignore', target: '.github/dependabot.yml' });
+const dependabot = finding({ code: 'dependabot-config', target: '.github/dependabot.yml' });
 const engines = finding({ code: 'engines-node', target: 'package.json:engines.node' });
 const unreadable = finding({ code: 'unreadable-file', target: 'packages/app/package.json' });
 
@@ -65,7 +65,7 @@ const table: [string, Finding, Exception, boolean][] = [
 	['catalog+name не гасит inline-version другого пакета', inlineZod, onLibsReact, false],
 	['catalog+name не гасит файл', drift, onLibsReact, false],
 	[
-		'dependabot-ignore без адреса не гасится даже при совпадении target с file',
+		'dependabot-config без адреса не гасится даже при совпадении target с file',
 		dependabot,
 		{ file: '.github/dependabot.yml', reason: 'r' },
 		false,

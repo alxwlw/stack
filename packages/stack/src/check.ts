@@ -2,10 +2,10 @@ import type { Canon } from './canon.ts';
 import { planCatalogs } from './catalogs.ts';
 import type { Exception } from './config.ts';
 import {
-	checkDependabotIgnore,
+	checkDependabot,
 	checkEnginesNode,
 	checkInlineVersions,
-	checkRenovateIgnore,
+	checkRenovatePreset,
 } from './deps.ts';
 import { planFiles } from './files.ts';
 import { applyExceptions, covers, type Drift, type Finding } from './findings.ts';
@@ -48,8 +48,8 @@ export function checkRepo(repoRoot: string, canon: Canon, exceptions: Exception[
 			...planRepo(repoRoot, canon),
 			...checkInlineVersions(repoRoot, canon),
 			...checkEnginesNode(repoRoot, canon),
-			...checkDependabotIgnore(repoRoot),
-			...(canon.bot === 'renovate' ? checkRenovateIgnore(repoRoot) : []),
+			...checkRenovatePreset(repoRoot),
+			...checkDependabot(repoRoot),
 		],
 		exceptions,
 	);

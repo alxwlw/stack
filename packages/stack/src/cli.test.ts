@@ -135,9 +135,8 @@ test('sync с исключением на файл: файл не тронут, 
 	expect((await run(['check'], dir)).code).toBe(0);
 });
 
-// dependabot.yml без ignore @alxwlw/* — находка dependabot-ignore: её правят руками, sync не трогает
-// уже засеянный (create-if-absent) файл.
-const DEPENDABOT_NO_IGNORE =
+// dependabot.yml в репо — находка dependabot-config: её правят руками (перенос в Renovate), sync файл не трогает.
+const DEPENDABOT_CONFIG =
 	"version: 2\nupdates:\n  - package-ecosystem: 'npm'\n    directory: '/'\n    schedule:\n      interval: 'weekly'\n";
 
 async function syncedRepo(): Promise<string> {
@@ -145,14 +144,14 @@ async function syncedRepo(): Promise<string> {
 	await run(['init', '--profile', 'node'], dir);
 	await run(['sync'], dir);
 	mkdirSync(join(dir, '.github'), { recursive: true });
-	writeFileSync(join(dir, '.github/dependabot.yml'), DEPENDABOT_NO_IGNORE);
+	writeFileSync(join(dir, '.github/dependabot.yml'), DEPENDABOT_CONFIG);
 	return dir;
 }
 
 test('check: находка, которую sync не чинит, — без совета stack sync', async () => {
 	const r = await run(['check'], await syncedRepo());
 	expect(r.code).toBe(1);
-	expect(r.err).toContain('dependabot-ignore');
+	expect(r.err).toContain('dependabot-config');
 	expect(r.err).not.toContain('Fix with: stack sync');
 	expect(r.err).toContain('1 finding(s). stack sync does not fix these — fix them by hand');
 });
@@ -183,7 +182,25 @@ test('check: подавленная находка не входит в числ
 test('check: всё чинит sync — подсказка прежняя', async () => {
 	const dir = emptyRepo();
 	await run(['init', '--profile', 'node'], dir);
+	await run(['sync'], dir);
+	rmSync(join(dir, '.editorconfig'));
 	const r = await run(['check'], dir);
 	expect(r.code).toBe(1);
 	expect(r.err).toMatch(/\n\d+ finding\(s\)\. Fix with: stack sync\n/);
+});
+
+// Группа renovate устарела и ничего не включает: репо с ней и без конфига Renovate получает засев
+// от sync, и check после этого чист — прежнее правило про ignore краснело на засеянном пресете.
+test('with renovate без конфига Renovate: sync засевает renovate.json5, check — код 0 без находок', async () => {
+	const dir = emptyRepo();
+	expect((await run(['init', '--profile', 'node', '--with', 'renovate'], dir)).code).toBe(0);
+	expect(existsSync(join(dir, 'renovate.json5'))).toBe(false);
+	const synced = await run(['sync'], dir);
+	expect(synced.code).toBe(0);
+	expect(readFileSync(join(dir, 'renovate.json5'), 'utf8')).toContain(
+		'github>alxwlw/stack//renovate/canon.json5#v1',
+	);
+	const checked = await run(['check'], dir);
+	expect(checked.err).not.toContain('renovate');
+	expect(checked.code).toBe(0);
 });

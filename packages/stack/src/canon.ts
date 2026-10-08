@@ -26,8 +26,6 @@ export interface Canon {
 	catalogs: CanonCatalogs;
 	nodePin: string;
 	pnpmPin: string;
-	/** Бот зависимостей репо. renovate добавляет правило renovate-ignore (конфиг Renovate должен отключать `@alxwlw/*`); dependabot-ignore по-прежнему проверяет .github/dependabot.yml, если файл есть. */
-	bot?: 'dependabot' | 'renovate';
 }
 
 export function canonDir(): string {
@@ -79,6 +77,5 @@ export function loadCanon(cfg: StackConfig, dir: string = canonDir()): Canon {
 		catalogs,
 		nodePin: pin[1],
 		pnpmPin: pnpm[1],
-		bot: cfg.with.includes('renovate') ? 'renovate' : 'dependabot',
 	};
 }

@@ -204,11 +204,6 @@ test('канон Renovate: засев конфига подключает пре
 	expect(seed).toContain("'config:recommended'");
 });
 
-test('loadCanon: bot — renovate с группой, dependabot без неё', () => {
-	expect(loadCanon({ profile: 'node', with: ['renovate'], exceptions: [] }).bot).toBe('renovate');
-	expect(loadCanon({ profile: 'node', with: [], exceptions: [] }).bot).toBe('dependabot');
-});
-
 // `init` пишет `$schema` в .stack.jsonc, редактор валидирует против него: enum групп в schema.json
 // должен покрывать все group из манифеста, каталоги кроме dev и устаревшие группы.
 test('schema.json: enum групп with = группы манифеста ∪ каталоги (кроме dev) ∪ устаревшие', () => {
