@@ -1,5 +1,5 @@
 // Renovate самого alxwlw/stack: свои зависимости и пины канона. Пресет канона здесь не подключён —
-// он выключает ровно то, что этот репо двигает. PR «canon pins» → merge → тег → publish → rollout.
+// он выключает ровно то, что этот репо двигает. Обновления пинов → merge → тег → publish → rollout.
 {
 	$schema: 'https://docs.renovatebot.com/renovate-schema.json',
 	extends: ['config:recommended'],
@@ -28,7 +28,7 @@
 			enabled: false,
 		},
 		{
-			description: 'Одна версия — в каноне, корне и фикстурах; dogfood/selftest требуют совпадения, поэтому один PR',
+			description: 'Одна группа на класс обновления: minor/patch и major идут отдельными ветками, каждая сдвигает зависимость во всех местах сразу — dogfood/selftest требуют, чтобы канон, корень и фикстуры совпадали',
 			groupName: 'canon pins',
 			matchFileNames: [
 				'packages/stack/canon/files/prototools',

@@ -136,7 +136,18 @@ function hits(pattern: string, file: string): boolean {
 }
 
 test('свой renovate.json5: без пресета канона', () => {
-	expect(ownRenovate.extends ?? []).not.toContain('github>alxwlw/stack//renovate/canon.json5#v1');
+	// Любая ссылка на репо стека в extends (с тегом или без) — это пресет канона.
+	expect((ownRenovate.extends ?? []).some((e) => e.includes('alxwlw/stack'))).toBe(false);
+});
+
+test('свой renovate.json5: свои пакеты и ссылки на стек выключены одним правилом', () => {
+	const rule = (ownRenovate.packageRules ?? []).find(
+		(r) =>
+			r.enabled === false &&
+			(r.matchPackageNames ?? []).includes('@alxwlw/**') &&
+			(r.matchPackageNames ?? []).includes('alxwlw/stack'),
+	);
+	expect(rule).toBeDefined();
 });
 
 test('свой renovate.json5: proto видит канон-prototools, jsonata — catalogs.json', () => {
