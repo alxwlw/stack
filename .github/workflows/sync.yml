@@ -40,6 +40,10 @@ jobs:
       - env:
           VERSION: ${{ inputs.version }}
         run: bunx "@alxwlw/stack@$VERSION" sync
+      # sync мог поднять пины в .prototools: setup ставил тулчейн по старым, а шим proto
+      # отказывается запускать pnpm, пока новая версия не установлена (missing_tool).
+      - if: inputs.install
+        run: proto install
       - if: inputs.install
         run: pnpm install --no-frozen-lockfile
       - name: проверить, есть ли изменения
