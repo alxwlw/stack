@@ -10,6 +10,10 @@ on:
         description: 'запускать ли pnpm install после sync (false для приватных реестров)'
         type: boolean
         default: true
+      base:
+        description: базовая ветка PR (пусто — ветка по умолчанию репозитория)
+        type: string
+        default: ''
     secrets:
       app-id:
         description: ID GitHub App, от имени которого коммитится и открывается PR
@@ -34,6 +38,7 @@ jobs:
       - uses: actions/checkout@v5
         with:
           token: ${{ steps.app-token.outputs.token }}
+          ref: ${{ inputs.base }}
       - uses: alxwlw/stack/.github/actions/setup@v1
         with:
           install: false
@@ -86,6 +91,7 @@ jobs:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           VERSION: ${{ inputs.version }}
           CHANGED_FILES: ${{ steps.diff.outputs.files }}
+          BASE: ${{ inputs.base }}
         run: |
           {
             echo "Канон \`@alxwlw/stack@${VERSION}\` применён к репозиторию."
@@ -101,7 +107,8 @@ jobs:
             gh pr create \
               --title "chore(stack): канон ${VERSION}" \
               --body-file "$RUNNER_TEMP/stack-sync-pr-body.md" \
-              --head "stack/v${VERSION}"
+              --head "stack/v${VERSION}" \
+              ${BASE:+--base "$BASE"}
           else
             echo "PR для stack/v${VERSION} уже открыт, ветка обновлена force-push"
           fi

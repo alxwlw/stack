@@ -109,6 +109,28 @@ test('канон-файл workflow-renovate.yml зовёт корневой reus
 	expect(job?.secrets?.token).toBe('${{ secrets.RENOVATE_TOKEN }}');
 });
 
+// Канон-файл stack-sync.yml зовёт reusable sync.yml: каждый ключ with должен быть объявленным input,
+// иначе rollout у потребителя падает до первого шага.
+test('канон-файл workflow-stack-sync.yml передаёт reusable sync.yml только объявленные inputs, включая base', () => {
+	type Workflow = {
+		on?: { workflow_call?: { inputs?: Record<string, unknown> } };
+		jobs?: Record<string, { uses?: string; with?: Record<string, unknown> }>;
+	};
+	const reusable = parseYaml(
+		readFileSync(join(ROOT, '.github', 'workflows', 'sync.yml'), 'utf8'),
+	) as Workflow;
+	const consumer = parseYaml(
+		readFileSync(join(canonDir(), 'files', 'workflow-stack-sync.yml'), 'utf8'),
+	) as Workflow;
+	const job = consumer.jobs?.sync;
+	expect(job?.uses).toBe('alxwlw/stack/.github/workflows/sync.yml@v1');
+	const inputs = Object.keys(reusable.on?.workflow_call?.inputs ?? {});
+	const passed = Object.keys(job?.with ?? {});
+	expect(passed).toContain('base');
+	for (const k of passed) expect(inputs).toContain(k);
+	expect(job?.with?.base).toBe("${{ vars.STACK_SYNC_BASE || '' }}");
+});
+
 // Renovate самого стека двигает пины канона. Пресет канона он подключать не должен: тот выключает
 // proto и каталог dev — ровно то, что здесь нужно поднимать.
 const ownRenovate = JSON5.parse(readFileSync(join(ROOT, 'renovate.json5'), 'utf8')) as {
