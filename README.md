@@ -255,6 +255,13 @@ A repository joins the list after its first sync lands: the dispatch target
 (`.github/workflows/stack-sync.yml`) is itself a canon file, so the first adoption is a PR you open
 yourself with `stack init` and `stack sync`.
 
+The consumer list is the `STACK_CONSUMERS` secret of this repository (`owner/repo`, one per line).
+A consumer tunes its sync with two repository variables: `STACK_SYNC_BASE` opens the PR against that
+branch instead of the default one (for a repo whose default branch only takes merges from another),
+and `STACK_SYNC_INSTALL=false` skips `pnpm install` for a repo without a `package.json`. After
+`stack sync` the workflow runs `proto install`, so pins the sync just raised are installed before
+`pnpm install`.
+
 ## License
 
 MIT — see each package's own `LICENSE`. `@alxwlw/oxlint-config` additionally ships a `NOTICE` for one
