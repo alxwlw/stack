@@ -7,3 +7,8 @@ published here under this repository's MIT licence with the author's consent.
 rules/require-nest-di-decorator.js was, upstream, kept byte-identical to a
 sibling ESLint rule by a lockstep test that does NOT travel with this copy.
 The two will drift; this copy is authoritative here.
+
+rules/vendor/simple-import-sort/ is eslint-plugin-simple-import-sort 14.0.0
+(https://github.com/lydell/eslint-plugin-simple-import-sort, MIT, see LICENSE there),
+copied verbatim except that require() paths carry the .cjs extension. Vendored so the
+package's `eslint` peer dependency does not reach consumers. Upgrade by re-copying.

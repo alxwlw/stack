@@ -7,6 +7,7 @@
  * Run: `bun test packages/oxlint-config` (or `moon run oxlint-config:test`).
  */
 import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { expect, test } from 'bun:test';
@@ -161,4 +162,14 @@ test('consumer-style extends from another directory resolves presets + jsPlugins
 	expect(hits.filter((d) => d.code === 'stack(naming-convention)').length).toBeGreaterThanOrEqual(
 		3,
 	);
+});
+
+test('oxlint-config не тянет eslint: ни зависимости, ни peer через зависимость', () => {
+	const pkg = JSON.parse(readFileSync(join(PKG, 'package.json'), 'utf8')) as {
+		dependencies?: Record<string, string>;
+	};
+	expect(Object.keys(pkg.dependencies ?? {}).filter((n) => n.includes('eslint'))).toEqual([]);
+	// Lockfile воркспейса — тот же резолв, что получит потребитель: ключей eslint@ нет.
+	const lock = readFileSync(join(PKG, '..', '..', 'pnpm-lock.yaml'), 'utf8');
+	expect(lock).not.toMatch(/^ {2}eslint@/m);
 });

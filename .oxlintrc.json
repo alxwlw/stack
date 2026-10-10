@@ -2,5 +2,5 @@
 	"$schema": "./node_modules/oxlint/configuration_schema.json",
 	"extends": ["./packages/oxlint-config/node.jsonc", "./packages/oxlint-config/library.jsonc"],
 	"options": { "typeAware": true },
-	"ignorePatterns": ["packages/oxlint-config/fixtures/**"]
+	"ignorePatterns": ["packages/oxlint-config/fixtures/**", "packages/oxlint-config/rules/vendor/**"]
 }
