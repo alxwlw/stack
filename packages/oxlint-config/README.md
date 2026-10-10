@@ -7,13 +7,13 @@ the repo's `typescript` version is irrelevant to linting).
 
 ## Presets
 
-| Preset  | Extends | Adds                                                                                    |
-| ------- | ------- | --------------------------------------------------------------------------------------- |
-| `base`  | —       | correctness category, full type-aware set (tsgolint), tsdoc, simple-import-sort         |
-| `node`  | `base`  | `stack/naming-convention` (canon selector set)                                          |
-| `nest`  | `node`  | `stack/require-nest-di-decorator`; `typescript/require-await` off (Nest guard contract) |
-| `react` | `base`  | react-hooks classic pair + eslint-plugin-react recommended + jsx-a11y recommended ports |
-| `next`  | `react` | oxlint `nextjs` plugin                                                                  |
+| Preset  | Extends | Adds                                                                                                                                                |
+| ------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `base`  | —       | correctness category, full type-aware set (tsgolint), tsdoc, simple-import-sort                                                                     |
+| `node`  | `base`  | `stack/naming-convention` (canon selector set)                                                                                                      |
+| `nest`  | `node`  | `stack/require-nest-di-decorator`; `typescript/require-await` off (Nest guard contract); `typescript/consistent-type-imports` off (DI-safe imports) |
+| `react` | `base`  | react-hooks classic pair + eslint-plugin-react recommended + jsx-a11y recommended ports                                                             |
+| `next`  | `react` | oxlint `nextjs` plugin                                                                                                                              |
 
 `base` deliberately carries a curated strict subset beyond
 typescript-eslint's `recommendedTypeChecked` defaults, proven at error level
@@ -60,11 +60,14 @@ subtree (a nested config REPLACES the root one for that subtree, which is why
   `disableTypeChecked` for the universal globs — extend that override in the
   consuming repo for repo-specific out-of-program trees (`scripts/`, `e2e/`,
   bundler-frontend subdirs).
-- **`import type` conversions can break NestJS DI**: `consistent-type-imports`
-  flags DI-load-bearing class imports on ctor params that lack an explicit
-  `@Inject` (SWC/Bun-class transpilers elide type-only imports →
-  `design:paramtypes` degrades to `Object`). Fix the param with an explicit
-  `@Inject(Class)` (this canon's convention), never with a lint disable.
+- **`import type` conversions can break NestJS DI**: `nest.jsonc` turns off
+  `typescript/consistent-type-imports` — oxlint does not model
+  `emitDecoratorMetadata`, and the rule's autofix used to convert the import of
+  a class injected by ctor-param type into `import type` (Nest DI then fails at
+  startup while tsc and lint stay green). A Nest consumer no longer needs its
+  own override; an `import type` of an injected class in Nest code is an error
+  only a startup catches. An explicit `@Inject(Class)` (this canon's
+  convention) remains an optional way to make the dependency explicit.
 
 ## The `stack` JS plugin
 

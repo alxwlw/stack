@@ -51,6 +51,14 @@ test('nest preset flags the defaulted ctor param without @Optional', () => {
 	expect(di[0]?.message).toContain('BadService');
 });
 
+test('пресет nest не переводит внедряемые по типу классы в import type', () => {
+	const file = join(FIXTURES, 'nest-type-import.ts');
+	const isCti = (d: Diagnostic): boolean => d.code.includes('consistent-type-imports');
+	// Контроль: правило живо в node — иначе тест ниже ничего не доказывает.
+	expect(run('node.jsonc', [file]).filter(isCti)).toHaveLength(1);
+	expect(run('nest.jsonc', [file]).filter(isCti)).toHaveLength(0);
+});
+
 test('node preset enforces the canon naming convention (case-transform parity)', () => {
 	const hits = run('node.jsonc', [join(FIXTURES, 'naming.ts')]);
 	const naming = hits.filter((d) => d.code === 'stack(naming-convention)');
