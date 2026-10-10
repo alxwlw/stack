@@ -50,7 +50,7 @@ usable on its own — the `stack` plugin comes from the preset):
 }
 ```
 
-Declare your own TSDoc tags in `tsdoc.json` instead of switching the rule off.
+Declare your own TSDoc tags in `tsdoc.json` instead of switching the rule off; the file needs the standard `"$schema": "https://developer.microsoft.com/json-schemas/tsdoc/v0/tsdoc.schema.json"` (without it tsdoc-config reports `Unsupported JSON "$schema" value`).
 The overlay goes after the preset on purpose: it does not extend `base`, so it cannot
 switch back on what `nest` or `react` turned off.
 
@@ -65,21 +65,21 @@ subtree (a nested config REPLACES the root one for that subtree, which is why
   type-aware rule is SILENTLY skipped — no error, no warning. Keep the flag in
   the repo's lint task; `oxlint-tsgolint` must be installed (optional peer).
 - **Build `.d.ts` before type-aware lint** in project-reference monorepos
-  (`tsc --build` first): unresolved imports produce `error`-typed values that
+  (`tsc --build` first; the canon moon-tasks `lint` has no typecheck dependency, so this applies to project-reference repos): unresolved imports produce `error`-typed values that
   fire the `no-unsafe-*` rules as phantoms.
 - **Top-level `plugins` REPLACES the inherited set** — a consumer overriding
   `plugins` must restate the full list (see `react.jsonc` for the pattern).
 - **Never run `--fix-suggestions` in automation**: tsgolint's `require-await`
   "suggestion" rewrites public signatures (`Promise<T>` → `T`). Plain `--fix`
-  is safe; the `consistent-type-imports` × `import/no-duplicates` fixers can
+  is safe; outside `nest` (which turns `consistent-type-imports` off), the
+  `consistent-type-imports` × `import/no-duplicates` fixers can
   collide on one import pair — a second `--fix` pass converges.
-- **Out-of-program files** (tests, tool config files (an explicit list:
-  vite/vitest/playwright/…; production `src/**/*.config.ts` stays type-checked),
-  plain JS) are linted under an
+- **Out-of-program files** (tests, tool config files, plain JS) are linted under an
   inferred strict program by tsgolint; `base.jsonc` mirrors tseslint's
   `disableTypeChecked` for the universal globs — extend that override in the
   consuming repo for repo-specific out-of-program trees (`scripts/`, `e2e/`,
-  bundler-frontend subdirs).
+  bundler-frontend subdirs). Tool config files are an explicit list
+  (vite/vitest/playwright/…); production `src/**/*.config.ts` stays type-checked.
 - **`import type` conversions can break NestJS DI**: `nest.jsonc` turns off
   `typescript/consistent-type-imports` — oxlint does not model
   `emitDecoratorMetadata`, and the rule's autofix used to convert the import of

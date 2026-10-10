@@ -3,6 +3,9 @@ $schema: 'https://moonrepo.dev/schemas/tasks.json'
 # Canon file — sync-managed (group moon-tasks): edits happen in alxwlw/stack, not here.
 # Bun is the runtime; pnpm only manages dependencies. A project overriding a task's args
 # sets options.mergeArgs: 'replace' — moon 2.x APPENDS inherited args otherwise.
+# typecheck runs `tsc --noEmit`: projects with `references` (the @alxwlw/tsconfig refs/nest presets)
+# need their references built first — override args with `tsc --build` (mergeArgs: 'replace') or
+# hand-roll the task.
 
 fileGroups:
   sources:

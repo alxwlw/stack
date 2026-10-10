@@ -133,7 +133,7 @@
 				"**/*.spec.tsx",
 				// Tool config files, not production code: `src/**/*.config.ts` (app config modules)
 				// stays under the type-aware rules. A tool missing here — add it in your own override.
-				"**/{vite,vitest,playwright,next,tailwind,postcss,eslint,drizzle,tsup,tsdown,rollup,rolldown,webpack,jest,knip,astro,svelte,nuxt,commitlint,prettier,oxlint,cypress,storybook}.config.{ts,mts,cts}",
+				"**/{vite,vitest,playwright,next,tailwind,postcss,eslint,drizzle,tsup,tsdown,rollup,rolldown,webpack,jest,knip,astro,svelte,nuxt,commitlint,prettier,oxlint,cypress,storybook,hardhat}.config.{ts,mts,cts}",
 				"**/*.js",
 				"**/*.mjs",
 				"**/*.cjs",

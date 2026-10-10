@@ -75,7 +75,7 @@ test('reusable check.yml: вход gitleaks выключен по умолчан
 	const scan = steps.find((s) => s.run?.includes('gitleaks git'));
 	expect(scan?.if).toBe('inputs.gitleaks');
 	const checkout = steps.find((s) => s.uses?.startsWith('actions/checkout@'));
-	expect(String(checkout?.with?.['fetch-depth'])).toContain('inputs.gitleaks');
+	expect(checkout?.with?.['fetch-depth']).toBe("${{ inputs.gitleaks && '0' || '1' }}");
 });
 
 // Reusable workflow, который зовёт канон-файл .github/workflows/renovate.yml потребителя.

@@ -11,7 +11,7 @@ on:
         type: string
         default: latest
       gitleaks:
-        description: сканировать всю историю gitleaks (конфиг .gitleaks.toml → канон → default)
+        description: сканировать всю историю gitleaks (конфиг .gitleaks.toml, посеянный `stack sync` → канон → default)
         type: boolean
         default: false
 jobs:
