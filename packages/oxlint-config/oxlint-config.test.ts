@@ -144,7 +144,9 @@ test('type-aware правила молчат в конфигах инструм�
 		run('base.jsonc', [join(FIXTURES, file)], ['--type-aware']).filter(
 			(d) => d.code === 'typescript(no-floating-promises)',
 		).length;
-	expect(floating('vite.config.ts')).toBe(0);
+	for (const ext of ['ts', 'mts', 'cts']) {
+		expect(floating(`vite.config.${ext}`), ext).toBe(0);
+	}
 	expect(floating(join('src', 'app.config.ts'))).toBe(1);
 });
 
