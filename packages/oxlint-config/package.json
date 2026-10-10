@@ -27,7 +27,7 @@
 		"provenance": true
 	},
 	"dependencies": {
-		"@microsoft/tsdoc": "^0.17.0",
+		"@microsoft/tsdoc": "0.17.1",
 		"@microsoft/tsdoc-config": "^0.18.3"
 	},
 	"devDependencies": {

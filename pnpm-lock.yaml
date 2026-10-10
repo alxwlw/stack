@@ -51,7 +51,7 @@ importers:
   packages/oxlint-config:
     dependencies:
       '@microsoft/tsdoc':
-        specifier: ^0.17.0
+        specifier: 0.17.1
         version: 0.17.1
       '@microsoft/tsdoc-config':
         specifier: ^0.18.3
