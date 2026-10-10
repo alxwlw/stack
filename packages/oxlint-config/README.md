@@ -7,13 +7,14 @@ the repo's `typescript` version is irrelevant to linting).
 
 ## Presets
 
-| Preset  | Extends | Adds                                                                                                                                                |
-| ------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `base`  | —       | correctness category, full type-aware set (tsgolint), tsdoc, simple-import-sort                                                                     |
-| `node`  | `base`  | `stack/naming-convention` (canon selector set)                                                                                                      |
-| `nest`  | `node`  | `stack/require-nest-di-decorator`; `typescript/require-await` off (Nest guard contract); `typescript/consistent-type-imports` off (DI-safe imports) |
-| `react` | `base`  | react-hooks classic pair + eslint-plugin-react recommended + jsx-a11y recommended ports                                                             |
-| `next`  | `react` | oxlint `nextjs` plugin                                                                                                                              |
+| Preset    | Extends     | Adds                                                                                                                                                |
+| --------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `base`    | —           | correctness category, full type-aware set (tsgolint), simple-import-sort                                                                            |
+| `node`    | `base`      | `stack/naming-convention` (canon selector set)                                                                                                      |
+| `nest`    | `node`      | `stack/require-nest-di-decorator`; `typescript/require-await` off (Nest guard contract); `typescript/consistent-type-imports` off (DI-safe imports) |
+| `react`   | `base`      | react-hooks classic pair + eslint-plugin-react recommended + jsx-a11y recommended ports                                                             |
+| `next`    | `react`     | oxlint `nextjs` plugin                                                                                                                              |
+| `library` | — (overlay) | `stack/tsdoc-syntax` for TS/TSX; reads the nearest `tsdoc.json`                                                                                     |
 
 `base` deliberately carries a curated strict subset beyond
 typescript-eslint's `recommendedTypeChecked` defaults, proven at error level
@@ -35,6 +36,23 @@ architecture/cycle engine (`import/no-cycle` stays off).
 ```bash
 oxlint --type-aware --report-unused-disable-directives --config .oxlintrc.json .
 ```
+
+Packages that publish an API layer the `library` overlay after their preset (not
+usable on its own — the `stack` plugin comes from the preset):
+
+```jsonc
+// .oxlintrc.json of the publishing package
+{
+	"extends": [
+		"./node_modules/@alxwlw/oxlint-config/node.jsonc",
+		"./node_modules/@alxwlw/oxlint-config/library.jsonc",
+	],
+}
+```
+
+Declare your own TSDoc tags in `tsdoc.json` instead of switching the rule off.
+The overlay goes after the preset on purpose: it does not extend `base`, so it cannot
+switch back on what `nest` or `react` turned off.
 
 For browser code in a mixed repo, drop a nested `.oxlintrc.json` extending
 `react.jsonc` into the frontend root — oxlint auto-discovers nested configs per
@@ -81,6 +99,7 @@ task does):
 - `stack/naming-convention` — port of the canon naming selector set; option
   `{ "leadingUnderscore": "none" | "allow" | "allowSingleOrDouble" }` for
   repos with a `_`-prefix private-by-convention marker.
-- `stack/tsdoc-syntax` — `@microsoft/tsdoc`-backed TSDoc validation
+- `stack/tsdoc-syntax` — enabled by the `library` overlay; reads the nearest
+  `tsdoc.json` (like eslint-plugin-tsdoc). `@microsoft/tsdoc`-backed TSDoc validation
   (eslint-plugin-tsdoc ≥0.5 requires the `eslint` package at load time, which
   oxlint consumers no longer install).

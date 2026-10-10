@@ -120,14 +120,6 @@
 			},
 		},
 		{
-			// tsdoc applies to TS/TSX only (JS/CJS config files legitimately use
-			// JSDoc `@type` casts) — same scope as the canon eslint preset.
-			"files": ["**/*.ts", "**/*.tsx"],
-			"rules": {
-				"stack/tsdoc-syntax": "error",
-			},
-		},
-		{
 			// Mirror of tseslint's disableTypeChecked layer: tests / spec / config
 			// files / plain JS sit outside the tsc programs — tsgolint would check
 			// them under an inferred default program, producing noise the canon

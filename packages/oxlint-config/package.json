@@ -19,6 +19,7 @@
 		"./nest.jsonc": "./nest.jsonc",
 		"./react.jsonc": "./react.jsonc",
 		"./next.jsonc": "./next.jsonc",
+		"./library.jsonc": "./library.jsonc",
 		"./plugin": "./rules/oxlint-plugin.mjs"
 	},
 	"publishConfig": {
@@ -27,6 +28,7 @@
 	},
 	"dependencies": {
 		"@microsoft/tsdoc": "^0.17.0",
+		"@microsoft/tsdoc-config": "^0.18.3",
 		"eslint-plugin-simple-import-sort": "^14.0.0"
 	},
 	"devDependencies": {

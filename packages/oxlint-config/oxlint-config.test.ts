@@ -79,12 +79,32 @@ test('base preset spares require() in .cjs shims', () => {
 	expect(hits.filter((d) => d.code.includes('no-require-imports'))).toHaveLength(0);
 });
 
-test('base preset validates TSDoc via stack/tsdoc-syntax', () => {
+test('base больше не проверяет TSDoc — правило живёт в оверлее library', () => {
 	const hits = run('base.jsonc', [join(FIXTURES, 'tsdoc.ts')]);
-	const tsdoc = hits.filter((d) => d.code === 'stack(tsdoc-syntax)');
-	const messages = tsdoc.map((h) => h.message);
+	expect(hits.filter((d) => d.code === 'stack(tsdoc-syntax)')).toEqual([]);
+});
+
+const LIBRARY = join('fixtures', 'consumer', '.oxlintrc.library.jsonc');
+
+test('оверлей library поверх пресета проверяет TSDoc', () => {
+	const hits = run(LIBRARY, [join(FIXTURES, 'tsdoc.ts')]);
+	const messages = hits.filter((d) => d.code === 'stack(tsdoc-syntax)').map((h) => h.message);
 	expect(messages.some((m) => m.includes('tsdoc-param-tag-with-invalid-type'))).toBe(true);
 	expect(messages.some((m) => m.includes('tsdoc-undefined-tag'))).toBe(true);
+});
+
+test('tsdoc-syntax берёт теги из ближайшего tsdoc.json', () => {
+	const hits = run(LIBRARY, [join(FIXTURES, 'tsdoc-config', 'custom-tag.ts')]);
+	const messages = hits.filter((d) => d.code === 'stack(tsdoc-syntax)').map((d) => d.message);
+	expect(messages.filter((m) => m.includes('@lintignore'))).toEqual([]);
+	expect(messages.filter((m) => m.includes('tsdoc-undefined-tag'))).toHaveLength(1);
+});
+
+test('tsdoc-syntax: битый tsdoc.json — одна диагностика, oxlint не падает', () => {
+	const hits = run(LIBRARY, [join(FIXTURES, 'tsdoc-config-broken', 'any.ts')]);
+	const tsdoc = hits.filter((d) => d.code === 'stack(tsdoc-syntax)');
+	expect(tsdoc).toHaveLength(1);
+	expect(tsdoc[0]?.message).toContain('tsdoc.json');
 });
 
 test('base preset sorts imports via the simple-import-sort jsPlugin shim', () => {

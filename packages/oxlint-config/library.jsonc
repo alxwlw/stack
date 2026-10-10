@@ -1,0 +1,16 @@
+{
+	// @alxwlw/oxlint-config — library overlay: TSDoc validation for packages that publish an API.
+	// Layer it AFTER your preset: "extends": ["…/node.jsonc", "…/library.jsonc"] (or in a nested
+	// .oxlintrc.json of the publishing package). It does not extend base on purpose: re-applying base
+	// after nest/react would switch their overrides back on. Not usable on its own: the `stack` plugin
+	// comes from the preset it is layered over.
+	"overrides": [
+		{
+			// TS/TSX only: JS/CJS config files legitimately use JSDoc `@type` casts.
+			"files": ["**/*.ts", "**/*.tsx"],
+			"rules": {
+				"stack/tsdoc-syntax": "error",
+			},
+		},
+	],
+}
