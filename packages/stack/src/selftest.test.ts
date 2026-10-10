@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -118,4 +118,23 @@ test('свой .markdownlintignore с другим содержимым — не
 	const cfg = readStackConfig(dir);
 	writeFileSync(join(dir, '.markdownlintignore'), '# свои игноры репозитория\nvendor\n');
 	expect(planRepo(dir, loadCanon(cfg))).toEqual([]);
+});
+
+test('node: moon-tasks — свежий репо получает файлы задач, правка файла задач — дрейф, stack.yml — нет', () => {
+	const dir = copyFixture('node');
+	const cfg = readStackConfig(dir);
+	rmSync(join(dir, '.moon', 'tasks'), { recursive: true });
+	sync(dir, cfg);
+	for (const name of ['typescript', 'oxlint', 'oxfmt', 'bun-test', 'stack']) {
+		expect(existsSync(join(dir, '.moon', 'tasks', `${name}.yml`))).toBe(true);
+	}
+	expect(planRepo(dir, loadCanon(cfg))).toEqual([]);
+	// stack.yml — засев: правка потребителя не дрейф.
+	writeFileSync(join(dir, '.moon', 'tasks', 'stack.yml'), 'tasks: {}\n');
+	expect(planRepo(dir, loadCanon(cfg))).toEqual([]);
+	// Файл задач — verbatim: правка — дрейф, который sync вернёт.
+	writeFileSync(join(dir, '.moon', 'tasks', 'oxlint.yml'), 'tasks: {}\n');
+	expect(planRepo(dir, loadCanon(cfg)).map((d) => [d.code, d.target])).toEqual([
+		['file-drift', '.moon/tasks/oxlint.yml'],
+	]);
 });

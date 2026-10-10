@@ -226,3 +226,32 @@ test('schema.json: enum групп with = группы манифеста ∪ к
 	expect(schemaEnum).toBeDefined();
 	expect((schemaEnum ?? []).sort()).toEqual(expectedGroups);
 });
+
+const MOON_TASKS = ['typescript', 'oxlint', 'oxfmt', 'bun-test'];
+
+test('moon-tasks: четыре файла задач синхронизируются дословно, stack.yml — засев', () => {
+	const group = loadManifest().filter((f) => f.group === 'moon-tasks');
+	for (const name of MOON_TASKS) {
+		const entry = group.find((f) => f.dest === `.moon/tasks/${name}.yml`);
+		expect(entry?.strategy ?? 'verbatim').toBe('verbatim');
+		expect(entry?.appliesTo).toEqual(['node', 'contracts']);
+	}
+	expect(group.find((f) => f.dest === '.moon/tasks/stack.yml')?.strategy).toBe('create-if-absent');
+});
+
+test('moon-tasks: форма потребителей — Bun, tsc --noEmit от корня, lint с отчётом о лишних disable', () => {
+	const read = (name: string): string =>
+		readFileSync(join(canonDir(), 'files', 'moon-tasks', `${name}.yml`), 'utf8');
+	expect(read('typescript')).toContain(
+		"'$workspaceRoot/node_modules/typescript/bin/tsc', '--noEmit'",
+	);
+	expect(read('oxlint')).toContain("'--type-aware'");
+	expect(read('oxlint')).toContain("'--report-unused-disable-directives'");
+	expect(read('oxlint')).not.toContain('lint-fix');
+	expect(read('oxfmt')).toContain("'oxfmt', '--check', '.'");
+	expect(read('bun-test')).toContain("args: ['test']");
+	for (const name of MOON_TASKS) {
+		expect(read(name)).toContain('sync-managed');
+		expect(read(name)).not.toContain('create-if-absent');
+	}
+});
