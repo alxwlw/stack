@@ -73,7 +73,9 @@ subtree (a nested config REPLACES the root one for that subtree, which is why
   "suggestion" rewrites public signatures (`Promise<T>` → `T`). Plain `--fix`
   is safe; the `consistent-type-imports` × `import/no-duplicates` fixers can
   collide on one import pair — a second `--fix` pass converges.
-- **Out-of-program files** (tests, config files, plain JS) are linted under an
+- **Out-of-program files** (tests, tool config files (an explicit list:
+  vite/vitest/playwright/…; production `src/**/*.config.ts` stays type-checked),
+  plain JS) are linted under an
   inferred strict program by tsgolint; `base.jsonc` mirrors tseslint's
   `disableTypeChecked` for the universal globs — extend that override in the
   consuming repo for repo-specific out-of-program trees (`scripts/`, `e2e/`,

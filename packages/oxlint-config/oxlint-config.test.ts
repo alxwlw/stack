@@ -70,7 +70,7 @@ test('node preset enforces the canon naming convention (case-transform parity)',
 });
 
 test('node preset spares naming in out-of-program files (disableTypeChecked parity)', () => {
-	const hits = run('node.jsonc', [join(FIXTURES, 'naming.config.ts')]);
+	const hits = run('node.jsonc', [join(FIXTURES, 'vitest.config.ts')]);
 	expect(hits.filter((d) => d.code === 'stack(naming-convention)')).toHaveLength(0);
 });
 
@@ -137,6 +137,15 @@ test('type-aware layer fires under --type-aware and is silent without it', () =>
 	// consumers MUST keep --type-aware in their lint task.
 	const withoutTa = run('base.jsonc', [join(FIXTURES, 'type-aware.ts')]);
 	expect(withoutTa.filter((d) => d.code === 'typescript(no-floating-promises)')).toHaveLength(0);
+});
+
+test('type-aware правила молчат в конфигах инструментов, но не в продовых *.config.ts', () => {
+	const floating = (file: string): number =>
+		run('base.jsonc', [join(FIXTURES, file)], ['--type-aware']).filter(
+			(d) => d.code === 'typescript(no-floating-promises)',
+		).length;
+	expect(floating('vite.config.ts')).toBe(0);
+	expect(floating(join('src', 'app.config.ts'))).toBe(1);
 });
 
 test('consumer-style extends from another directory resolves presets + jsPlugins', () => {
