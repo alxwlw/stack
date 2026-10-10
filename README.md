@@ -35,11 +35,11 @@ for that exact stack.
 
 Released in lockstep — all three always share one version number.
 
-| Package                 | What it ships                                                                                 |
-| ----------------------- | --------------------------------------------------------------------------------------------- |
-| `@alxwlw/stack`         | The `stack` CLI (`init`, `sync`, `check`) and the canon file/catalog sources it syncs         |
-| `@alxwlw/oxlint-config` | oxlint presets — `base`, `node`, `nest`, `react`, `next` — plus an in-house `stack` JS plugin |
-| `@alxwlw/tsconfig`      | TypeScript 7 `tsconfig` presets — `base`, `node`, `library`, `react`, `refs`, `nest`, `bun`   |
+| Package                 | What it ships                                                                                                             |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `@alxwlw/stack`         | The `stack` CLI (`init`, `sync`, `check`) and the canon file/catalog sources it syncs                                     |
+| `@alxwlw/oxlint-config` | oxlint presets — `base`, `node`, `nest`, `react`, `next`, plus the `library` overlay — plus an in-house `stack` JS plugin |
+| `@alxwlw/tsconfig`      | TypeScript 7 `tsconfig` presets — `base`, `node`, `library`, `react`, `refs`, `nest`, `bun`                               |
 
 `@alxwlw/oxlint-config` and `@alxwlw/tsconfig` also work standalone — see each package's own README.
 `@alxwlw/stack` is what wires all of it into a repo and keeps it there.
@@ -108,13 +108,13 @@ profile needs.
 | `contracts` | A Hardhat/Solidity repo with a TypeScript test/deploy layer — same JS/TS canon as `node`.                                                                                                                                                                                       |
 | `infra`     | A repo with no pnpm workspace/TS toolchain — canon reduces to what's stack-agnostic (editorconfig, gitleaks, yamllint, markdownlint, `.prototools`, one moon task, its own `stack-check` workflow, Renovate). Catalog checks are skipped when there's no `pnpm-workspace.yaml`. |
 
-| Group        | Adds                                                                                                                                                      | Profiles                     |
-| ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- |
-| `libs`       | Catalog pins for common application libraries (a NestJS/Prisma/React-ish stack) — grows over time                                                         | any                          |
-| `moon-tasks` | Seeds `.moon/tasks/*.yml` — typescript/oxlint/oxfmt/bun-test/stack for `node`/`contracts`, `stack` only for `infra` (skip it if you hand-roll moon tasks) | `node`, `contracts`, `infra` |
-| `knip`       | Seeds `knip.base.json` (unused-code detection base config)                                                                                                | `node`                       |
-| `depcruise`  | Seeds `.dependency-cruiser.base.cjs` (import/architecture boundary rules)                                                                                 | `node`, `contracts`          |
-| `renovate`   | Deprecated, does nothing: Renovate is the canon's dependency bot for every profile. Still accepted so older `.stack.jsonc` files parse                    | —                            |
+| Group        | Adds                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Profiles                     |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- |
+| `libs`       | Catalog pins for common application libraries (a NestJS/Prisma/React-ish stack) — grows over time                                                                                                                                                                                                                                                                                                                                                                                                 | any                          |
+| `moon-tasks` | Syncs `.moon/tasks/{typescript,oxlint,oxfmt,bun-test}.yml` **verbatim** — Bun-run `typecheck` (`tsc --noEmit`), `lint`, `format`, `test` — for `node`/`contracts`; seeds `stack.yml` (repo-owned) for every profile, the only file `infra` gets. `typecheck` is `--noEmit` and does not build project `references` (refs/nest presets) — override it with `tsc --build`; override a task's args in a project's `moon.yml` with `mergeArgs: 'replace'`; skip the group if you hand-roll moon tasks | `node`, `contracts`, `infra` |
+| `knip`       | Seeds `knip.base.json` (unused-code detection base config)                                                                                                                                                                                                                                                                                                                                                                                                                                        | `node`                       |
+| `depcruise`  | Seeds `.dependency-cruiser.base.cjs` (import/architecture boundary rules)                                                                                                                                                                                                                                                                                                                                                                                                                         | `node`, `contracts`          |
+| `renovate`   | Deprecated, does nothing: Renovate is the canon's dependency bot for every profile. Still accepted so older `.stack.jsonc` files parse                                                                                                                                                                                                                                                                                                                                                            | —                            |
 
 ```bash
 npx stack init --profile node --with libs --with moon-tasks
@@ -209,6 +209,18 @@ The project `.npmrc` must still map the scope to the registry (e.g.
 The action also exports `ACTIONLINT_BIN` / `SHELLCHECK_BIN` — the real binaries behind the proto
 shims, which race each other when run in parallel — only for those two tools, and only when the
 repository-root `.prototools` pins them.
+
+### Secret scanning
+
+The reusable `alxwlw/stack/.github/workflows/check.yml@v1` accepts `gitleaks: true`: it scans the whole
+history (`fetch-depth: 0`) with the config chain `.gitleaks.toml` (seeded by `stack sync`) → `.gitleaks.canon.toml` → gitleaks'
+default. It is off by default: a history that was never cleaned would turn the check red on the day of
+the bump.
+
+The canon `.github/workflows/stack-check.yml` is synced verbatim, so a `with:` block in it is drift.
+Enable the input from your own workflow that calls `check.yml`, or run a separate job: `actions/checkout`
+with `fetch-depth: 0` → `alxwlw/stack/.github/actions/setup@v1` with `install: false` →
+`gitleaks git --redact --no-banner .`.
 
 ## Releases
 

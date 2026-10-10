@@ -1,6 +1,6 @@
 {
 	"name": "@alxwlw/oxlint-config",
-	"version": "1.4.2",
+	"version": "1.5.0",
 	"description": "The alxwlw oxlint canon for oxlint 1.x + oxlint-tsgolint (type-aware): base/node/nest/react/next presets, TypeScript-7-compatible (tsgolint embeds typescript-go).",
 	"license": "MIT",
 	"repository": {
@@ -19,6 +19,7 @@
 		"./nest.jsonc": "./nest.jsonc",
 		"./react.jsonc": "./react.jsonc",
 		"./next.jsonc": "./next.jsonc",
+		"./library.jsonc": "./library.jsonc",
 		"./plugin": "./rules/oxlint-plugin.mjs"
 	},
 	"publishConfig": {
@@ -26,8 +27,8 @@
 		"provenance": true
 	},
 	"dependencies": {
-		"@microsoft/tsdoc": "^0.17.0",
-		"eslint-plugin-simple-import-sort": "^14.0.0"
+		"@microsoft/tsdoc": "0.17.1",
+		"@microsoft/tsdoc-config": "^0.18.3"
 	},
 	"devDependencies": {
 		"oxlint": "catalog:dev",

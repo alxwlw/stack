@@ -120,16 +120,8 @@
 			},
 		},
 		{
-			// tsdoc applies to TS/TSX only (JS/CJS config files legitimately use
-			// JSDoc `@type` casts) — same scope as the canon eslint preset.
-			"files": ["**/*.ts", "**/*.tsx"],
-			"rules": {
-				"stack/tsdoc-syntax": "error",
-			},
-		},
-		{
-			// Mirror of tseslint's disableTypeChecked layer: tests / spec / config
-			// files / plain JS sit outside the tsc programs — tsgolint would check
+			// Mirror of tseslint's disableTypeChecked layer: tests / spec / tool config
+			// files (an explicit list — not `src/**/*.config.ts`) / plain JS sit outside the tsc programs — tsgolint would check
 			// them under an inferred default program, producing noise the canon
 			// eslint posture never had. Extend this list in the consuming repo for
 			// repo-specific out-of-program trees (scripts/, e2e/, bundler-frontend
@@ -139,9 +131,9 @@
 				"**/*.test.tsx",
 				"**/*.spec.ts",
 				"**/*.spec.tsx",
-				"**/*.config.ts",
-				"**/*.config.mts",
-				"**/*.config.cts",
+				// Tool config files, not production code: `src/**/*.config.ts` (app config modules)
+				// stays under the type-aware rules. A tool missing here — add it in your own override.
+				"**/{vite,vitest,playwright,next,tailwind,postcss,eslint,drizzle,tsup,tsdown,rollup,rolldown,webpack,jest,knip,astro,svelte,nuxt,commitlint,prettier,oxlint,cypress,storybook,hardhat}.config.{ts,mts,cts}",
 				"**/*.js",
 				"**/*.mjs",
 				"**/*.cjs",

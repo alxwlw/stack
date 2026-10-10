@@ -6,15 +6,15 @@ directly from `packages/tsconfig/`).
 
 ## Presets
 
-| Preset         | Extends | Use it for                                                                                                                                                                                                                    |
-| -------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `base.json`    | —       | Never extended directly by an app. Strict TS7 defaults every other preset builds on: `strict`, `noUncheckedIndexedAccess`, `verbatimModuleSyntax`, `declaration`.                                                             |
-| `node.json`    | `base`  | A Node-targeted package or script. Adds `lib: ["ES2023"]` and `types: ["node"]`.                                                                                                                                              |
-| `library.json` | `base`  | A package that ships compiled output for others to import. `emitDeclarationOnly` — types out, no `.js` (a bundler/`tsc -p` elsewhere produces the runtime file).                                                              |
-| `react.json`   | `base`  | Browser/React code. `lib: ["ES2023", "DOM", "DOM.Iterable"]`, `jsx: "react-jsx"`, bundler resolution.                                                                                                                         |
-| `refs.json`    | `node`  | A pnpm+moon **project-references** monorepo package: `composite`, `incremental`, emits only `.d.ts` into `.tsbuild/` — runtime JS comes from Bun/SWC/a bundler, not `tsc`.                                                    |
-| `nest.json`    | `refs`  | A NestJS package on `refs.json`'s project-references discipline: legacy decorators + `emitDecoratorMetadata`, and `verbatimModuleSyntax: false` (DI needs the type import to survive erasure — see the preset's own comment). |
-| `bun.json`     | `base`  | A Bun-native script or CLI (this repo's own `packages/stack` uses it): bundler resolution, `types: ["bun"]`, `noEmit`, `allowImportingTsExtensions`.                                                                          |
+| Preset         | Extends | Use it for                                                                                                                                                                                                                                              |
+| -------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `base.json`    | —       | Never extended directly by an app. Strict TS7 defaults every other preset builds on: `strict`, `noUncheckedIndexedAccess`, `verbatimModuleSyntax`, `declaration`.                                                                                       |
+| `node.json`    | `base`  | A Node-targeted package or script. Adds `lib: ["ES2023"]` and `types: ["node"]`.                                                                                                                                                                        |
+| `library.json` | `base`  | A package that ships compiled output for others to import. `emitDeclarationOnly` — types out, no `.js` (a bundler/`tsc -p` elsewhere produces the runtime file).                                                                                        |
+| `react.json`   | `base`  | Browser/React code. `lib: ["ES2023", "DOM", "DOM.Iterable"]`, `jsx: "react-jsx"`, bundler resolution.                                                                                                                                                   |
+| `refs.json`    | `node`  | A pnpm+moon **project-references** monorepo package: `composite`, `incremental`, emits only `.d.ts` into `.tsbuild/` — runtime JS comes from Bun/SWC/a bundler, not `tsc`. The moon-tasks canon `typecheck` (`--noEmit`) does not build the references. |
+| `nest.json`    | `refs`  | A NestJS package on `refs.json`'s project-references discipline: legacy decorators + `emitDecoratorMetadata`, and `verbatimModuleSyntax: false` (DI needs the type import to survive erasure — see the preset's own comment).                           |
+| `bun.json`     | `base`  | A Bun-native script or CLI (this repo's own `packages/stack` uses it): bundler resolution, `types: ["bun"]`, `noEmit`, `allowImportingTsExtensions`.                                                                                                    |
 
 ## Usage
 

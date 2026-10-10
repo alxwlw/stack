@@ -1,16 +1,12 @@
 // @ts-check
 
 /**
- * Local re-export shim for `eslint-plugin-simple-import-sort`, loaded by
- * oxlint as a JS plugin (the upstream package runs unmodified under oxlint's
- * ESLint-compatible rule API, autofix included).
- *
- * Why a shim instead of naming the npm package directly in `jsPlugins`:
- * module resolution then happens relative to THIS file — i.e. from
- * `@alxwlw/oxlint-config`'s own dependency tree — independent of the consuming
- * repo's cwd or hoisting layout (strict-pnpm safe).
+ * Wrapper around the vendored `eslint-plugin-simple-import-sort` 14.0.0
+ * (rules/vendor/, MIT, logic unmodified — see NOTICE), loaded by oxlint as a
+ * JS plugin. Vendored rather than an npm dependency: the package has an
+ * `eslint` peer, and pnpm pulled ESLint into every consumer's lockfile.
  */
-import plugin from 'eslint-plugin-simple-import-sort';
+import plugin from './vendor/simple-import-sort/index.cjs';
 
 export default {
 	meta: { name: 'simple-import-sort' },

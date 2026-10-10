@@ -1,4 +1,4 @@
-// Fixture for stack/tsdoc-syntax (base preset, ts/tsx override). EXPECTED:
+// Fixture for stack/tsdoc-syntax (library overlay, ts/tsx override). EXPECTED:
 // diagnostics only on `bad` — tsdoc-param-tag-with-invalid-type (JSDoc-style
 // {type}) and tsdoc-undefined-tag (@notATag).
 

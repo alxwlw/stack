@@ -59,6 +59,25 @@ test('корневой package.json#packageManager — pnpm на пине кан
 	expect(pkg.packageManager).toBe(`pnpm@${pin}`);
 });
 
+// Reusable workflow, который зовёт канон-файл .github/workflows/stack-check.yml потребителя.
+test('reusable check.yml: вход gitleaks выключен по умолчанию и включает скан всей истории', () => {
+	const wf = parseYaml(readFileSync(join(ROOT, '.github', 'workflows', 'check.yml'), 'utf8')) as {
+		on?: { workflow_call?: { inputs?: Record<string, { type?: string; default?: unknown }> } };
+		jobs?: Record<
+			string,
+			{ steps?: { uses?: string; if?: string; run?: string; with?: Record<string, unknown> }[] }
+		>;
+	};
+	const input = wf.on?.workflow_call?.inputs?.gitleaks;
+	expect(input?.type).toBe('boolean');
+	expect(input?.default).toBe(false);
+	const steps = Object.values(wf.jobs ?? {}).flatMap((j) => j.steps ?? []);
+	const scan = steps.find((s) => s.run?.includes('gitleaks git'));
+	expect(scan?.if).toBe('inputs.gitleaks');
+	const checkout = steps.find((s) => s.uses?.startsWith('actions/checkout@'));
+	expect(checkout?.with?.['fetch-depth']).toBe("${{ inputs.gitleaks && '0' || '1' }}");
+});
+
 // Reusable workflow, который зовёт канон-файл .github/workflows/renovate.yml потребителя.
 test('reusable renovate.yml: workflow_call с обязательным token, action на полной версии', () => {
 	const wf = parseYaml(

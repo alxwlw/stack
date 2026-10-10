@@ -1,17 +1,20 @@
 $schema: 'https://moonrepo.dev/schemas/tasks.json'
 
-# Canon template (seeded once via --with=moon-tasks; repo-owned afterwards).
-# NB moon 2.x: a project OVERRIDING this command must set options.mergeArgs:
-# 'replace' — otherwise moon APPENDS the inherited args (`bun test` + override
-# `bun test src` → `bun test bun test src`).
+# Canon file — sync-managed (group moon-tasks): edits happen in alxwlw/stack, not here.
+# A project without tests overrides `args` with mergeArgs: 'replace' (e.g. bun test --pass-with-no-tests).
+
+fileGroups:
+  sources:
+    - 'src/**/*'
+  tests:
+    - 'tests/**/*'
 
 tasks:
   test:
-    command: 'bun test'
+    command: 'bun'
+    args: ['test']
     inputs:
-      - 'src/**/*'
-      - 'test/**/*'
-      - 'package.json'
-      - 'tsconfig.json'
+      - '@group(sources)'
+      - '@group(tests)'
     options:
-      cache: true
+      runFromWorkspaceRoot: false

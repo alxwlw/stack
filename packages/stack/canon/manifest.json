@@ -90,28 +90,24 @@
 			"src": "files/moon-tasks/typescript.yml",
 			"dest": ".moon/tasks/typescript.yml",
 			"appliesTo": ["node", "contracts"],
-			"strategy": "create-if-absent",
 			"group": "moon-tasks"
 		},
 		{
 			"src": "files/moon-tasks/oxlint.yml",
 			"dest": ".moon/tasks/oxlint.yml",
 			"appliesTo": ["node", "contracts"],
-			"strategy": "create-if-absent",
 			"group": "moon-tasks"
 		},
 		{
 			"src": "files/moon-tasks/oxfmt.yml",
 			"dest": ".moon/tasks/oxfmt.yml",
 			"appliesTo": ["node", "contracts"],
-			"strategy": "create-if-absent",
 			"group": "moon-tasks"
 		},
 		{
 			"src": "files/moon-tasks/bun-test.yml",
 			"dest": ".moon/tasks/bun-test.yml",
 			"appliesTo": ["node", "contracts"],
-			"strategy": "create-if-absent",
 			"group": "moon-tasks"
 		},
 		{

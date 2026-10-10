@@ -143,6 +143,24 @@ test('loadCanon: в каноне .prototools нет пина node — ошибк
 	expect(() => loadCanon(cfg(), dir)).toThrow('canon .prototools has no node pin');
 });
 
+test('канон gitleaks: eth-private-key ловится по eth_priv и не обещает лишнего', () => {
+	const toml = readFileSync(join(canonDir(), 'files', 'gitleaks-canon.toml'), 'utf8');
+	expect(toml.split('\n')[0]).not.toContain('pre-commit');
+	expect(toml).toMatch(/keywords = \[[^\]]*'eth_priv'/);
+	expect(toml).toContain(String.raw`'''docs/superpowers/(specs|plans|archive)/'''`);
+});
+
+test('канон markdownlint не обещает глоб oxfmt, которого нет', () => {
+	const jsonc = readFileSync(join(canonDir(), 'files', 'markdownlint-cli2.jsonc'), 'utf8');
+	// Только комментарии: `globs` самого конфига законно содержат **/*.mdx.
+	const comments = jsonc
+		.split('\n')
+		.filter((l) => l.trimStart().startsWith('//'))
+		.join('\n');
+	expect(comments).not.toContain('mdx');
+	expect(comments).not.toContain('existing `.moon/tasks/oxfmt.yml`');
+});
+
 test('канон markdownlint: игноры планов и спек superpowers на месте', () => {
 	const cfg = parseJsonc(
 		readFileSync(join(canonDir(), 'files', 'markdownlint-cli2.jsonc'), 'utf8'),
@@ -225,4 +243,33 @@ test('schema.json: enum групп with = группы манифеста ∪ к
 	const schemaEnum = schema.properties?.with?.items?.enum;
 	expect(schemaEnum).toBeDefined();
 	expect((schemaEnum ?? []).sort()).toEqual(expectedGroups);
+});
+
+const MOON_TASKS = ['typescript', 'oxlint', 'oxfmt', 'bun-test'];
+
+test('moon-tasks: четыре файла задач синхронизируются дословно, stack.yml — засев', () => {
+	const group = loadManifest().filter((f) => f.group === 'moon-tasks');
+	for (const name of MOON_TASKS) {
+		const entry = group.find((f) => f.dest === `.moon/tasks/${name}.yml`);
+		expect(entry?.strategy ?? 'verbatim').toBe('verbatim');
+		expect(entry?.appliesTo).toEqual(['node', 'contracts']);
+	}
+	expect(group.find((f) => f.dest === '.moon/tasks/stack.yml')?.strategy).toBe('create-if-absent');
+});
+
+test('moon-tasks: форма потребителей — Bun, tsc --noEmit от корня, lint с отчётом о лишних disable', () => {
+	const read = (name: string): string =>
+		readFileSync(join(canonDir(), 'files', 'moon-tasks', `${name}.yml`), 'utf8');
+	expect(read('typescript')).toContain(
+		"'$workspaceRoot/node_modules/typescript/bin/tsc', '--noEmit'",
+	);
+	expect(read('oxlint')).toContain("'--type-aware'");
+	expect(read('oxlint')).toContain("'--report-unused-disable-directives'");
+	expect(read('oxlint')).not.toContain('lint-fix');
+	expect(read('oxfmt')).toContain("'oxfmt', '--check', '.'");
+	expect(read('bun-test')).toContain("args: ['test']");
+	for (const name of MOON_TASKS) {
+		expect(read(name)).toContain('sync-managed');
+		expect(read(name)).not.toContain('create-if-absent');
+	}
 });

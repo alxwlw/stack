@@ -1,0 +1,5 @@
+{
+	// Consumer simulation: a publishing package layers the library overlay over its preset from
+	// another directory — the shape of `extends: ["…/node.jsonc", "…/library.jsonc"]`.
+	"extends": ["../../node.jsonc", "../../library.jsonc"],
+}

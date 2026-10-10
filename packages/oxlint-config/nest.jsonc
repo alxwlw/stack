@@ -5,6 +5,7 @@
 	// @Optional() — SWC/Bun-class transpilers strip emitDecoratorMetadata, so
 	// without it Nest treats the param as a required dependency and throws
 	// UnknownDependenciesException at runtime while tsc/local dev pass.
+	// The preset also turns off typescript/consistent-type-imports — see the rule.
 	"extends": ["./node.jsonc"],
 	"rules": {
 		"stack/require-nest-di-decorator": "error",
@@ -12,5 +13,10 @@
 		// NestInterceptor contract (surface throws as rejections) without an
 		// inner await — require-await is all false positives there.
 		"typescript/require-await": "off",
+		// oxlint does not model emitDecoratorMetadata: the consistent-type-imports
+		// autofix turns a class injected by ctor-param type into `import type`, so
+		// no type metadata is emitted and Nest DI fails at startup
+		// (UnknownDependenciesException) while tsc and lint stay green.
+		"typescript/consistent-type-imports": "off",
 	},
 }

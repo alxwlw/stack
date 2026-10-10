@@ -7,13 +7,14 @@ the repo's `typescript` version is irrelevant to linting).
 
 ## Presets
 
-| Preset  | Extends | Adds                                                                                    |
-| ------- | ------- | --------------------------------------------------------------------------------------- |
-| `base`  | —       | correctness category, full type-aware set (tsgolint), tsdoc, simple-import-sort         |
-| `node`  | `base`  | `stack/naming-convention` (canon selector set)                                          |
-| `nest`  | `node`  | `stack/require-nest-di-decorator`; `typescript/require-await` off (Nest guard contract) |
-| `react` | `base`  | react-hooks classic pair + eslint-plugin-react recommended + jsx-a11y recommended ports |
-| `next`  | `react` | oxlint `nextjs` plugin                                                                  |
+| Preset    | Extends     | Adds                                                                                                                                                |
+| --------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `base`    | —           | correctness category, full type-aware set (tsgolint), simple-import-sort                                                                            |
+| `node`    | `base`      | `stack/naming-convention` (canon selector set)                                                                                                      |
+| `nest`    | `node`      | `stack/require-nest-di-decorator`; `typescript/require-await` off (Nest guard contract); `typescript/consistent-type-imports` off (DI-safe imports) |
+| `react`   | `base`      | react-hooks classic pair + eslint-plugin-react recommended + jsx-a11y recommended ports                                                             |
+| `next`    | `react`     | oxlint `nextjs` plugin                                                                                                                              |
+| `library` | — (overlay) | `stack/tsdoc-syntax` for TS/TSX; reads the nearest `tsdoc.json`                                                                                     |
 
 `base` deliberately carries a curated strict subset beyond
 typescript-eslint's `recommendedTypeChecked` defaults, proven at error level
@@ -36,6 +37,23 @@ architecture/cycle engine (`import/no-cycle` stays off).
 oxlint --type-aware --report-unused-disable-directives --config .oxlintrc.json .
 ```
 
+Packages that publish an API layer the `library` overlay after their preset (not
+usable on its own — the `stack` plugin comes from the preset):
+
+```jsonc
+// .oxlintrc.json of the publishing package
+{
+	"extends": [
+		"./node_modules/@alxwlw/oxlint-config/node.jsonc",
+		"./node_modules/@alxwlw/oxlint-config/library.jsonc",
+	],
+}
+```
+
+Declare your own TSDoc tags in `tsdoc.json` instead of switching the rule off; the file needs the standard `"$schema": "https://developer.microsoft.com/json-schemas/tsdoc/v0/tsdoc.schema.json"` (without it tsdoc-config reports `Unsupported JSON "$schema" value`).
+The overlay goes after the preset on purpose: it does not extend `base`, so it cannot
+switch back on what `nest` or `react` turned off.
+
 For browser code in a mixed repo, drop a nested `.oxlintrc.json` extending
 `react.jsonc` into the frontend root — oxlint auto-discovers nested configs per
 subtree (a nested config REPLACES the root one for that subtree, which is why
@@ -47,24 +65,29 @@ subtree (a nested config REPLACES the root one for that subtree, which is why
   type-aware rule is SILENTLY skipped — no error, no warning. Keep the flag in
   the repo's lint task; `oxlint-tsgolint` must be installed (optional peer).
 - **Build `.d.ts` before type-aware lint** in project-reference monorepos
-  (`tsc --build` first): unresolved imports produce `error`-typed values that
+  (`tsc --build` first; the canon moon-tasks `lint` has no typecheck dependency, so this applies to project-reference repos): unresolved imports produce `error`-typed values that
   fire the `no-unsafe-*` rules as phantoms.
 - **Top-level `plugins` REPLACES the inherited set** — a consumer overriding
   `plugins` must restate the full list (see `react.jsonc` for the pattern).
 - **Never run `--fix-suggestions` in automation**: tsgolint's `require-await`
   "suggestion" rewrites public signatures (`Promise<T>` → `T`). Plain `--fix`
-  is safe; the `consistent-type-imports` × `import/no-duplicates` fixers can
+  is safe; outside `nest` (which turns `consistent-type-imports` off), the
+  `consistent-type-imports` × `import/no-duplicates` fixers can
   collide on one import pair — a second `--fix` pass converges.
-- **Out-of-program files** (tests, config files, plain JS) are linted under an
+- **Out-of-program files** (tests, tool config files, plain JS) are linted under an
   inferred strict program by tsgolint; `base.jsonc` mirrors tseslint's
   `disableTypeChecked` for the universal globs — extend that override in the
   consuming repo for repo-specific out-of-program trees (`scripts/`, `e2e/`,
-  bundler-frontend subdirs).
-- **`import type` conversions can break NestJS DI**: `consistent-type-imports`
-  flags DI-load-bearing class imports on ctor params that lack an explicit
-  `@Inject` (SWC/Bun-class transpilers elide type-only imports →
-  `design:paramtypes` degrades to `Object`). Fix the param with an explicit
-  `@Inject(Class)` (this canon's convention), never with a lint disable.
+  bundler-frontend subdirs). Tool config files are an explicit list
+  (vite/vitest/playwright/…); production `src/**/*.config.ts` stays type-checked.
+- **`import type` conversions can break NestJS DI**: `nest.jsonc` turns off
+  `typescript/consistent-type-imports` — oxlint does not model
+  `emitDecoratorMetadata`, and the rule's autofix used to convert the import of
+  a class injected by ctor-param type into `import type` (Nest DI then fails at
+  startup while tsc and lint stay green). A Nest consumer no longer needs its
+  own override; an `import type` of an injected class in Nest code is an error
+  only a startup catches. An explicit `@Inject(Class)` (this canon's
+  convention) remains an optional way to make the dependency explicit.
 
 ## The `stack` JS plugin
 
@@ -78,6 +101,7 @@ task does):
 - `stack/naming-convention` — port of the canon naming selector set; option
   `{ "leadingUnderscore": "none" | "allow" | "allowSingleOrDouble" }` for
   repos with a `_`-prefix private-by-convention marker.
-- `stack/tsdoc-syntax` — `@microsoft/tsdoc`-backed TSDoc validation
+- `stack/tsdoc-syntax` — enabled by the `library` overlay; reads the nearest
+  `tsdoc.json` (like eslint-plugin-tsdoc). `@microsoft/tsdoc`-backed TSDoc validation
   (eslint-plugin-tsdoc ≥0.5 requires the `eslint` package at load time, which
   oxlint consumers no longer install).
