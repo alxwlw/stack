@@ -210,6 +210,18 @@ The action also exports `ACTIONLINT_BIN` / `SHELLCHECK_BIN` — the real binarie
 shims, which race each other when run in parallel — only for those two tools, and only when the
 repository-root `.prototools` pins them.
 
+### Secret scanning
+
+The reusable `alxwlw/stack/.github/workflows/check.yml@v1` accepts `gitleaks: true`: it scans the whole
+history (`fetch-depth: 0`) with the config chain `.gitleaks.toml` → `.gitleaks.canon.toml` → gitleaks'
+default. It is off by default: a history that was never cleaned would turn the check red on the day of
+the bump.
+
+The canon `.github/workflows/stack-check.yml` is synced verbatim, so a `with:` block in it is drift.
+Enable the input from your own workflow that calls `check.yml`, or run a separate job: `actions/checkout`
+with `fetch-depth: 0` → `alxwlw/stack/.github/actions/setup@v1` with `install: false` →
+`gitleaks git --redact --no-banner .`.
+
 ## Releases
 
 All three packages share one semver version, tagged `vX.Y.Z`. Publishing runs through npm's trusted

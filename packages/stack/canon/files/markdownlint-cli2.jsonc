@@ -4,10 +4,10 @@
 // has no ignore file by default, so the `gitignore` option below points it there.
 //
 // Scope: **semantic** markdown linting only. Formatting (line wrap,
-// list marker style, trailing whitespace, etc.) is handled by oxfmt
-// via the existing `.moon/tasks/oxfmt.yml` **/*.{md,mdx,yml,yaml,json}
-// glob. Rules that overlap with the formatter are disabled here to avoid
-// fighting between the two tools.
+// list marker style, trailing whitespace, etc.) is oxfmt's job — the
+// `format` task of the `moon-tasks` group (`.moon/tasks/oxfmt.yml`) or your
+// own oxfmt run. Rules that overlap with the formatter are disabled here to
+// avoid fighting between the two tools.
 //
 // Enabled checks target bugs that a formatter can't catch:
 //   - broken heading hierarchy

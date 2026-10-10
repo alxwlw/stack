@@ -10,11 +10,18 @@ on:
         description: версия @alxwlw/stack для репозиториев без pnpm
         type: string
         default: latest
+      gitleaks:
+        description: сканировать всю историю gitleaks (конфиг .gitleaks.toml → канон → default)
+        type: boolean
+        default: false
 jobs:
   check:
     runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          # gitleaks нужна вся история; строки, а не числа: `0 || 1` в выражениях дало бы 1.
+          fetch-depth: ${{ inputs.gitleaks && '0' || '1' }}
       - uses: alxwlw/stack/.github/actions/setup@v1
         with:
           install: ${{ inputs.install }}
@@ -24,3 +31,5 @@ jobs:
         env:
           VERSION: ${{ inputs.version }}
         run: bunx "@alxwlw/stack@$VERSION" check
+      - if: inputs.gitleaks
+        run: gitleaks git --redact --no-banner .

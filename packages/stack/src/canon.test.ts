@@ -143,6 +143,24 @@ test('loadCanon: в каноне .prototools нет пина node — ошибк
 	expect(() => loadCanon(cfg(), dir)).toThrow('canon .prototools has no node pin');
 });
 
+test('канон gitleaks: eth-private-key ловится по eth_priv и не обещает лишнего', () => {
+	const toml = readFileSync(join(canonDir(), 'files', 'gitleaks-canon.toml'), 'utf8');
+	expect(toml.split('\n')[0]).not.toContain('pre-commit');
+	expect(toml).toMatch(/keywords = \[[^\]]*'eth_priv'/);
+	expect(toml).toContain(String.raw`'''docs/superpowers/(specs|plans|archive)/'''`);
+});
+
+test('канон markdownlint не обещает глоб oxfmt, которого нет', () => {
+	const jsonc = readFileSync(join(canonDir(), 'files', 'markdownlint-cli2.jsonc'), 'utf8');
+	// Только комментарии: `globs` самого конфига законно содержат **/*.mdx.
+	const comments = jsonc
+		.split('\n')
+		.filter((l) => l.trimStart().startsWith('//'))
+		.join('\n');
+	expect(comments).not.toContain('mdx');
+	expect(comments).not.toContain('existing `.moon/tasks/oxfmt.yml`');
+});
+
 test('канон markdownlint: игноры планов и спек superpowers на месте', () => {
 	const cfg = parseJsonc(
 		readFileSync(join(canonDir(), 'files', 'markdownlint-cli2.jsonc'), 'utf8'),

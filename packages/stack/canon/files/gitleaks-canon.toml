@@ -1,4 +1,4 @@
-# gitleaks config — canon ruleset. Runs in pre-commit + CI.
+# gitleaks config — canon ruleset. Run it in CI (the stack-check reusable workflow with `gitleaks: true`, or a `gitleaks git` job) or locally.
 # Reference: https://github.com/gitleaks/gitleaks/blob/master/config/gitleaks.toml
 
 # Inherit the default ruleset (catches AWS keys, JWTs, GH tokens,
@@ -12,7 +12,7 @@ id = 'eth-private-key-no-prefix'
 description = 'Ethereum private key (32 bytes hex, with or without 0x prefix)'
 regex = '''(?i)(?:eth_?priv|private_?key)\s*[:=]\s*["']?(?:0x)?[a-f0-9]{64}["']?'''
 tags = ['secret', 'ethereum']
-keywords = ['privkey', 'private_key', 'privatekey']
+keywords = ['privkey', 'private_key', 'privatekey', 'eth_priv', 'ethpriv']
 
 [allowlist]
 description = 'Global false-positive filters.'
@@ -44,6 +44,7 @@ paths = [
   # Historical planning docs — false-positive regex matches in prose
   # and curl examples. Skip the spec/plan/archive trees.
   '''docs/(specs|plans|archive)/''',
+  '''docs/superpowers/(specs|plans|archive)/''',
   '''\.superpowers/''',
   '''docs/ideas/''',
   '''docs/draft/''',
