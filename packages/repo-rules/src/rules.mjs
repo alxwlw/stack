@@ -1,5 +1,5 @@
 // @ts-check
-/** The whole-repo rules of spec § 2. Each returns the 1-based lines it flags. */
+/** The whole-repo rules of spec § 2. Each returns `{ line, message }` hits, with `line` 1-based. */
 import { commentStart, dashReason, hasReason } from './source.mjs';
 
 /** @typedef {import('./source.mjs').Family} Family */

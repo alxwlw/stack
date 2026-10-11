@@ -46,6 +46,7 @@ describe('suppression-reason', () => {
 	test('biome-ignore needs text after the colon', () => {
 		expect(js('// biome-ignore lint/style/noX:')).toEqual([1]);
 		expect(js('// biome-ignore lint/style/noX: needed for Y')).toEqual([]);
+		expect(js('// biome-ignore lint/style/noX')).toEqual([1]);
 	});
 	test('prose, strings and *-enable are not directives', () => {
 		expect(js('// we avoid eslint-disable here')).toEqual([]);
@@ -73,6 +74,12 @@ describe('suppression-reason', () => {
 		expect(js('// eslint-disable-line x -- legacy API\r')).toEqual([]);
 		expect(js('// eslint-disable-line x\r')).toEqual([1]);
 	});
+	test('a reason ignores a trailing */, --> and } (hasReason strip)', () => {
+		expect(js('{/* @ts-expect-error */}')).toEqual([1]);
+		expect(js('/* @ts-ignore */}')).toEqual([1]);
+		expect(js('/* eslint-disable x -- ok */')).toEqual([1]);
+		expect(js('{/* @ts-expect-error ok */}')).toEqual([1]);
+	});
 });
 
 describe('focused-skipped-tests', () => {
@@ -89,6 +96,11 @@ describe('focused-skipped-tests', () => {
 		expect(t(`xdescribe('a', () => {});`)).toEqual([1]);
 		expect(t(`test.skip.each([1])('a', () => {});`)).toEqual([1]);
 		expect(t('test.skip();')).toEqual([1]);
+	});
+	test('skip titles in double quotes or backticks, and a bare todo name', () => {
+		expect(t('it.skip("a", () => {});')).toEqual([1]);
+		expect(t('describe.skip(`a`, () => {});')).toEqual([1]);
+		expect(t('test.todo(name);')).toEqual([1]);
 	});
 	test('a reason on the same line or the comment line above', () => {
 		expect(t(`it.skip('a', () => {}); // -- flaky upstream, MR-12`)).toEqual([]);
@@ -120,6 +132,17 @@ describe('number-or-default', () => {
 		expect(n(`const s = parseFloat(x) || 'n/a';`)).toEqual([1]);
 		expect(n('const s = Number(x) || null;')).toEqual([1]);
 	});
+	test('call forms and literal kinds', () => {
+		expect(n('const p = Number.parseInt(x, 10) || 5;')).toEqual([1]);
+		expect(n('const p = parseInt(x) || -1;')).toEqual([1]);
+		expect(n('const p = Number(x) || "n/a";')).toEqual([1]);
+		expect(n('const p = Number(x) || `n/a`;')).toEqual([1]);
+		expect(n('const p = Number(x) || undefined;')).toEqual([1]);
+		expect(n('const p = Number(x) || 0xff;')).toEqual([1]);
+		expect(n('const p = Number(x) || 1_000;')).toEqual([1]);
+		expect(n('const p = Number(x) || 1.5e3;')).toEqual([1]);
+		expect(n('const p = Number(x) || 0.0;')).toEqual([]);
+	});
 	test('`|| 0`, variables, `??` and other calls are left alone', () => {
 		expect(n('const d = parseFloat(css) || 0;')).toEqual([]);
 		expect(n('const d = Number(x) || -0;')).toEqual([]);
@@ -135,5 +158,28 @@ describe('number-or-default', () => {
 	});
 	test('a call in a comment is ignored', () => {
 		expect(n('// Number(x) || 7')).toEqual([]);
+	});
+});
+
+describe('messages', () => {
+	test('each rule reports its exact message', () => {
+		expect(focusedSkippedTests([`it.only('a', () => {});`])).toEqual([
+			{ line: 1, message: '.only in a test file' },
+		]);
+		expect(focusedSkippedTests([`it.skip('a', () => {});`])).toEqual([
+			{ line: 1, message: '.skip without a reason' },
+		]);
+		expect(focusedSkippedTests([`xit('a', () => {});`])).toEqual([
+			{ line: 1, message: 'xit without a reason' },
+		]);
+		expect(numberOrDefault(['const d = Number(x) || 7;'])).toEqual([
+			{ line: 1, message: 'Number(…) || <literal> treats 0/NaN as missing' },
+		]);
+		expect(numberOrDefault(['const d = Number.parseInt(x, 10) || 5;'])).toEqual([
+			{ line: 1, message: 'Number.parseInt(…) || <literal> treats 0/NaN as missing' },
+		]);
+		expect(suppressionReason(['y = f()  # type: ignore[arg-type]'], 'py')).toEqual([
+			{ line: 1, message: 'type: ignore without a reason' },
+		]);
 	});
 });
