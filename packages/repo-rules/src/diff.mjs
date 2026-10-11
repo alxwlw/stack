@@ -106,7 +106,7 @@ export function countPairs(diff, isTest) {
 			else if (line.startsWith('rename to ')) cur.to = gitPath(line.slice(10));
 			else if (line.startsWith('@@')) {
 				inHunk = true;
-				// Each side is read in its own language: a rename may change it (`a_test.py` → `a.test.ts`).
+				// Each side is read in its own language: a rename may change it, e.g. a Python test ported to TypeScript.
 				const tested =
 					(cur.from !== null && isTest(cur.from)) || (cur.to !== null && isTest(cur.to));
 				del = sideOf(cur.from, tested);
