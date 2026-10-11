@@ -33,13 +33,14 @@ for that exact stack.
 
 ## Packages
 
-Released in lockstep — all three always share one version number.
+Released in lockstep — all four always share one version number.
 
-| Package                 | What it ships                                                                                                             |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `@alxwlw/stack`         | The `stack` CLI (`init`, `sync`, `check`) and the canon file/catalog sources it syncs                                     |
-| `@alxwlw/oxlint-config` | oxlint presets — `base`, `node`, `nest`, `react`, `next`, plus the `library` overlay — plus an in-house `stack` JS plugin |
-| `@alxwlw/tsconfig`      | TypeScript 7 `tsconfig` presets — `base`, `node`, `library`, `react`, `refs`, `nest`, `bun`                               |
+| Package                 | What it ships                                                                                                                                                                                  |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@alxwlw/stack`         | The `stack` CLI (`init`, `sync`, `check`) and the canon file/catalog sources it syncs                                                                                                          |
+| `@alxwlw/oxlint-config` | oxlint presets — `base`, `node`, `nest`, `react`, `next`, plus the `library` overlay — plus an in-house `stack` JS plugin                                                                      |
+| `@alxwlw/tsconfig`      | TypeScript 7 `tsconfig` presets — `base`, `node`, `library`, `react`, `refs`, `nest`, `bun`                                                                                                    |
+| `@alxwlw/repo-rules`    | Whole-repo rules from the defect corpus — long files, unjustified suppressions, skipped tests, `Number(x) \|\| <default>`, removed assertions — with a shrink-only baseline; Node ≥ 20, no bun |
 
 `@alxwlw/oxlint-config` and `@alxwlw/tsconfig` also work standalone — see each package's own README.
 `@alxwlw/stack` is what wires all of it into a repo and keeps it there.
@@ -224,7 +225,7 @@ with `fetch-depth: 0` → `alxwlw/stack/.github/actions/setup@v1` with `install:
 
 ## Releases
 
-All three packages share one semver version, tagged `vX.Y.Z`. Publishing runs through npm's trusted
+All four packages share one semver version, tagged `vX.Y.Z`. Publishing runs through npm's trusted
 publishing (OIDC from GitHub Actions — no long-lived npm token in CI), and a floating `v1` tag tracks
 the latest `v1.x.y` for consumers pinning a major:
 

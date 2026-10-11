@@ -17,14 +17,15 @@ jobs:
       - run: pnpm exec oxlint --type-aware
       - run: pnpm exec oxfmt --check .
       - run: pnpm exec tsc --build
-      - name: версия тега совпадает с версией всех трёх пакетов
+      - name: версия тега совпадает с версией всех четырёх пакетов
         run: |
           tag="${GITHUB_REF_NAME#v}"
           stack=$(node -p "require('./packages/stack/package.json').version")
           oxlint_config=$(node -p "require('./packages/oxlint-config/package.json').version")
           tsconfig=$(node -p "require('./packages/tsconfig/package.json').version")
-          if [ "$tag" != "$stack" ] || [ "$stack" != "$oxlint_config" ] || [ "$stack" != "$tsconfig" ]; then
-            echo "тег $tag; версии пакетов: stack=$stack oxlint-config=$oxlint_config tsconfig=$tsconfig"
+          repo_rules=$(node -p "require('./packages/repo-rules/package.json').version")
+          if [ "$tag" != "$stack" ] || [ "$stack" != "$oxlint_config" ] || [ "$stack" != "$tsconfig" ] || [ "$stack" != "$repo_rules" ]; then
+            echo "тег $tag; версии пакетов: stack=$stack oxlint-config=$oxlint_config tsconfig=$tsconfig repo-rules=$repo_rules"
             exit 1
           fi
   publish:
@@ -60,7 +61,7 @@ jobs:
           # проверки первый же тег после ручной публикации даёт заведомо красный прогон. Проверка
           # отказоустойчива в сторону публикации — если `npm view` не ответил (сеть, 5xx), мы
           # публикуем и падаем громко, а не молчим о непубликации.
-          for p in stack oxlint-config tsconfig; do
+          for p in stack oxlint-config tsconfig repo-rules; do
             name=$(node -p "require('./packages/$p/package.json').name")
             ver=$(node -p "require('./packages/$p/package.json').version")
             if node "$NPM" view "$name@$ver" version >/dev/null 2>&1; then
