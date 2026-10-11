@@ -142,6 +142,7 @@ describe('number-or-default', () => {
 		expect(n('const p = Number(x) || 1_000;')).toEqual([1]);
 		expect(n('const p = Number(x) || 1.5e3;')).toEqual([1]);
 		expect(n('const p = Number(x) || 0.0;')).toEqual([]);
+		expect(n('const p = Number(x) || 0.5;')).toEqual([1]);
 	});
 	test('`|| 0`, variables, `??` and other calls are left alone', () => {
 		expect(n('const d = parseFloat(css) || 0;')).toEqual([]);
