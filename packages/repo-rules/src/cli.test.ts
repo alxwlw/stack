@@ -1,23 +1,27 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { afterAll, describe, expect, test } from 'bun:test';
 
-import { cleanup, cli, repo } from './testkit.ts';
+import { cleanup, cli, lines, repo } from './testkit.ts';
 
 afterAll(cleanup);
 
 const DISABLE = '// eslint-disable-next-line no-console\nconsole.log(1);\n';
+const USAGE =
+	'usage: repo-rules [-C <dir>] check [--json]\n' +
+	'       repo-rules [-C <dir>] diff --base <ref> [--json]\n' +
+	'       repo-rules [-C <dir>] baseline [--init] [--allow-grow]';
 
 describe('repo-rules CLI', () => {
 	test('check: violations print path:line rule message, exit 1', () => {
 		const r = repo({ 'src/a.ts': DISABLE });
 		const res = cli(['-C', r.root, 'check']);
 		expect(res.code).toBe(1);
-		expect(res.stdout).toContain(
-			'src/a.ts:1  suppression-reason  eslint-disable-next-line without a reason',
+		expect(res.stdout).toBe(
+			'src/a.ts:1  suppression-reason  eslint-disable-next-line without a reason\n' +
+				'repo-rules: 1 violation(s), 0 stale, 4 rule(s) checked\n',
 		);
-		expect(res.stdout).toContain('repo-rules: 1 violation(s), 0 stale, 4 rule(s) checked');
 	});
 	test('check --json', () => {
 		const r = repo({ 'src/a.ts': DISABLE });
@@ -32,6 +36,7 @@ describe('repo-rules CLI', () => {
 			},
 		]);
 		expect(out.stale).toEqual([]);
+		expect(out.notes).toEqual([]);
 	});
 	test('baseline --init → check clean → growth refused → stale → shrink', () => {
 		const r = repo({ 'src/a.ts': DISABLE });
@@ -74,10 +79,14 @@ describe('repo-rules CLI', () => {
 		r.commit('note', 'Tests-Removed: the second check duplicated the first');
 		const ok = cli(['-C', r.root, 'diff', '--base', 'main']);
 		expect(ok.code).toBe(0);
-		expect(ok.stdout).toContain('note  Tests-Removed: the second check duplicated the first');
+		expect(ok.stdout).toBe(
+			'note  Tests-Removed: the second check duplicated the first\nrepo-rules diff: 0 violation(s)\n',
+		);
 		const push = cli(['-C', r.root, 'diff'], { GITHUB_ACTIONS: 'true', GITHUB_EVENT_NAME: 'push' });
 		expect(push.code).toBe(0);
-		expect(push.stdout).toContain('repo-rules diff: skipped (not a pull request)');
+		expect(push.stdout).toBe(
+			'note  skipped (not a pull request)\nrepo-rules diff: skipped (not a pull request)\n',
+		);
 	});
 	test('errors exit 2 with one line, never a stack trace', () => {
 		const r = repo({ '.repo-rules.json': '{"colour": 1}' });
@@ -87,6 +96,7 @@ describe('repo-rules CLI', () => {
 		const flag = cli(['-C', repo().root, 'check', '--bogus']);
 		expect(flag.code).toBe(2);
 		expect(flag.stderr).toContain("Unknown option '--bogus'");
+		expect(flag.stderr).toContain(USAGE);
 		expect(flag.stderr).not.toContain('    at ');
 		expect(cli(['-C', '/', 'check']).code).toBe(2);
 		expect(cli(['-C', repo().root, 'diff']).code).toBe(2);
@@ -94,9 +104,93 @@ describe('repo-rules CLI', () => {
 		expect(cli([]).code).toBe(2);
 	});
 	test('--help exits 0, --version prints the package version', () => {
-		expect(cli(['--help']).code).toBe(0);
+		for (const flag of ['--help', '-h']) {
+			const res = cli([flag]);
+			expect(res.code).toBe(0);
+			expect(res.stdout).toBe(`${USAGE}\n`);
+		}
+		const version = cli(['--version']);
 		const pkg = JSON.parse(readFileSync(join(import.meta.dir, '../package.json'), 'utf8'));
-		expect(cli(['--version']).stdout.trim()).toBe(pkg.version);
+		expect(version.code).toBe(0);
+		expect(version.stdout).toBe(`${pkg.version}\n`);
+	});
+	test('no command, or an unknown one, prints usage on stdout and exits 2', () => {
+		const bad = repo({ '.repo-rules.json': '{"colour": 1}' });
+		const none = cli(['-C', bad.root]);
+		expect(none.code).toBe(2);
+		expect(none.stdout).toBe(`${USAGE}\n`);
+		expect(none.stderr).toBe('');
+		const unknown = cli(['-C', repo().root, 'nope']);
+		expect(unknown.code).toBe(2);
+		expect(unknown.stdout).toBe(`${USAGE}\n`);
+	});
+	test('baseline: refusal and success messages are exact', () => {
+		const r = repo({ 'src/a.ts': DISABLE });
+		expect(cli(['-C', r.root, 'baseline']).stderr).toBe(
+			'repo-rules: no .repo-rules-baseline.json: run repo-rules baseline --init\n',
+		);
+		expect(cli(['-C', r.root, 'baseline', '--init']).stdout).toBe(
+			'repo-rules baseline: wrote .repo-rules-baseline.json (1 entr(ies))\n',
+		);
+		expect(cli(['-C', r.root, 'baseline', '--init']).stderr).toBe(
+			'repo-rules: .repo-rules-baseline.json already exists\n',
+		);
+		r.write({ 'src/a.ts': `${DISABLE}${DISABLE}` });
+		expect(cli(['-C', r.root, 'baseline']).stdout).toBe(
+			'src/a.ts  suppression-reason  1 → 2\n' +
+				'repo-rules baseline: 1 entr(ies) would grow — fix them or pass --allow-grow\n',
+		);
+	});
+	test('check: a stale entry prints its full line and counts in the summary', () => {
+		const r = repo({ 'src/a.ts': DISABLE });
+		expect(cli(['-C', r.root, 'baseline', '--init']).code).toBe(0);
+		r.write({ 'src/a.ts': 'console.log(1);\n' });
+		expect(cli(['-C', r.root, 'check']).stdout).toBe(
+			'src/a.ts  suppression-reason  baseline 1, now 0 — исключения устарели: repo-rules baseline\n' +
+				'repo-rules: 0 violation(s), 1 stale, 4 rule(s) checked\n',
+		);
+	});
+	test('check --json reports a stale entry with its baseline and actual counts', () => {
+		const r = repo({ 'src/a.ts': DISABLE });
+		expect(cli(['-C', r.root, 'baseline', '--init']).code).toBe(0);
+		r.write({ 'src/a.ts': 'console.log(1);\n' });
+		const out = JSON.parse(cli(['-C', r.root, 'check', '--json']).stdout);
+		expect(out.violations).toEqual([]);
+		expect(out.stale).toEqual([
+			{ rule: 'suppression-reason', path: 'src/a.ts', baseline: 1, actual: 0 },
+		]);
+	});
+	test('diff --json carries rule, line 0 and the message; text prints its summary', () => {
+		const r = repo({ 'a.test.ts': 'expect(1);\nexpect(2);\n' });
+		r.git('checkout', '-q', '-b', 'feat');
+		r.write({ 'a.test.ts': 'expect(1);\n' });
+		r.commit('weaken');
+		const red = cli(['-C', r.root, 'diff', '--base', 'main', '--json']);
+		expect(red.code).toBe(1);
+		expect(JSON.parse(red.stdout)).toEqual({
+			violations: [
+				{ rule: 'removed-assertions', path: 'a.test.ts', line: 0, message: '−1 / +0 assertions' },
+			],
+			stale: [],
+			notes: [],
+		});
+		expect(cli(['-C', r.root, 'diff', '--base', 'main']).stdout).toBe(
+			'a.test.ts  removed-assertions  −1 / +0 assertions\n' + 'repo-rules diff: 1 violation(s)\n',
+		);
+	});
+	test('check: a file over 800 lines is reported with its count and the limit', () => {
+		const r = repo({ 'src/big.ts': lines(801) });
+		expect(cli(['-C', r.root, 'check']).stdout).toContain(
+			'src/big.ts:801  max-lines  801 lines (limit 800)',
+		);
+	});
+	test('an unexpected error prints internal error on stderr and exits 2', () => {
+		const r = repo({ 'src/a.ts': 'x\n' });
+		// A dangling baseline symlink: the file reads as absent, the write fails with ENOENT.
+		symlinkSync(join(r.root, 'missing-dir', 'b.json'), join(r.root, '.repo-rules-baseline.json'));
+		const res = cli(['-C', r.root, 'baseline', '--init']);
+		expect(res.code).toBe(2);
+		expect(res.stderr.startsWith('repo-rules: internal error: ')).toBe(true);
 	});
 	test('the bin has a node shebang and runs without bun', () => {
 		const src = readFileSync(join(import.meta.dir, 'cli.mjs'), 'utf8');
