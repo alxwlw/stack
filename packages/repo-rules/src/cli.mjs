@@ -14,7 +14,12 @@ process.stdout.on('error', (e) => {
 });
 
 try {
-	process.exitCode = run(process.argv.slice(2), process.env, (s) => process.stdout.write(`${s}\n`));
+	process.exitCode = run(
+		process.argv.slice(2),
+		process.env,
+		(s) => process.stdout.write(`${s}\n`),
+		(s) => process.stderr.write(`${s}\n`),
+	);
 } catch (e) {
 	// 2, never 0 or 1: an error must not read as «clean» or as «violations found».
 	if (e instanceof RepoRulesError) process.stderr.write(`repo-rules: ${e.message}\n`);

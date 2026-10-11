@@ -40,10 +40,11 @@ function parseOptions(argv) {
 /**
  * @param {string[]} argv
  * @param {NodeJS.ProcessEnv} env
- * @param {(s: string) => void} out
+ * @param {(s: string) => void} out  stdout line
+ * @param {(s: string) => void} err  stderr line: the usage after a wrong command line
  * @returns {number} exit code
  */
-export function run(argv, env, out) {
+export function run(argv, env, out, err) {
 	/** @type {ReturnType<typeof parseOptions>} */
 	let parsed;
 	try {
@@ -58,9 +59,13 @@ export function run(argv, env, out) {
 		return 0;
 	}
 	const cmd = positionals[0];
-	if (values.help || !cmd) {
+	if (values.help) {
 		out(USAGE);
-		return values.help ? 0 : 2;
+		return 0;
+	}
+	if (!cmd || !['check', 'diff', 'baseline'].includes(cmd)) {
+		err(USAGE);
+		return 2;
 	}
 	const root = repoRoot(values.C ?? process.cwd());
 	const cfg = loadConfig(root);
@@ -101,6 +106,9 @@ export function run(argv, env, out) {
 		else {
 			for (const v of violations) out(`${v.path}  removed-assertions  ${v.message}`);
 			for (const n of notes) out(`note  ${n}`);
+			if (violations.length) {
+				out('hint  intended? add a commit trailer «Tests-Removed: <reason>» in the range');
+			}
 			out(
 				res.skipped
 					? 'repo-rules diff: skipped (not a pull request)'
@@ -110,24 +118,20 @@ export function run(argv, env, out) {
 		return violations.length ? 1 : 0;
 	}
 
-	if (cmd === 'baseline') {
-		const prev = loadBaseline(root);
-		if (values.init && prev) throw new RepoRulesError(`${BASELINE_FILE} already exists`);
-		if (!values.init && !prev)
-			throw new RepoRulesError(`no ${BASELINE_FILE}: run repo-rules baseline --init`);
-		const next = scan(root, cfg).actual;
-		const up = prev ? growth(prev, next) : [];
-		if (up.length && !values['allow-grow']) {
-			for (const g of up) out(`${g.path}  ${g.rule}  ${g.from} → ${g.to}`);
-			out(`repo-rules baseline: ${up.length} entr(ies) would grow — fix them or pass --allow-grow`);
-			return 1;
-		}
-		writeBaseline(root, next);
-		const total = REPO_RULES.reduce((n, r) => n + Object.keys(next[r]).length, 0);
-		out(`repo-rules baseline: wrote ${BASELINE_FILE} (${total} entr(ies))`);
-		return 0;
+	// Last command: `baseline`.
+	const prev = loadBaseline(root);
+	if (values.init && prev) throw new RepoRulesError(`${BASELINE_FILE} already exists`);
+	if (!values.init && !prev)
+		throw new RepoRulesError(`no ${BASELINE_FILE}: run repo-rules baseline --init`);
+	const next = scan(root, cfg).actual;
+	const up = prev ? growth(prev, next) : [];
+	if (up.length && !values['allow-grow']) {
+		for (const g of up) out(`${g.path}  ${g.rule}  ${g.from} → ${g.to}`);
+		out(`repo-rules baseline: ${up.length} entr(ies) would grow — fix them or pass --allow-grow`);
+		return 1;
 	}
-
-	out(USAGE);
-	return 2;
+	writeBaseline(root, next);
+	const total = REPO_RULES.reduce((n, r) => n + Object.keys(next[r]).length, 0);
+	out(`repo-rules baseline: wrote ${BASELINE_FILE} (${total} entr(ies))`);
+	return 0;
 }

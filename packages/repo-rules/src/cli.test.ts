@@ -4,6 +4,7 @@ import { join } from 'node:path';
 
 import { afterAll, describe, expect, test } from 'bun:test';
 
+import { DEFAULT_TEST_GLOBS } from './config.mjs';
 import { cleanup, CLI, cli, lines, repo } from './testkit.ts';
 
 afterAll(cleanup);
@@ -115,15 +116,17 @@ describe('repo-rules CLI', () => {
 		expect(version.code).toBe(0);
 		expect(version.stdout).toBe(`${pkg.version}\n`);
 	});
-	test('no command, or an unknown one, prints usage on stdout and exits 2', () => {
+	test('no command, or an unknown one, prints usage on stderr and exits 2', () => {
 		const bad = repo({ '.repo-rules.json': '{"colour": 1}' });
-		const none = cli(['-C', bad.root]);
-		expect(none.code).toBe(2);
-		expect(none.stdout).toBe(`${USAGE}\n`);
-		expect(none.stderr).toBe('');
-		const unknown = cli(['-C', repo().root, 'nope']);
-		expect(unknown.code).toBe(2);
-		expect(unknown.stdout).toBe(`${USAGE}\n`);
+		for (const args of [
+			['-C', bad.root],
+			['-C', repo().root, 'nope'],
+		]) {
+			const res = cli(args);
+			expect(res.code).toBe(2);
+			expect(res.stderr).toBe(`${USAGE}\n`);
+			expect(res.stdout).toBe('');
+		}
 	});
 	test('baseline: refusal and success messages are exact', () => {
 		const r = repo({ 'src/a.ts': DISABLE });
@@ -176,7 +179,9 @@ describe('repo-rules CLI', () => {
 			notes: [],
 		});
 		expect(cli(['-C', r.root, 'diff', '--base', 'main']).stdout).toBe(
-			'a.test.ts  removed-assertions  −1 / +0 assertions\n' + 'repo-rules diff: 1 violation(s)\n',
+			'a.test.ts  removed-assertions  −1 / +0 assertions\n' +
+				'hint  intended? add a commit trailer «Tests-Removed: <reason>» in the range\n' +
+				'repo-rules diff: 1 violation(s)\n',
 		);
 	});
 	test('check: a file over 800 lines is reported with its count and the limit', () => {
@@ -227,28 +232,42 @@ describe('repo-rules CLI', () => {
 			notes: ['skipped (not a pull request)'],
 		});
 	});
-	test('testGlobs replaces the defaults: the README list still reads test_*.py', () => {
-		const config = {
-			testGlobs: [
-				'**/*.{test,spec}.*',
-				'**/__tests__/**',
-				'**/test/**',
-				'**/tests/**',
-				'**/*.t.sol',
-				'**/test_*.py',
-				'**/*_test.py',
-			],
+	test('testGlobs from .repo-rules.json replaces the defaults', () => {
+		const weaken = (r: ReturnType<typeof repo>, path: string) => {
+			r.git('checkout', '-q', '-b', 'feat');
+			r.write({ [path]: 'expect(1);\n' });
+			r.commit('weaken');
 		};
-		const r = repo({
-			'.repo-rules.json': JSON.stringify(config),
-			'test_a.py': 'def test_a():\n    assert 1 == 1\n    assert 2 == 2\n',
-		});
-		r.git('checkout', '-q', '-b', 'feat');
-		r.write({ 'test_a.py': 'def test_a():\n    assert 1 == 1\n' });
-		r.commit('weaken');
-		const res = cli(['-C', r.root, 'diff', '--base', 'main']);
+		const files = { '.repo-rules.json': JSON.stringify({ testGlobs: ['**/*.check.ts'] }) };
+		const custom = repo({ ...files, 'a.check.ts': 'expect(1);\nexpect(2);\n' });
+		weaken(custom, 'a.check.ts');
+		const res = cli(['-C', custom.root, 'diff', '--base', 'main']);
 		expect(res.code).toBe(1);
-		expect(res.stdout).toContain('test_a.py  removed-assertions  −1 / +0 assertions');
+		expect(res.stdout).toContain('a.check.ts  removed-assertions  −1 / +0 assertions');
+		const dropped = repo({ ...files, 'a.test.ts': 'expect(1);\nexpect(2);\n' });
+		weaken(dropped, 'a.test.ts');
+		expect(cli(['-C', dropped.root, 'diff', '--base', 'main']).code).toBe(0);
+	});
+	test('the testGlobs list in the README is the default list', () => {
+		const readme = readFileSync(join(import.meta.dir, '../README.md'), 'utf8');
+		const block = /```json\n([^`]*"testGlobs"[^`]*)```/.exec(readme);
+		expect(block).not.toBeNull();
+		expect(JSON.parse(block![1]!).testGlobs).toEqual(DEFAULT_TEST_GLOBS);
+	});
+	test('a red diff names the way out; a clean one does not', () => {
+		const r = repo({ 'a.test.ts': 'expect(1);\nexpect(2);\n' });
+		r.git('checkout', '-q', '-b', 'feat');
+		r.write({ 'a.test.ts': 'expect(1);\n' });
+		r.commit('weaken');
+		const red = cli(['-C', r.root, 'diff', '--base', 'main']);
+		expect(red.stdout).toBe(
+			'a.test.ts  removed-assertions  −1 / +0 assertions\n' +
+				'hint  intended? add a commit trailer «Tests-Removed: <reason>» in the range\n' +
+				'repo-rules diff: 1 violation(s)\n',
+		);
+		expect(cli(['-C', r.root, 'diff', '--base', 'main', '--json']).stdout).not.toContain('hint');
+		r.commit('note', 'Tests-Removed: the second check duplicated the first');
+		expect(cli(['-C', r.root, 'diff', '--base', 'main']).stdout).not.toContain('Tests-Removed: <');
 	});
 	test('check --help prints usage and exits 0, even with violations', () => {
 		const r = repo({ 'src/a.ts': DISABLE });
