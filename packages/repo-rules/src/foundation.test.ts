@@ -26,7 +26,9 @@ describe('globToRegExp', () => {
 		['public/charting_library/**', 'public/charting_library/x/y.js', true],
 		['*.md', 'a/b.md', false],
 		['a?.ts', 'ab.ts', true],
+		['a?c', 'a/c', false],
 		['a.ts', 'a+ts', false],
+		['a+b.ts', 'a+b.ts', true],
 	];
 	for (const [glob, path, want] of cases) {
 		test(`${glob} ${want ? 'matches' : 'skips'} ${path}`, () => {
