@@ -22,13 +22,36 @@ function assertionPattern(path) {
 }
 
 /**
+ * The code of a diff line: its comments cut out (DP-030). A `/* … *\/` closed on the same line is
+ * whitespace and the code after it stays; `//`, an unclosed `/*`, a leading `*` and Python `#` cut to the end.
+ * @param {string} text
+ * @param {import('./source.mjs').Family} family
+ * @returns {string}
+ */
+function codeOf(text, family) {
+	let code = '';
+	let rest = text;
+	// After the first span the rest is no line start: the `;` keeps a `*` there from reading as a continuation.
+	let pad = '';
+	for (;;) {
+		const c = commentStart(pad + rest, family);
+		if (c < 0) return code + rest;
+		const cut = c - pad.length;
+		const end = family === 'py' || !rest.startsWith('/*', cut) ? -1 : rest.indexOf('*/', cut + 2);
+		if (end < 0) return code + rest.slice(0, cut);
+		code += `${rest.slice(0, cut)} `;
+		rest = rest.slice(end + 2);
+		pad = ';';
+	}
+}
+
+/**
  * Assertions in the code part of a diff line: a commented-out `// expect(…)` is not one (DP-030).
  * @param {string} text
  * @param {Side} side
  */
 function countIn(text, side) {
-	const cut = side.family ? commentStart(text, side.family) : -1;
-	return [...(cut < 0 ? text : text.slice(0, cut)).matchAll(side.re)].length;
+	return [...(side.family ? codeOf(text, side.family) : text).matchAll(side.re)].length;
 }
 
 /** @type {Record<string, string>} */

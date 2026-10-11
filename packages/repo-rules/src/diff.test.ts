@@ -421,6 +421,43 @@ describe('removedAssertions', () => {
 		);
 		expect(removedAssertions(r.root, loadConfig(r.root), 'main', noEnv).violations).toEqual([]);
 	});
+	test('code after a block comment closed on the same line still counts', () => {
+		const r = branch(
+			{ 'src/a.test.ts': 'test("a", () => {\n  expect(f(2)).toBe(4);\n});\n' },
+			(r) => {
+				r.write({
+					'src/a.test.ts': 'test("a", () => {\n  /* note */ expect(f(2)).toBe(4);\n});\n',
+				});
+				r.commit('annotate');
+			},
+		);
+		expect(removedAssertions(r.root, loadConfig(r.root), 'main', noEnv).violations).toEqual([]);
+	});
+	describe('countPairs: comments inside a line', () => {
+		const added = (...plus: string[]) =>
+			countPairs(fileDiff('src/a.test.ts', [], plus), matcher(['**/*.test.ts']))[0]?.added ?? 0;
+		test('two closed block comments before the code', () => {
+			expect(added('  /* a */ /* b */ expect(1);')).toBe(1);
+		});
+		test('a `*` after a closed comment is code, not a continuation line', () => {
+			expect(added('  /* a */ * 2; expect(1);')).toBe(1);
+		});
+		test('a block comment separates tokens like whitespace', () => {
+			expect(added('  return/* c */expect(1);')).toBe(1);
+		});
+		test('an assertion inside the comment is not counted', () => {
+			expect(added('  /* expect(1) */ foo();')).toBe(0);
+		});
+		test('an unclosed block comment hides the rest of the line', () => {
+			expect(added('  /* open expect(1)')).toBe(0);
+		});
+		test('a `//` after a closed block comment hides the rest', () => {
+			expect(added('  /* a */ // expect(1);')).toBe(0);
+		});
+		test('a leading `*` line is a comment', () => {
+			expect(added('   * expect(1) */ expect(2);')).toBe(0);
+		});
+	});
 	describe('exclude', () => {
 		const files = (config: object) => ({
 			'.repo-rules.json': JSON.stringify(config),
