@@ -41,7 +41,7 @@ Optional `.repo-rules.json`:
 
 - Comments are found by a line heuristic, not a parser: a quote inside a regex literal or JSX text can hide a directive later on that line.
 - `<!-- -->` comments in `.vue` and `.svelte` files are not read.
-- `number-or-default` misses `|| .5`, `||=` and `new Number(x)`.
+- `number-or-default` misses `|| .5`, and a `||=` default applied to a variable that holds a `Number(…)` result.
 - `removed-assertions` does not see a test disabled by a rename with no content change (for example `a.test.ts` → `a.test.ts.off`).
 - Assertions moved into a helper count as removed; the `Tests-Removed` trailer is the way out.
 
