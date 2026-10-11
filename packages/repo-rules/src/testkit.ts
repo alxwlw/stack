@@ -29,6 +29,9 @@ export function repo(files: Record<string, string> = {}): Repo {
 	git('init', '-q', '-b', 'main');
 	git('config', 'user.email', 't@t');
 	git('config', 'user.name', 't');
+	// A global signing config must not break the suite (DP-017).
+	git('config', 'commit.gpgsign', 'false');
+	git('config', 'tag.gpgsign', 'false');
 	const write = (more: Record<string, string>): void => {
 		for (const [path, text] of Object.entries(more)) {
 			mkdirSync(dirname(join(root, path)), { recursive: true });

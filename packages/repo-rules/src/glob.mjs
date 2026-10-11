@@ -4,6 +4,8 @@
  * Node 20 has neither `path.matchesGlob` nor `fs.globSync`, so the package carries its own.
  */
 
+import { RepoRulesError } from './git.mjs';
+
 /**
  * @param {string} glob
  * @returns {RegExp}
@@ -49,6 +51,7 @@ export function globToRegExp(glob) {
 		}
 		i += 1;
 	}
+	if (braces > 0) throw new RepoRulesError(`glob «${glob}»: unclosed {`);
 	return new RegExp(`^${re}$`);
 }
 

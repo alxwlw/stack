@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { RepoRulesError } from './git.mjs';
+import { globToRegExp } from './glob.mjs';
 
 export const CONFIG_FILE = '.repo-rules.json';
 
@@ -69,6 +70,22 @@ export const DEFAULT_TEST_GLOBS = [
 const isStringArray = (v) => Array.isArray(v) && v.every((x) => typeof x === 'string');
 
 /**
+ * Compile every glob once, so a malformed one is a config error naming its field.
+ * @param {string[]} globs
+ * @param {string} field
+ * @returns {void}
+ */
+function checkGlobs(globs, field) {
+	for (const g of globs) {
+		try {
+			globToRegExp(g);
+		} catch (e) {
+			throw new RepoRulesError(`${CONFIG_FILE}: ${field}: ${/** @type {Error} */ (e).message}`);
+		}
+	}
+}
+
+/**
  * Read `.repo-rules.json` (optional) and merge it over the defaults.
  * @param {string} root
  * @returns {Config}
@@ -110,11 +127,13 @@ export function loadConfig(root) {
 			if (!isStringArray(v))
 				throw new RepoRulesError(`${CONFIG_FILE}: exclude.${k} must be a list of globs`);
 		}
+		for (const [k, v] of Object.entries(ex)) checkGlobs(v, `exclude.${k}`);
 		cfg.exclude = ex;
 	}
 	if ('testGlobs' in raw) {
 		if (!isStringArray(raw.testGlobs))
 			throw new RepoRulesError(`${CONFIG_FILE}: testGlobs must be a list of globs`);
+		checkGlobs(raw.testGlobs, 'testGlobs');
 		cfg.testGlobs = raw.testGlobs;
 	}
 	return cfg;

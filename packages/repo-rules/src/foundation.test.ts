@@ -1,10 +1,10 @@
-import { writeFileSync } from 'node:fs';
+import { symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { afterAll, describe, expect, test } from 'bun:test';
 
 import { DEFAULT_TEST_GLOBS, loadConfig, MAX_LINES_EXCLUDE } from './config.mjs';
-import { countLines, readText, repoRoot, RepoRulesError, trackedFiles } from './git.mjs';
+import { countLines, git, readText, repoRoot, RepoRulesError, trackedFiles } from './git.mjs';
 import { globToRegExp, matcher } from './glob.mjs';
 import { cleanup, repo } from './testkit.ts';
 
@@ -35,6 +35,9 @@ describe('globToRegExp', () => {
 			expect(globToRegExp(glob).test(path)).toBe(want);
 		});
 	}
+	test('an unclosed { is a RepoRulesError, not a raw SyntaxError', () => {
+		expect(() => globToRegExp('a{b')).toThrow(RepoRulesError);
+	});
 	test('matcher: any of several globs', () => {
 		const m = matcher(['**/*.json', 'docs/**/plans/**']);
 		expect(m('package.json')).toBe(true);
@@ -66,6 +69,33 @@ describe('git helpers', () => {
 	test('trackedFiles keeps non-ASCII paths unquoted', () => {
 		const r = repo({ 'тест.md': 'x\n' });
 		expect(trackedFiles(r.root)).toEqual(['тест.md']);
+	});
+	test('git() runs with core.quotePath=false, so ls-files keeps non-ASCII paths unquoted', () => {
+		const r = repo({ 'тест.md': 'x\n' });
+		expect(git(r.root, ['ls-files'])).toBe('тест.md\n');
+	});
+	test('trackedFiles lists an unmerged path once', () => {
+		const r = repo({ 'a.txt': 'base\n' });
+		r.git('checkout', '-q', '-b', 'side');
+		r.write({ 'a.txt': 'side\n' });
+		r.commit('side');
+		r.git('checkout', '-q', 'main');
+		r.write({ 'a.txt': 'main\n' });
+		r.commit('main');
+		try {
+			r.git('merge', '-q', 'side');
+		} catch {
+			// the conflict is the fixture: the index now holds stages 1-3 for a.txt
+		}
+		expect(r.git('ls-files', '-u')).toContain('a.txt');
+		expect(trackedFiles(r.root)).toEqual(['a.txt']);
+	});
+	test('trackedFiles leaves symlinks out', () => {
+		const r = repo({ 'a.ts': 'x\n' });
+		symlinkSync('a.ts', join(r.root, 'link.ts'));
+		r.commit('link');
+		expect(r.git('ls-files', '-s', 'link.ts')).toStartWith('120000 ');
+		expect(trackedFiles(r.root)).toEqual(['a.ts']);
 	});
 	test('readText: binary and missing files are null', () => {
 		const r = repo({ 'bin.dat': 'a\u0000b', 'a.txt': 'hi\n' });
@@ -116,6 +146,8 @@ describe('loadConfig', () => {
 		['{"exclude": {"no-such-rule": []}}', 'exclude: unknown rule «no-such-rule»'],
 		['{"exclude": {"*": "x"}}', 'exclude.* must be a list of globs'],
 		['{"testGlobs": [1]}', 'testGlobs must be a list of globs'],
+		['{"testGlobs": ["a{b"]}', 'testGlobs: glob «a{b»: unclosed {'],
+		['{"exclude": {"max-lines": ["x{"]}}', 'exclude.max-lines: glob «x{»: unclosed {'],
 	];
 	for (const [text, message] of bad) {
 		test(`rejects ${text}`, () => {

@@ -34,7 +34,7 @@ export function repoRoot(dir) {
 }
 
 /**
- * Tracked paths, gitlinks (submodules) left out.
+ * Tracked paths; gitlinks (submodules) and symlinks (mode 120000) left out.
  * @param {string} root
  * @returns {string[]}
  */
@@ -46,6 +46,7 @@ export function trackedFiles(root) {
 		if (!rec) continue;
 		const tab = rec.indexOf('\t');
 		if (rec.startsWith('160000 ')) continue;
+		if (rec.startsWith('120000 ')) continue;
 		files.push(rec.slice(tab + 1));
 	}
 	return [...new Set(files)];
