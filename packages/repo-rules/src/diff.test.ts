@@ -23,7 +23,7 @@ function branch(files: Record<string, string>, change: (r: ReturnType<typeof rep
 	return r;
 }
 
-/** Branch `feat` cuts `src/a.test.ts` from three checks to one; `config` is set in the repo first. */
+/** Branch `feat` cuts the fixture test file from three checks to one; `config` is set first. */
 function weakened(config?: [string, string]) {
 	const r = branch({ 'src/a.test.ts': T3 }, (r) => {
 		r.write({ 'src/a.test.ts': T1 });
