@@ -13,7 +13,7 @@
 		"builtin": true,
 		"node": true,
 		"browser": true,
-		"es2025": true,
+		"es2026": true,
 	},
 	"rules": {
 		"react/rules-of-hooks": "error",
