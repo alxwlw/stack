@@ -20,6 +20,11 @@ describe('lockstep release', () => {
 	});
 	test('publish.yml checks the tag against every package version', () => {
 		for (const p of packages) expect(publish).toContain(`./packages/${p}/package.json`);
+		// Reading a version is not comparing it: every package must appear in the tag's `if`.
+		const condition = publish.split('\n').find((l) => l.includes('if [ "$tag"')) ?? '';
+		for (const p of packages.filter((p) => p !== 'stack')) {
+			expect(condition).toContain(`"$stack" != "$${p.replace(/-/g, '_')}"`);
+		}
 	});
 	test('scripts/version.ts bumps every package', () => {
 		const match = /const PACKAGES = \[([^\]]*)\]/.exec(versionScript);
