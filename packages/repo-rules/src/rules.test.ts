@@ -95,6 +95,10 @@ describe('focused-skipped-tests', () => {
 		expect(t('// -- needs a live node', `it.skip('a', () => {});`)).toEqual([]);
 		expect(t('const x = 1; // -- not a comment line', `it.skip('a', () => {});`)).toEqual([2]);
 	});
+	test('CRLF on a focused/skipped line keeps its reason', () => {
+		expect(t(`it.skip('a', () => {}); // -- flaky upstream, MR-12\r`)).toEqual([]);
+		expect(t(`it.skip('a', () => {});\r`)).toEqual([1]);
+	});
 	test('conditional skips are allowed', () => {
 		expect(t(`it.skipIf(!process.env.DB)('a', () => {});`)).toEqual([]);
 		expect(t(`test.runIf(ci)('a', () => {});`)).toEqual([]);
