@@ -9,6 +9,14 @@ pnpm exec repo-rules check             # every run: nothing new, nothing stale
 pnpm exec repo-rules diff --base origin/main
 ```
 
+```
+repo-rules [-C <dir>] check [--json]
+repo-rules [-C <dir>] diff [--base <ref>] [--json]
+repo-rules [-C <dir>] baseline [--init] [--allow-grow]
+```
+
+`-C <dir>` runs in that directory (any place inside the repository). `--json` prints `{ violations, stale, notes }` instead of text lines. `--help` prints the usage; a missing or unknown command prints it on stderr and exits 2.
+
 ## Rules
 
 | Rule                          | Flags                                                                                                                                                                                                                                                                                      |
@@ -16,8 +24,8 @@ pnpm exec repo-rules diff --base origin/main
 | `max-lines`                   | a tracked text file over 800 lines (plans, lockfiles, JSON, snapshots, generated and vendored files excluded)                                                                                                                                                                              |
 | `suppression-reason`          | `eslint-disable*` / `oxlint-disable*` / `solhint-disable*` without ` -- reason`; `@ts-expect-error` / `@ts-ignore` without trailing text; `biome-ignore` without text after `:`; Python `# noqa` / `# type: ignore` without ` -- reason`                                                   |
 | `focused-skipped-tests`       | in JS/TS test files: `.only(` on any line (the scan is line-based, see Limits); `.skip(` / `.todo(` / `xit(` / `xdescribe(` / `xtest(` without a ` -- reason` comment on the line or the comment line above. `.skipIf` / `.runIf` and Playwright's `test.skip(condition, reason)` are fine |
-| `number-or-default`           | `Number(…)`, `parseInt(…)`, `parseFloat(…)` followed by `\|\| <non-zero literal>`: a real 0 silently becomes the default                                                                                                                                                                   |
-| `removed-assertions` (`diff`) | a test file whose diff removes more `expect(` / `assert…` than it adds. A `Tests-Removed: <reason>` commit trailer in the range accepts it                                                                                                                                                 |
+| `number-or-default`           | in non-test JS/TS files: `Number(…)`, `Number.parseInt(…)`, `Number.parseFloat(…)`, `parseInt(…)`, `parseFloat(…)` followed by `\|\| <non-zero literal>`: a real 0 silently becomes the default                                                                                            |
+| `removed-assertions` (`diff`) | a test file whose diff removes more `expect(` / `assert…` than it adds; a commented-out assertion counts as neither removed nor added. `exclude` (`*` or `removed-assertions`) applies. A `Tests-Removed: <reason>` commit trailer in the range accepts it                                 |
 
 A reason is at least three non-space characters.
 
@@ -45,7 +53,7 @@ Optional `.repo-rules.json`:
 }
 ```
 
-`testGlobs` replaces the default list, shown in full above; it does not add to it.
+`testGlobs` replaces the default list, shown in full above; it does not add to it. `exclude` takes `*` or a rule name — the four rules above and `removed-assertions`.
 
 ## Limits
 
