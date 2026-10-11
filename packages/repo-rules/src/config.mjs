@@ -17,6 +17,9 @@ export const REPO_RULES = /** @type {const} */ ([
 
 /** @typedef {(typeof REPO_RULES)[number]} RepoRule */
 
+/** `exclude` also takes the `diff` rule (spec § 5): it is not a whole-repo rule, so not in `REPO_RULES`. */
+const EXCLUDE_KEYS = ['*', 'removed-assertions', ...REPO_RULES];
+
 export const DEFAULT_MAX_LINES = 800;
 
 /** Spec § 2, `max-lines` default exclusions. */
@@ -121,7 +124,7 @@ export function loadConfig(root) {
 			throw new RepoRulesError(`${CONFIG_FILE}: exclude must map «*» or a rule name to globs`);
 		}
 		for (const [k, v] of Object.entries(ex)) {
-			if (k !== '*' && !REPO_RULES.includes(/** @type {RepoRule} */ (k))) {
+			if (!EXCLUDE_KEYS.includes(k)) {
 				throw new RepoRulesError(`${CONFIG_FILE}: exclude: unknown rule «${k}»`);
 			}
 			if (!isStringArray(v))

@@ -137,6 +137,14 @@ describe('loadConfig', () => {
 		expect(cfg.exclude['max-lines']).toEqual(['docs/*.html']);
 		expect(cfg.testGlobs).toEqual(['**/*.check.ts']);
 	});
+	test('exclude takes removed-assertions, the diff rule; an unknown rule is still rejected', () => {
+		const r = repo({
+			'.repo-rules.json': JSON.stringify({ exclude: { 'removed-assertions': ['vendor/**'] } }),
+		});
+		expect(loadConfig(r.root).exclude).toEqual({ 'removed-assertions': ['vendor/**'] });
+		r.write({ '.repo-rules.json': '{"exclude": {"removed-assertion": []}}' });
+		expect(() => loadConfig(r.root)).toThrow('exclude: unknown rule «removed-assertion»');
+	});
 	const bad: [string, string][] = [
 		['{', 'not JSON'],
 		['[]', 'top level is not an object'],

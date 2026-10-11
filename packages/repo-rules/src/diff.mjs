@@ -2,7 +2,7 @@
 /** `removed-assertions` (DP-014, spec § 4). */
 import { git, RepoRulesError } from './git.mjs';
 import { matcher } from './glob.mjs';
-import { hasReason } from './source.mjs';
+import { commentStart, familyOf, hasReason } from './source.mjs';
 
 /** @typedef {import('./config.mjs').Config} Config */
 
@@ -22,10 +22,14 @@ function assertionPattern(path) {
 }
 
 /**
+ * Assertions in the code part of a diff line: a commented-out `// expect(…)` is not one (DP-030).
  * @param {string} text
- * @param {RegExp} re
+ * @param {Side} side
  */
-const countIn = (text, re) => [...text.matchAll(re)].length;
+function countIn(text, side) {
+	const cut = side.family ? commentStart(text, side.family) : -1;
+	return [...(cut < 0 ? text : text.slice(0, cut)).matchAll(side.re)].length;
+}
 
 /** @type {Record<string, string>} */
 const C_ESCAPES = { a: '\x07', b: '\b', t: '\t', n: '\n', v: '\v', f: '\f', r: '\r' };
@@ -44,6 +48,19 @@ function gitPath(text) {
 		.replace(/\\([0-7]{3}|.)/g, (_, /** @type {string} */ esc) =>
 			esc.length === 3 ? String.fromCharCode(Number.parseInt(esc, 8)) : (C_ESCAPES[esc] ?? esc),
 		);
+}
+
+/** @typedef {{ re: RegExp, family: import('./source.mjs').Family | null }} Side */
+
+/**
+ * The counting rule of one side of a pair, by that side's own path; null when it is no test.
+ * @param {string | null} path
+ * @param {boolean} tested
+ * @returns {Side | null}
+ */
+function sideOf(path, tested) {
+	const re = path !== null && tested ? assertionPattern(path) : null;
+	return re && path !== null ? { re, family: familyOf(path) } : null;
 }
 
 /**
@@ -65,14 +82,16 @@ export function countPairs(diff, isTest) {
 	const pairs = [];
 	/** @type {PairCount | null} */
 	let cur = null;
-	/** @type {RegExp | null} */
-	let re = null;
+	/** @type {Side | null} */
+	let del = null;
+	/** @type {Side | null} */
+	let ins = null;
 	let inHunk = false;
 	for (const line of diff.split('\n')) {
 		if (line.startsWith('diff --git ')) {
 			cur = { from: null, to: null, removed: 0, added: 0 };
 			pairs.push(cur);
-			re = null;
+			del = ins = null;
 			inHunk = false;
 			continue;
 		}
@@ -83,19 +102,21 @@ export function countPairs(diff, isTest) {
 				cur.from = line === '--- /dev/null' ? null : gitPath(line.slice(4)).slice(2);
 			else if (line.startsWith('+++ ')) {
 				cur.to = line === '+++ /dev/null' ? null : gitPath(line.slice(4)).slice(2);
-				const p = cur.to ?? cur.from;
-				const tested =
-					(cur.from !== null && isTest(cur.from)) || (cur.to !== null && isTest(cur.to));
-				re = p !== null && tested ? assertionPattern(p) : null;
 			} else if (line.startsWith('rename from ')) cur.from = gitPath(line.slice(12));
 			else if (line.startsWith('rename to ')) cur.to = gitPath(line.slice(10));
-			else if (line.startsWith('@@')) inHunk = true;
+			else if (line.startsWith('@@')) {
+				inHunk = true;
+				// Each side is read in its own language: a rename may change it (`a_test.py` → `a.test.ts`).
+				const tested =
+					(cur.from !== null && isTest(cur.from)) || (cur.to !== null && isTest(cur.to));
+				del = sideOf(cur.from, tested);
+				ins = sideOf(cur.to, tested);
+			}
 			continue;
 		}
 		if (line.startsWith('@@')) continue;
-		if (!re) continue;
-		if (line.startsWith('-')) cur.removed += countIn(line.slice(1), re);
-		else if (line.startsWith('+')) cur.added += countIn(line.slice(1), re);
+		if (line.startsWith('-') && del) cur.removed += countIn(line.slice(1), del);
+		else if (line.startsWith('+') && ins) cur.added += countIn(line.slice(1), ins);
 	}
 	return pairs.filter((p) => p.removed > 0 || p.added > 0);
 }
@@ -137,9 +158,17 @@ export function removedAssertions(root, cfg, base, env) {
 		mb,
 		'HEAD',
 	]);
-	const pairs = countPairs(diff, matcher(cfg.testGlobs));
+	const excluded = matcher([
+		...(cfg.exclude['*'] ?? []),
+		...(cfg.exclude['removed-assertions'] ?? []),
+	]);
+	const pairs = countPairs(diff, matcher(cfg.testGlobs)).filter(
+		(p) => ![p.from, p.to].every((path) => path === null || excluded(path)),
+	);
 	const reasons = git(root, [
 		'log',
+		// `log.showSignature` would print «Good signature» lines on stdout: not a trailer.
+		'--no-show-signature',
 		'--format=%(trailers:key=Tests-Removed,valueonly,separator=%x00)',
 		`${mb}..HEAD`,
 	])

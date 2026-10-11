@@ -1,3 +1,8 @@
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import { afterAll, describe, expect, test } from 'bun:test';
 
 import { loadConfig } from './config.mjs';
@@ -359,6 +364,146 @@ describe('removedAssertions', () => {
 			'git merge-base failed',
 		);
 	});
+
+	test('log.showSignature does not turn a «Good signature» line into a Tests-Removed reason', () => {
+		const keys = mkdtempSync(join(tmpdir(), 'repo-rules-key-'));
+		try {
+			execFileSync('ssh-keygen', ['-q', '-t', 'ed25519', '-N', '', '-f', join(keys, 'k')]);
+			const pub = execFileSync('cat', [join(keys, 'k.pub')], { encoding: 'utf8' });
+			writeFileSync(join(keys, 'allowed'), `t@t ${pub}`);
+			const r = branch({ 'src/a.test.ts': T3 }, (r) => {
+				r.git('config', 'gpg.format', 'ssh');
+				r.git('config', 'user.signingkey', join(keys, 'k.pub'));
+				r.git('config', 'gpg.ssh.allowedSignersFile', join(keys, 'allowed'));
+				r.write({ 'src/a.test.ts': T1 });
+				r.git('add', '-A');
+				r.git('commit', '-q', '-S', '-m', 'weaken');
+			});
+			r.git('config', 'log.showSignature', 'true');
+			// The premise: this git does print a signature line for the range.
+			expect(r.git('log', '--format=%s', 'main..HEAD')).toContain('Good "git" signature');
+			const res = removedAssertions(r.root, loadConfig(r.root), 'main', noEnv);
+			expect(res.reasons).toEqual([]);
+			expect(res.violations).toEqual(WEAKENED);
+		} finally {
+			rmSync(keys, { recursive: true, force: true });
+		}
+	});
+	test('a commented-out assertion is not an added one: commenting a check out is a removal', () => {
+		const js = branch(
+			{ 'src/a.test.ts': 'test("a", () => {\n  expect(f(2)).toBe(4);\n});\n' },
+			(r) => {
+				r.write({ 'src/a.test.ts': 'test("a", () => {\n  // expect(f(2)).toBe(4);\n});\n' });
+				r.commit('comment out');
+			},
+		);
+		expect(removedAssertions(js.root, loadConfig(js.root), 'main', noEnv).violations).toEqual([
+			{ path: 'src/a.test.ts', removed: 1, added: 0 },
+		]);
+		const py = branch(
+			{ 'test_a.py': 'def test_a(self):\n    self.assertEqual(f(2), 4)\n' },
+			(r) => {
+				r.write({ 'test_a.py': 'def test_a(self):\n    # self.assertEqual(f(2), 4)\n' });
+				r.commit('comment out');
+			},
+		);
+		expect(removedAssertions(py.root, loadConfig(py.root), 'main', noEnv).violations).toEqual([
+			{ path: 'test_a.py', removed: 1, added: 0 },
+		]);
+	});
+	test('deleting a commented-out assertion is not a removal', () => {
+		const r = branch(
+			{ 'src/a.test.ts': 'test("a", () => {\n  expect(1);\n  // expect(2);\n});\n' },
+			(r) => {
+				r.write({ 'src/a.test.ts': 'test("a", () => {\n  expect(1);\n});\n' });
+				r.commit('drop dead code');
+			},
+		);
+		expect(removedAssertions(r.root, loadConfig(r.root), 'main', noEnv).violations).toEqual([]);
+	});
+	describe('exclude', () => {
+		const files = (config: object) => ({
+			'.repo-rules.json': JSON.stringify(config),
+			'vendor/lib/test/a.js': T3,
+			'src/a.test.ts': T3,
+		});
+		const weakenBoth = (r: ReturnType<typeof repo>) => {
+			r.write({ 'vendor/lib/test/a.js': T1, 'src/a.test.ts': T1 });
+			r.commit('weaken both');
+		};
+		const paths = (r: ReturnType<typeof repo>) =>
+			removedAssertions(r.root, loadConfig(r.root), 'main', noEnv).violations.map((v) => v.path);
+		test('exclude["*"] reaches removed-assertions', () => {
+			const r = branch(files({ exclude: { '*': ['vendor/**'] } }), weakenBoth);
+			expect(paths(r)).toEqual(['src/a.test.ts']);
+		});
+		test('exclude["removed-assertions"] does too', () => {
+			const r = branch(files({ exclude: { 'removed-assertions': ['vendor/**'] } }), weakenBoth);
+			expect(paths(r)).toEqual(['src/a.test.ts']);
+		});
+		test("another rule's exclude does not", () => {
+			const r = branch(files({ exclude: { 'max-lines': ['vendor/**'] } }), weakenBoth);
+			expect(paths(r).sort()).toEqual(['src/a.test.ts', 'vendor/lib/test/a.js']);
+		});
+		test('a rename is dropped only when both of its names are excluded', () => {
+			const config = { exclude: { '*': ['vendor/**'] } };
+			const both = branch(
+				{ '.repo-rules.json': JSON.stringify(config), 'vendor/a.test.ts': T3 },
+				(r) => {
+					r.git('mv', 'vendor/a.test.ts', 'vendor/b.test.ts');
+					r.write({ 'vendor/b.test.ts': T1 });
+					r.commit('move inside vendor and weaken');
+				},
+			);
+			expect(paths(both)).toEqual([]);
+			const out = branch(
+				{ '.repo-rules.json': JSON.stringify(config), 'vendor/a.test.ts': T3 },
+				(r) => {
+					r.git('rm', '-q', 'vendor/a.test.ts');
+					r.write({ 'src/a.test.ts': T1 });
+					r.commit('move out of vendor and weaken');
+				},
+			);
+			expect(paths(out)).toEqual(['vendor/a.test.ts → src/a.test.ts']);
+		});
+		test('an excluded deleted file does not count, nor does an excluded new one pay for it', () => {
+			const config = { exclude: { '*': ['vendor/**'] } };
+			const r = branch(
+				{ '.repo-rules.json': JSON.stringify(config), 'src/old.test.ts': T3 },
+				(r) => {
+					r.git('rm', '-q', 'src/old.test.ts');
+					r.write({ 'vendor/new.test.ts': T3.replace(/\(\d\)/g, '(9)').replace('a', 'b') });
+					r.commit('replace by a vendored copy');
+				},
+			);
+			expect(removedAssertions(r.root, loadConfig(r.root), 'main', noEnv).violations).toEqual([
+				{ path: 'src/old.test.ts (deleted)', removed: 3, added: 0 },
+			]);
+		});
+	});
+	test('a rename that changes language counts each side in its own', () => {
+		const same = 'shared line one\nshared line two\nshared line three\nshared line four\n';
+		const r = branch(
+			{ 'src/a_test.py': `${same}    assert x == 1\n    self.assertEqual(x, 1)\n` },
+			(r) => {
+				r.git('mv', 'src/a_test.py', 'src/a.test.ts');
+				r.write({ 'src/a.test.ts': same });
+				r.commit('port to TypeScript and drop the checks');
+			},
+		);
+		expect(removedAssertions(r.root, loadConfig(r.root), 'main', noEnv).violations).toEqual([
+			{ path: 'src/a_test.py → src/a.test.ts', removed: 2, added: 0 },
+		]);
+	});
+	test('a rename into another language counts the added checks in the new one', () => {
+		const same = 'shared line one\nshared line two\nshared line three\nshared line four\n';
+		const r = branch({ 'src/a.test.ts': `${same}expect(1);\nexpect(2);\n` }, (r) => {
+			r.git('rm', '-q', 'src/a.test.ts');
+			r.write({ 'src/test_a.py': `${same}    assert x == 1\n    self.assertEqual(x, 2)\n` });
+			r.commit('port to Python, keeping the checks');
+		});
+		expect(removedAssertions(r.root, loadConfig(r.root), 'main', noEnv).violations).toEqual([]);
+	});
 });
 
 describe('countPairs / judge', () => {
@@ -459,5 +604,24 @@ describe('countPairs / judge', () => {
 	test('a non-test file is not counted, whatever its text', () => {
 		const diff = fileDiff('src/a.ts', ['const x = null;', 'expect(1);']);
 		expect(judge(countPairs(diff, isTest))).toEqual([]);
+	});
+
+	test('only the code part of a line counts: comments are cut, strings are not', () => {
+		const diff = fileDiff('src/x.test.ts', [
+			'// expect(1);',
+			'  /* expect(2); */',
+			' * expect(3);',
+			'expect(4); // expect(5);',
+			'expect("a // b");',
+		]);
+		expect(judge(countPairs(diff, isTest))).toEqual([
+			{ path: 'src/x.test.ts', removed: 2, added: 0 },
+		]);
+		const py = fileDiff(
+			'test_y.py',
+			['# assert x == 1', '    self.assertEqual(x, 1)  # assert y'],
+			['    # self.assertEqual(x, 2)'],
+		);
+		expect(judge(countPairs(py, isTest))).toEqual([{ path: 'test_y.py', removed: 1, added: 0 }]);
 	});
 });
