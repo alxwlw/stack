@@ -1,0 +1,26 @@
+{
+	"name": "@alxwlw/repo-rules",
+	"version": "1.5.0",
+	"description": "Whole-repo lint rules from the alxwlw defect corpus — long files, unjustified suppressions, skipped/focused tests, Number(x) || <default>, removed assertions — with a shrink-only baseline.",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/alxwlw/stack.git"
+	},
+	"bin": {
+		"repo-rules": "src/cli.mjs"
+	},
+	"files": [
+		"src",
+		"!src/**/*.test.ts",
+		"!src/testkit.ts"
+	],
+	"type": "module",
+	"engines": {
+		"node": ">=20"
+	},
+	"publishConfig": {
+		"access": "public",
+		"provenance": true
+	}
+}
