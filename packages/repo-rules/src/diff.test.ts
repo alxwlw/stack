@@ -445,6 +445,12 @@ describe('removedAssertions', () => {
 		test('a block comment separates tokens like whitespace', () => {
 			expect(added('  return/* c */expect(1);')).toBe(1);
 		});
+		test('two block comments with no gap', () => {
+			expect(added('  /* a *//* b */ expect(1);')).toBe(1);
+		});
+		test('`/*/` does not close itself', () => {
+			expect(added('  /*/ expect(1);')).toBe(0);
+		});
 		test('an assertion inside the comment is not counted', () => {
 			expect(added('  /* expect(1) */ foo();')).toBe(0);
 		});

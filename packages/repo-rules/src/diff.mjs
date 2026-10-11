@@ -37,7 +37,7 @@ function codeOf(text, family) {
 		const c = commentStart(pad + rest, family);
 		if (c < 0) return code + rest;
 		const cut = c - pad.length;
-		const end = family === 'py' || !rest.startsWith('/*', cut) ? -1 : rest.indexOf('*/', cut + 2);
+		const end = !rest.startsWith('/*', cut) ? -1 : rest.indexOf('*/', cut + 2);
 		if (end < 0) return code + rest.slice(0, cut);
 		code += `${rest.slice(0, cut)} `;
 		rest = rest.slice(end + 2);
