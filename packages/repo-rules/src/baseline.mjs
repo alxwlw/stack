@@ -40,8 +40,8 @@ export function loadBaseline(root) {
 		if (key !== 'version' && key !== 'rules')
 			throw new RepoRulesError(`${BASELINE_FILE}: unknown field «${key}»`);
 	}
-	const rules = raw.rules ?? {};
-	if (typeof rules !== 'object' || Array.isArray(rules))
+	const rules = 'rules' in raw ? raw.rules : {};
+	if (rules === null || typeof rules !== 'object' || Array.isArray(rules))
 		throw new RepoRulesError(`${BASELINE_FILE}: rules must be an object`);
 	const counts = emptyCounts();
 	for (const [rule, files] of Object.entries(rules)) {

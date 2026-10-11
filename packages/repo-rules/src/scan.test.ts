@@ -118,6 +118,21 @@ describe('scan', () => {
 		expect(res.actual['number-or-default']).toEqual({ 'src/generated/g.ts': 1 });
 		expect(res.actual['focused-skipped-tests']).toEqual({ 'build/x.test.ts': 1 });
 	});
+	test('each hit carries its own rule label, path and line', () => {
+		const r = repo({
+			'src/s.ts': '// eslint-disable-line x\n',
+			'src/f.test.ts': "it.skip('a', () => {});\n",
+			'src/n.ts': 'const p = Number(env.P) || 8080;\n',
+			'docs/long.md': lines(801),
+		});
+		const res = scan(r.root, loadConfig(r.root));
+		expect(res.hits.map((h) => `${h.rule}:${h.path}:${h.line}`).sort()).toEqual([
+			'focused-skipped-tests:src/f.test.ts:1',
+			'max-lines:docs/long.md:801',
+			'number-or-default:src/n.ts:1',
+			'suppression-reason:src/s.ts:1',
+		]);
+	});
 });
 
 describe('baseline', () => {
@@ -214,6 +229,8 @@ describe('baseline', () => {
 			['{"version": "1", "rules": {}}', `${BASELINE_FILE}: version must be 1`],
 			['{"version": 1, "rules": []}', `${BASELINE_FILE}: rules must be an object`],
 			['{"version": 1, "rules": "x"}', `${BASELINE_FILE}: rules must be an object`],
+			['{"version": 1, "rules": null}', `${BASELINE_FILE}: rules must be an object`],
+			['{"version": 1, "rules": 0}', `${BASELINE_FILE}: rules must be an object`],
 			['{"version": 1, "extra": 1}', `${BASELINE_FILE}: unknown field «extra»`],
 			['{"version": 1, "rules": {"no-rule": {}}}', `${BASELINE_FILE}: unknown rule «no-rule»`],
 			[
@@ -222,6 +239,10 @@ describe('baseline', () => {
 			],
 			[
 				'{"version": 1, "rules": {"max-lines": {"a.md": 0}}}',
+				`${BASELINE_FILE}: rules.max-lines["a.md"] must be a positive integer`,
+			],
+			[
+				'{"version": 1, "rules": {"max-lines": {"a.md": 1.5}}}',
 				`${BASELINE_FILE}: rules.max-lines["a.md"] must be a positive integer`,
 			],
 		];
