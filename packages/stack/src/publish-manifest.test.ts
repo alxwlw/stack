@@ -10,13 +10,24 @@
  * auto-correct fails the suite before it can reach the registry.
  */
 import { spawnSync } from 'node:child_process';
+import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { expect, test } from 'bun:test';
 
 const ROOT = join(import.meta.dir, '..', '..', '..');
 
-for (const pkg of ['stack', 'oxlint-config', 'tsconfig']) {
+// Derived, not listed (DP-027): a package directory under packages/ joins this gate on its own.
+const packages = readdirSync(join(ROOT, 'packages'), { withFileTypes: true })
+	.filter((d) => d.isDirectory() && existsSync(join(ROOT, 'packages', d.name, 'package.json')))
+	.map((d) => d.name)
+	.sort();
+
+test('the manifest gate finds the workspace packages', () => {
+	expect(packages.length).toBeGreaterThan(0);
+});
+
+for (const pkg of packages) {
 	test(`npm не правит манифест @alxwlw/${pkg} при публикации`, () => {
 		const res = spawnSync('npm', ['publish', '--dry-run', '--provenance=false'], {
 			cwd: join(ROOT, 'packages', pkg),
