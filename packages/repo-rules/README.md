@@ -11,13 +11,13 @@ pnpm exec repo-rules diff --base origin/main
 
 ## Rules
 
-| Rule                          | Flags                                                                                                                                                                                                                                            |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `max-lines`                   | a tracked text file over 800 lines (plans, lockfiles, JSON, snapshots, generated and vendored files excluded)                                                                                                                                    |
-| `suppression-reason`          | `eslint-disable*` / `oxlint-disable*` / `solhint-disable*` without ` -- reason`; `@ts-expect-error` / `@ts-ignore` without trailing text; `biome-ignore` without text after `:`; Python `# noqa` / `# type: ignore` without ` -- reason`         |
-| `focused-skipped-tests`       | in JS/TS test files: `.only(` always; `.skip(` / `.todo(` / `xit(` / `xdescribe(` / `xtest(` without a ` -- reason` comment on the line or the comment line above. `.skipIf` / `.runIf` and Playwright's `test.skip(condition, reason)` are fine |
-| `number-or-default`           | `Number(…)`, `parseInt(…)`, `parseFloat(…)` followed by `\|\| <non-zero literal>`: a real 0 silently becomes the default                                                                                                                         |
-| `removed-assertions` (`diff`) | a test file whose diff removes more `expect(` / `assert…` than it adds. A `Tests-Removed: <reason>` commit trailer in the range accepts it                                                                                                       |
+| Rule                          | Flags                                                                                                                                                                                                                                                                                      |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `max-lines`                   | a tracked text file over 800 lines (plans, lockfiles, JSON, snapshots, generated and vendored files excluded)                                                                                                                                                                              |
+| `suppression-reason`          | `eslint-disable*` / `oxlint-disable*` / `solhint-disable*` without ` -- reason`; `@ts-expect-error` / `@ts-ignore` without trailing text; `biome-ignore` without text after `:`; Python `# noqa` / `# type: ignore` without ` -- reason`                                                   |
+| `focused-skipped-tests`       | in JS/TS test files: `.only(` on any line (the scan is line-based, see Limits); `.skip(` / `.todo(` / `xit(` / `xdescribe(` / `xtest(` without a ` -- reason` comment on the line or the comment line above. `.skipIf` / `.runIf` and Playwright's `test.skip(condition, reason)` are fine |
+| `number-or-default`           | `Number(…)`, `parseInt(…)`, `parseFloat(…)` followed by `\|\| <non-zero literal>`: a real 0 silently becomes the default                                                                                                                                                                   |
+| `removed-assertions` (`diff`) | a test file whose diff removes more `expect(` / `assert…` than it adds. A `Tests-Removed: <reason>` commit trailer in the range accepts it                                                                                                                                                 |
 
 A reason is at least three non-space characters.
 
@@ -33,9 +33,19 @@ Optional `.repo-rules.json`:
 {
 	"maxLines": 800,
 	"exclude": { "*": ["public/vendor/**"], "max-lines": ["docs/*.html"] },
-	"testGlobs": ["**/*.{test,spec}.*", "**/__tests__/**", "**/test/**", "**/tests/**"]
+	"testGlobs": [
+		"**/*.{test,spec}.*",
+		"**/__tests__/**",
+		"**/test/**",
+		"**/tests/**",
+		"**/*.t.sol",
+		"**/test_*.py",
+		"**/*_test.py"
+	]
 }
 ```
+
+`testGlobs` replaces the default list, shown in full above; it does not add to it.
 
 ## Limits
 
@@ -44,6 +54,7 @@ Optional `.repo-rules.json`:
 - `number-or-default` misses `|| .5`, and a `||=` default applied to a variable that holds a `Number(…)` result.
 - `removed-assertions` does not see a test disabled by a rename with no content change (for example `a.test.ts` → `a.test.ts.off`).
 - Assertions moved into a helper count as removed; the `Tests-Removed` trailer is the way out.
+- The scan is line-based and does not know whether a line sits inside a string or a template literal, so `.only(` or `.skip(` inside a fixture string is flagged.
 
 ## CI
 

@@ -1,16 +1,17 @@
+import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { afterAll, describe, expect, test } from 'bun:test';
 
-import { cleanup, cli, lines, repo } from './testkit.ts';
+import { cleanup, CLI, cli, lines, repo } from './testkit.ts';
 
 afterAll(cleanup);
 
 const DISABLE = '// eslint-disable-next-line no-console\nconsole.log(1);\n';
 const USAGE =
 	'usage: repo-rules [-C <dir>] check [--json]\n' +
-	'       repo-rules [-C <dir>] diff --base <ref> [--json]\n' +
+	'       repo-rules [-C <dir>] diff [--base <ref>] [--json]\n' +
 	'       repo-rules [-C <dir>] baseline [--init] [--allow-grow]';
 
 describe('repo-rules CLI', () => {
@@ -191,6 +192,69 @@ describe('repo-rules CLI', () => {
 		const res = cli(['-C', r.root, 'baseline', '--init']);
 		expect(res.code).toBe(2);
 		expect(res.stderr.startsWith('repo-rules: internal error: ')).toBe(true);
+		expect(res.stderr).toContain('    at ');
+	});
+	test('a full disk on stdout exits 2 with one stderr line (Linux: /dev/full)', () => {
+		const r = repo({ 'src/a.ts': DISABLE });
+		const res = spawnSync('sh', ['-c', `node '${CLI}' -C '${r.root}' check > /dev/full`], {
+			encoding: 'utf8',
+		});
+		expect(res.status).toBe(2);
+		expect(res.stderr).toMatch(/^repo-rules: ENOSPC[^\n]*\n$/);
+		expect(res.stderr).not.toContain('    at ');
+	});
+	test('diff --json notes: the Tests-Removed reason, and the skip on a push', () => {
+		const r = repo({ 'a.test.ts': 'expect(1);\nexpect(2);\n' });
+		r.git('checkout', '-q', '-b', 'feat');
+		r.write({ 'a.test.ts': 'expect(1);\n' });
+		r.commit('weaken');
+		r.commit('note', 'Tests-Removed: the second check duplicated the first');
+		const ok = cli(['-C', r.root, 'diff', '--base', 'main', '--json']);
+		expect(ok.code).toBe(0);
+		expect(JSON.parse(ok.stdout)).toEqual({
+			violations: [],
+			stale: [],
+			notes: ['Tests-Removed: the second check duplicated the first'],
+		});
+		const push = cli(['-C', r.root, 'diff', '--json'], {
+			GITHUB_ACTIONS: 'true',
+			GITHUB_EVENT_NAME: 'push',
+		});
+		expect(push.code).toBe(0);
+		expect(JSON.parse(push.stdout)).toEqual({
+			violations: [],
+			stale: [],
+			notes: ['skipped (not a pull request)'],
+		});
+	});
+	test('testGlobs replaces the defaults: the README list still reads test_*.py', () => {
+		const config = {
+			testGlobs: [
+				'**/*.{test,spec}.*',
+				'**/__tests__/**',
+				'**/test/**',
+				'**/tests/**',
+				'**/*.t.sol',
+				'**/test_*.py',
+				'**/*_test.py',
+			],
+		};
+		const r = repo({
+			'.repo-rules.json': JSON.stringify(config),
+			'test_a.py': 'def test_a():\n    assert 1 == 1\n    assert 2 == 2\n',
+		});
+		r.git('checkout', '-q', '-b', 'feat');
+		r.write({ 'test_a.py': 'def test_a():\n    assert 1 == 1\n' });
+		r.commit('weaken');
+		const res = cli(['-C', r.root, 'diff', '--base', 'main']);
+		expect(res.code).toBe(1);
+		expect(res.stdout).toContain('test_a.py  removed-assertions  −1 / +0 assertions');
+	});
+	test('check --help prints usage and exits 0, even with violations', () => {
+		const r = repo({ 'src/a.ts': DISABLE });
+		const res = cli(['-C', r.root, 'check', '--help']);
+		expect(res.code).toBe(0);
+		expect(res.stdout).toBe(`${USAGE}\n`);
 	});
 	test('the bin has a node shebang and runs without bun', () => {
 		const src = readFileSync(join(import.meta.dir, 'cli.mjs'), 'utf8');

@@ -17,7 +17,7 @@ import { repoRoot, RepoRulesError } from './git.mjs';
 import { scan } from './scan.mjs';
 
 const USAGE = `usage: repo-rules [-C <dir>] check [--json]
-       repo-rules [-C <dir>] diff --base <ref> [--json]
+       repo-rules [-C <dir>] diff [--base <ref>] [--json]
        repo-rules [-C <dir>] baseline [--init] [--allow-grow]`;
 
 /** @param {string[]} argv */
