@@ -57,6 +57,67 @@ describe('scan', () => {
 		expect(res.actual['suppression-reason']).toEqual({});
 		expect(res.actual['focused-skipped-tests']).toEqual({ 'src/a.check.ts': 1 });
 	});
+	test('suppression-reason and number-or-default follow the family; markdown is not scanned', () => {
+		const r = repo({
+			'docs/a.md': '// eslint-disable-line x\n',
+			'src/t.py': 'x = 1  # noqa\nport = Number(env.P) || 8080\n',
+			'src/s.sol': '// solhint-disable-line\n',
+			'src/w.t.sol': "it.skip('a', () => {});\n",
+		});
+		const res = scan(r.root, loadConfig(r.root));
+		expect(res.actual['suppression-reason']).toEqual({ 'src/t.py': 1, 'src/s.sol': 1 });
+		expect(res.actual['number-or-default']).toEqual({});
+		expect(res.actual['focused-skipped-tests']).toEqual({});
+	});
+	test('a file with two hits counts two and lists both', () => {
+		const r = repo({
+			'src/two.ts':
+				'const a = 1;\n// eslint-disable-next-line one\nx();\n// eslint-disable-line two\n',
+			'src/two.test.ts': "it.skip('a', () => {});\nit.skip('b', () => {});\n",
+		});
+		const res = scan(r.root, loadConfig(r.root));
+		expect(res.actual['suppression-reason']).toEqual({ 'src/two.ts': 2 });
+		expect(res.actual['focused-skipped-tests']).toEqual({ 'src/two.test.ts': 2 });
+		expect(
+			res.hits.filter((h) => h.path === 'src/two.ts').map((h) => `${h.line}:${h.message}`),
+		).toEqual([
+			'2:eslint-disable-next-line without a reason',
+			'4:eslint-disable-line without a reason',
+		]);
+	});
+	test('per-rule excludes apply to each rule, not only max-lines', () => {
+		const r = repo({
+			'.repo-rules.json': JSON.stringify({
+				exclude: {
+					'suppression-reason': ['gen/**'],
+					'focused-skipped-tests': ['legacy/**'],
+					'number-or-default': ['old/**'],
+				},
+			}),
+			'gen/a.ts': '// eslint-disable-line x\n',
+			'src/b.ts': '// eslint-disable-line x\n',
+			'legacy/c.test.ts': "it.skip('a', () => {});\n",
+			'src/d.test.ts': "it.skip('a', () => {});\n",
+			'old/e.ts': 'const p = Number(env.P) || 8080;\n',
+			'src/f.ts': 'const p = Number(env.P) || 8080;\n',
+		});
+		const res = scan(r.root, loadConfig(r.root));
+		expect(res.actual['suppression-reason']).toEqual({ 'src/b.ts': 1 });
+		expect(res.actual['focused-skipped-tests']).toEqual({ 'src/d.test.ts': 1 });
+		expect(res.actual['number-or-default']).toEqual({ 'src/f.ts': 1 });
+	});
+	test('MAX_LINES_EXCLUDE exempts only max-lines; generated and built JS keep the other rules', () => {
+		const r = repo({
+			'src/generated/g.ts': '// eslint-disable-line x\nconst p = Number(env.P) || 8080;\n',
+			'dist/d.js': '// eslint-disable-line x\n',
+			'build/x.test.ts': "it.skip('a', () => {});\n",
+		});
+		const res = scan(r.root, loadConfig(r.root));
+		expect(res.actual['max-lines']).toEqual({});
+		expect(res.actual['suppression-reason']).toEqual({ 'src/generated/g.ts': 1, 'dist/d.js': 1 });
+		expect(res.actual['number-or-default']).toEqual({ 'src/generated/g.ts': 1 });
+		expect(res.actual['focused-skipped-tests']).toEqual({ 'build/x.test.ts': 1 });
+	});
 });
 
 describe('baseline', () => {
@@ -147,4 +208,94 @@ describe('baseline', () => {
 			expect(() => loadBaseline(r.root)).toThrow(message);
 		});
 	}
+	test('loadBaseline: exact messages, not only the substrings above', () => {
+		const cases: [string, string][] = [
+			['null', `${BASELINE_FILE}: version must be 1`],
+			['{"version": "1", "rules": {}}', `${BASELINE_FILE}: version must be 1`],
+			['{"version": 1, "rules": []}', `${BASELINE_FILE}: rules must be an object`],
+			['{"version": 1, "rules": "x"}', `${BASELINE_FILE}: rules must be an object`],
+			['{"version": 1, "extra": 1}', `${BASELINE_FILE}: unknown field «extra»`],
+			['{"version": 1, "rules": {"no-rule": {}}}', `${BASELINE_FILE}: unknown rule «no-rule»`],
+			[
+				'{"version": 1, "rules": {"max-lines": null}}',
+				`${BASELINE_FILE}: rules.max-lines must map paths to counts`,
+			],
+			[
+				'{"version": 1, "rules": {"max-lines": {"a.md": 0}}}',
+				`${BASELINE_FILE}: rules.max-lines["a.md"] must be a positive integer`,
+			],
+		];
+		for (const [text, message] of cases) {
+			const r = repo({ [BASELINE_FILE]: text });
+			let got = 'no throw';
+			try {
+				loadBaseline(r.root);
+			} catch (e) {
+				got = (e as Error).message;
+			}
+			expect(got).toBe(message);
+		}
+	});
+	test('loadBaseline: no rules key loads empty; a count of 1 and all four rules load; the file name is pinned', () => {
+		expect(BASELINE_FILE).toBe('.repo-rules-baseline.json');
+		const bare = repo({ [BASELINE_FILE]: '{"version": 1}\n' });
+		expect(loadBaseline(bare.root)).toEqual(emptyCounts());
+		const full = repo({
+			[BASELINE_FILE]: JSON.stringify({
+				version: 1,
+				rules: {
+					'max-lines': { 'a.md': 1 },
+					'suppression-reason': { 'b.ts': 2 },
+					'focused-skipped-tests': { 'c.test.ts': 3 },
+					'number-or-default': { 'd.ts': 4 },
+				},
+			}),
+		});
+		expect(loadBaseline(full.root)).toEqual({
+			'max-lines': { 'a.md': 1 },
+			'suppression-reason': { 'b.ts': 2 },
+			'focused-skipped-tests': { 'c.test.ts': 3 },
+			'number-or-default': { 'd.ts': 4 },
+		});
+	});
+	test('compare: a file at exactly its baseline is neither a violation nor stale; rules never mix', () => {
+		const actual = emptyCounts();
+		actual['suppression-reason'] = { 'mix.ts': 2, 'fresh.ts': 1 };
+		actual['number-or-default'] = { 'mix.ts': 1 };
+		const base = emptyCounts();
+		base['suppression-reason'] = { 'mix.ts': 1 };
+		base['number-or-default'] = { 'mix.ts': 1 };
+		const hits = [
+			hit('mix.ts', 1),
+			hit('mix.ts', 5),
+			hit('fresh.ts', 7),
+			{ rule: 'number-or-default' as const, path: 'mix.ts', line: 9, message: 'Number(x) || 1' },
+		];
+		const cmp = compare(actual, hits, base);
+		expect(cmp.violations.map((v) => `${v.path}:${v.line}:${v.message}`).sort()).toEqual([
+			'fresh.ts:7:eslint-disable-line without a reason',
+			'mix.ts:1:eslint-disable-line without a reason (baseline 1)',
+			'mix.ts:5:eslint-disable-line without a reason (baseline 1)',
+		]);
+		expect(cmp.stale).toEqual([]);
+	});
+	test('growth: an unchanged entry and a shrinking one are not listed', () => {
+		const prev = emptyCounts();
+		prev['max-lines'] = { 'same.md': 900, 'down.md': 900 };
+		const next = emptyCounts();
+		next['max-lines'] = { 'same.md': 900, 'down.md': 850 };
+		expect(growth(prev, next)).toEqual([]);
+	});
+	test('writeBaseline lists rules in REPO_RULES order, whatever the input key order', () => {
+		const r = repo();
+		const counts: ReturnType<typeof emptyCounts> = {
+			'number-or-default': { 'a.ts': 1 },
+			'focused-skipped-tests': {},
+			'suppression-reason': {},
+			'max-lines': { 'a.md': 801 },
+		};
+		writeBaseline(r.root, counts);
+		const rules = JSON.parse(readFileSync(join(r.root, BASELINE_FILE), 'utf8')).rules;
+		expect(Object.keys(rules)).toEqual(['max-lines', 'number-or-default']);
+	});
 });
