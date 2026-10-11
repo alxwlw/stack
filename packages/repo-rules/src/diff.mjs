@@ -27,6 +27,25 @@ function assertionPattern(path) {
  */
 const countIn = (text, re) => [...text.matchAll(re)].length;
 
+/** @type {Record<string, string>} */
+const C_ESCAPES = { a: '\x07', b: '\b', t: '\t', n: '\n', v: '\v', f: '\f', r: '\r' };
+
+/**
+ * A name as git prints it on a header line: C-quoted (`"…"`, `\` escapes) when it holds a control
+ * character, `"` or `\`; a `---`/`+++` name with a space is followed by a TAB.
+ * @param {string} text
+ * @returns {string}
+ */
+function gitPath(text) {
+	const t = text.endsWith('\t') ? text.slice(0, -1) : text;
+	if (!t.startsWith('"')) return t;
+	return t
+		.slice(1, -1)
+		.replace(/\\([0-7]{3}|.)/g, (_, /** @type {string} */ esc) =>
+			esc.length === 3 ? String.fromCharCode(Number.parseInt(esc, 8)) : (C_ESCAPES[esc] ?? esc),
+		);
+}
+
 /**
  * @typedef {object} PairCount
  * @property {string | null} from
@@ -59,15 +78,17 @@ export function countPairs(diff, isTest) {
 		}
 		if (!cur) continue;
 		if (!inHunk) {
-			if (line.startsWith('--- ')) cur.from = line === '--- /dev/null' ? null : line.slice(6);
+			// `a/` and `b/` are set explicitly in `removedAssertions`, whatever `diff.noprefix` says.
+			if (line.startsWith('--- '))
+				cur.from = line === '--- /dev/null' ? null : gitPath(line.slice(4)).slice(2);
 			else if (line.startsWith('+++ ')) {
-				cur.to = line === '+++ /dev/null' ? null : line.slice(6);
+				cur.to = line === '+++ /dev/null' ? null : gitPath(line.slice(4)).slice(2);
 				const p = cur.to ?? cur.from;
 				const tested =
 					(cur.from !== null && isTest(cur.from)) || (cur.to !== null && isTest(cur.to));
 				re = p !== null && tested ? assertionPattern(p) : null;
-			} else if (line.startsWith('rename from ')) cur.from = line.slice(12);
-			else if (line.startsWith('rename to ')) cur.to = line.slice(10);
+			} else if (line.startsWith('rename from ')) cur.from = gitPath(line.slice(12));
+			else if (line.startsWith('rename to ')) cur.to = gitPath(line.slice(10));
 			else if (line.startsWith('@@')) inHunk = true;
 			continue;
 		}
@@ -104,7 +125,17 @@ export function removedAssertions(root, cfg, base, env) {
 		else throw new RepoRulesError('diff needs --base <ref>');
 	}
 	const mb = git(root, ['merge-base', base, 'HEAD']).trim();
-	const diff = git(root, ['diff', '-M', '--unified=0', '--no-color', '--no-ext-diff', mb, 'HEAD']);
+	const diff = git(root, [
+		'diff',
+		'-M',
+		'--unified=0',
+		'--no-color',
+		'--src-prefix=a/',
+		'--dst-prefix=b/',
+		'--no-ext-diff',
+		mb,
+		'HEAD',
+	]);
 	const pairs = countPairs(diff, matcher(cfg.testGlobs));
 	const reasons = git(root, [
 		'log',

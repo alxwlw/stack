@@ -21,6 +21,27 @@ function branch(files: Record<string, string>, change: (r: ReturnType<typeof rep
 }
 
 describe('removedAssertions', () => {
+	test('a test file name with a space, a quote, a tab or a backslash is read as written', () => {
+		// git adds a TAB after a `---`/`+++` name with a space and C-quotes the others.
+		const names = ['my test.test.ts', 'q"x.test.ts', 'tab\tx.test.ts', 'back\\slash.test.ts'];
+		const r = branch(Object.fromEntries(names.map((n) => [`src/${n}`, T3])), (r) => {
+			r.write(Object.fromEntries(names.map((n) => [`src/${n}`, T1])));
+			r.commit('weaken all');
+		});
+		const res = removedAssertions(r.root, loadConfig(r.root), 'main', noEnv);
+		expect(res.violations.map((v) => v.path).sort()).toEqual(names.map((n) => `src/${n}`).sort());
+		expect(res.violations.every((v) => v.removed === 2 && v.added === 0)).toBe(true);
+	});
+	test('a diff.noprefix setting does not shift the paths', () => {
+		const r = branch({ 'src/a.test.ts': T3 }, (r) => {
+			r.write({ 'src/a.test.ts': T1 });
+			r.commit('weaken');
+		});
+		r.git('config', 'diff.noprefix', 'true');
+		expect(removedAssertions(r.root, loadConfig(r.root), 'main', noEnv).violations).toEqual([
+			{ path: 'src/a.test.ts', removed: 2, added: 0 },
+		]);
+	});
 	test('fewer assertions in a modified test file', () => {
 		const r = branch({ 'src/a.test.ts': T3 }, (r) => {
 			r.write({ 'src/a.test.ts': T1 });
