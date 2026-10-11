@@ -1,5 +1,5 @@
 // @ts-check
-/** The CLI as a function: `run(argv, env, out)` → exit code (spec § 1). */
+/** The CLI as a function: `run(argv, env, out, err)` → exit code (spec § 1). */
 import { readFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 
