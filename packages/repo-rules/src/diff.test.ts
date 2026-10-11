@@ -64,6 +64,14 @@ describe('removedAssertions', () => {
 			'tab\tx.test.ts',
 			'back\\slash.test.ts',
 			'ctl\x01x.test.ts',
+			'esc\x1bx.test.ts',
+			'del\x7fx.test.ts',
+			'nl\nx.test.ts',
+			'cr\rx.test.ts',
+			'bel\x07x.test.ts',
+			'bs\x08x.test.ts',
+			'vt\x0bx.test.ts',
+			'ff\x0cx.test.ts',
 		];
 		const r = branch(Object.fromEntries(names.map((n) => [`src/${n}`, T3])), (r) => {
 			r.write(Object.fromEntries(names.map((n) => [`src/${n}`, T1])));
@@ -78,6 +86,16 @@ describe('removedAssertions', () => {
 	});
 	test('colour config does not hide removals', () => {
 		expect(weakened(['color.ui', 'always'])).toEqual(WEAKENED);
+	});
+	test('a textconv driver in the config does not rewrite the counted text', () => {
+		const r = branch({ '.gitattributes': '*.test.ts diff=fake\n', 'src/a.test.ts': T3 }, (r) => {
+			r.write({ 'src/a.test.ts': T1 });
+			r.commit('weaken');
+		});
+		r.git('config', 'diff.fake.textconv', 'true');
+		expect(removedAssertions(r.root, loadConfig(r.root), 'main', noEnv).violations).toEqual(
+			WEAKENED,
+		);
 	});
 	test('an external diff tool in the config is not used', () => {
 		expect(weakened(['diff.external', 'echo'])).toEqual(WEAKENED);
@@ -193,7 +211,7 @@ describe('removedAssertions', () => {
 			{ path: 'src/a.test.ts (deleted)', removed: 3, added: 0 },
 		]);
 	});
-	test('a deleted file without checks is not reported', () => {
+	test('a deleted test file is reported and a deleted non-test file is not', () => {
 		const r = branch({ 'src/a.test.ts': T3, 'src/util.ts': 'export const x = 1;\n' }, (r) => {
 			r.git('rm', '-q', 'src/a.test.ts', 'src/util.ts');
 			r.commit('drop both');
@@ -336,9 +354,10 @@ describe('removedAssertions', () => {
 		);
 	});
 	test('an unknown base is a RepoRulesError, not a crash', () => {
-		expect(() =>
-			removedAssertions(repo().root, loadConfig(repo().root), 'no-such-ref', noEnv),
-		).toThrow('git merge-base failed');
+		const r = repo();
+		expect(() => removedAssertions(r.root, loadConfig(r.root), 'no-such-ref', noEnv)).toThrow(
+			'git merge-base failed',
+		);
 	});
 });
 

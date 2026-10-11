@@ -133,6 +133,7 @@ export function removedAssertions(root, cfg, base, env) {
 		'--src-prefix=a/',
 		'--dst-prefix=b/',
 		'--no-ext-diff',
+		'--no-textconv',
 		mb,
 		'HEAD',
 	]);
