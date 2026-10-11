@@ -1,4 +1,4 @@
 {
 	"extends": "./base.json",
-	"compilerOptions": { "lib": ["ES2023"], "types": ["node"] }
+	"compilerOptions": { "lib": ["ES2025"], "types": ["node"] }
 }
