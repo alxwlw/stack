@@ -146,3 +146,30 @@ test('bun.json: Bun globals + .ts-extension imports typecheck under noEmit', () 
 	const res = tsc(cwd, ['--noEmit', '-p', 'tsconfig.json']);
 	expect(res.status, res.out).toBe(0);
 });
+
+// ES2025 lib lock. Every preset that pins `lib` (node, react, bun, refs) or derives it from
+// `target` (base) must resolve the ES2025 surface: Set.prototype.union, Promise.try, iterator
+// helpers, RegExp.escape. Lowering lib/target below 2025 fails this with TS2550.
+const ES2025_SRC = [
+	'const u: Set<number> = new Set([1]).union(new Set([2]));',
+	'const p: Promise<number> = Promise.try(() => 1);',
+	'const doubled: number[] = [1, 2, 3].values().map((x) => x * 2).toArray();',
+	'const esc: string = RegExp.escape("a.b");',
+	'export { u, p, doubled, esc };',
+	'',
+].join('\n');
+
+test.each(['base.json', 'node.json', 'react.json', 'bun.json'])(
+	'%s: lib is ES2025 (Set.union, Promise.try, iterator helpers, RegExp.escape resolve)',
+	(preset) => {
+		const cwd = fixture(preset, { 'index.ts': ES2025_SRC }, { include: ['*.ts'] });
+		const res = tsc(cwd, ['--noEmit', '-p', 'tsconfig.json']);
+		expect(res.status, res.out).toBe(0);
+	},
+);
+
+test('refs.json: lib is ES2025 under --build', () => {
+	const cwd = fixture('refs.json', { 'src/index.ts': ES2025_SRC });
+	const res = tsc(cwd, ['--build', 'tsconfig.json']);
+	expect(res.status, res.out).toBe(0);
+});

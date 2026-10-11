@@ -23,7 +23,7 @@
 	"env": {
 		"builtin": true,
 		"node": true,
-		"es2024": true,
+		"es2026": true,
 	},
 	"rules": {
 		// ── Async-safety (type-aware, tsgolint).
