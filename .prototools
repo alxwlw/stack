@@ -3,9 +3,9 @@
 proto = "0.63.1"
 node = "26.11.1"
 pnpm = "11.28.5"
-bun = "1.4.2"
+bun = "1.4.3"
 moon = "2.6.1"
-uv = "0.12.24"
+uv = "0.13.0"
 
 # Guardrail binaries: versions pinned for reproducibility.
 actionlint = "1.7.12"
