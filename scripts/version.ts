@@ -6,10 +6,10 @@ import { planCatalogs } from '../packages/stack/src/catalogs.ts';
 import { readStackConfig } from '../packages/stack/src/config.ts';
 import { SEMVER_RE } from './semver.ts';
 
-const PACKAGES = ['stack', 'oxlint-config', 'tsconfig'];
+const PACKAGES = ['stack', 'oxlint-config', 'tsconfig', 'repo-rules'];
 
 /**
- * Проставляет одну lockstep-версию трём пакетам канона и её же — записям `@alxwlw/*`
+ * Проставляет одну lockstep-версию четырём пакетам и её же — записям `@alxwlw/*`
  * в `canon/catalogs.json`. Не трогает фикстуры: см. `resyncFixtures`, вызываемую отдельно
  * из точки входа, чтобы unit-тест мог гонять `setVersion` на минимальной копии дерева.
  */

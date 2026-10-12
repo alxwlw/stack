@@ -64,6 +64,8 @@ importers:
         specifier: catalog:dev
         version: 7.0.2003
 
+  packages/repo-rules: {}
+
   packages/stack:
     dependencies:
       json5:

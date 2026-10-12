@@ -12,7 +12,7 @@ const REPO_ROOT = join(import.meta.dir, '..');
 // pnpm-симлинки на node_modules).
 function fixtureRoot(): string {
 	const root = mkdtempSync(join(tmpdir(), 'stack-ver-'));
-	for (const pkg of ['stack', 'oxlint-config', 'tsconfig']) {
+	for (const pkg of ['stack', 'oxlint-config', 'tsconfig', 'repo-rules']) {
 		mkdirSync(join(root, 'packages', pkg), { recursive: true });
 		cpSync(
 			join(REPO_ROOT, 'packages', pkg, 'package.json'),
@@ -30,7 +30,7 @@ function fixtureRoot(): string {
 test('проставляет одну версию пакетам и каталогу канона', () => {
 	const root = fixtureRoot();
 	setVersion(root, '1.2.3');
-	for (const pkg of ['stack', 'oxlint-config', 'tsconfig']) {
+	for (const pkg of ['stack', 'oxlint-config', 'tsconfig', 'repo-rules']) {
 		const data = JSON.parse(readFileSync(join(root, 'packages', pkg, 'package.json'), 'utf8')) as {
 			version: string;
 		};
