@@ -7,7 +7,7 @@ jobs:
   ci:
     runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
       - run: bun test
       - run: pnpm exec oxlint --type-aware
@@ -22,7 +22,7 @@ jobs:
     env:
       TEST_TOKEN: not-a-real-token
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
         with:
           install: false
@@ -70,7 +70,7 @@ jobs:
   setup-action-bare:
     runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: .prototools ещё не на каноне — без actionlint и shellcheck
         run: sed -i -E '/^(actionlint|shellcheck)[[:space:]]*=/d' .prototools
       - uses: ./.github/actions/setup

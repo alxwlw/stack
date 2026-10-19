@@ -18,7 +18,7 @@ jobs:
   check:
     runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           # gitleaks нужна вся история; строки, а не числа: `0 || 1` в выражениях дало бы 1.
           fetch-depth: ${{ inputs.gitleaks && '0' || '1' }}
