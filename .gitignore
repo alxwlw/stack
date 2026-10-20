@@ -3,6 +3,7 @@ node_modules/
 dist/
 *.tsbuildinfo
 .moon/cache/
-.claude/
+.claude/*
+!.claude/verify.json
 .superpowers/
 .test-tmp/

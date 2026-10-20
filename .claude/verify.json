@@ -1,0 +1,16 @@
+{
+	"version": 1,
+	"base": "main",
+	"push": "required",
+	"projects": [{ "name": "stack", "path": "." }],
+	"workspace": [
+		"proto run actionlint -- -color",
+		"~/.claude/skills/review-task/scripts/cite-check \"$(git merge-base HEAD origin/main)\""
+	],
+	"project": {
+		"test": "bun test",
+		"lint": "pnpm exec oxlint --type-aware",
+		"format": "pnpm exec oxfmt --check .",
+		"typecheck": "pnpm exec tsc --build"
+	}
+}
