@@ -1,4 +1,6 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { expect, test } from 'bun:test';
@@ -148,6 +150,58 @@ test('канон-файл workflow-stack-sync.yml передаёт reusable sync
 	expect(passed).toContain('base');
 	for (const k of passed) expect(inputs).toContain(k);
 	expect(job?.with?.base).toBe("${{ vars.STACK_SYNC_BASE || '' }}");
+});
+
+// sync.yml ждёт версию в реестре до bunx: rollout стартует сразу после publish, и в 1.6.0 все
+// sync упали на «No version matching». Шаг гоняется в bash с curl-заглушкой, а не сверяется текстом.
+type SyncStep = { name?: string; run?: string; env?: Record<string, string> };
+const syncSteps = (
+	parseYaml(readFileSync(join(ROOT, '.github', 'workflows', 'sync.yml'), 'utf8')) as {
+		jobs?: Record<string, { steps?: SyncStep[] }>;
+	}
+).jobs?.sync?.steps;
+const waitIdx = syncSteps?.findIndex((s) => s.name === 'дождаться версии в npm') ?? -1;
+const waitStep = syncSteps?.[waitIdx];
+
+function runWait(body: string, attempts: string): { status: number | null; calls: number } {
+	const dir = mkdtempSync(join(tmpdir(), 'sync-wait-'));
+	const calls = join(dir, 'calls');
+	writeFileSync(join(dir, 'body'), body);
+	writeFileSync(join(dir, 'curl'), `#!/bin/sh\necho x >> '${calls}'\ncat '${join(dir, 'body')}'\n`);
+	chmodSync(join(dir, 'curl'), 0o755);
+	const res = spawnSync('bash', ['-eo', 'pipefail', '-c', waitStep?.run ?? 'exit 99'], {
+		env: {
+			...process.env,
+			PATH: `${dir}:${process.env.PATH}`,
+			VERSION: '1.2.3',
+			ATTEMPTS: attempts,
+			INTERVAL: '0',
+		},
+		encoding: 'utf8',
+	});
+	const n = existsSync(calls) ? readFileSync(calls, 'utf8').split('\n').filter(Boolean).length : 0;
+	rmSync(dir, { recursive: true, force: true });
+	return { status: res.status, calls: n };
+}
+
+test('sync.yml ждёт версию в npm до bunx и с тем же VERSION', () => {
+	expect(waitIdx).toBeGreaterThanOrEqual(0);
+	const bunxIdx =
+		syncSteps?.findIndex((s) => s.run?.includes('bunx "@alxwlw/stack@$VERSION"')) ?? -1;
+	expect(bunxIdx).toBeGreaterThan(waitIdx);
+	expect(waitStep?.env?.VERSION).toBe(syncSteps?.[bunxIdx]?.env?.VERSION);
+	expect(waitStep?.env?.VERSION).toBe('${{ inputs.version }}');
+});
+
+test('шаг ожидания выходит на первой попытке, когда версия уже в реестре', () => {
+	const r = runWait('{"versions":{"1.2.2":{},"1.2.3":{}}}', '3');
+	expect(r).toEqual({ status: 0, calls: 1 });
+});
+
+test('шаг ожидания падает после ATTEMPTS попыток, когда версии нет', () => {
+	// dist-tags с той же строкой не должны сойти за версию.
+	const r = runWait('{"dist-tags":{"latest":"1.2.3"},"versions":{"1.2.2":{}}}', '3');
+	expect(r).toEqual({ status: 1, calls: 3 });
 });
 
 // Renovate самого стека двигает пины канона. Пресет канона он подключать не должен: тот выключает
