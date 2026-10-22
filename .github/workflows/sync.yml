@@ -42,6 +42,27 @@ jobs:
       - uses: alxwlw/stack/.github/actions/setup@v1
         with:
           install: false
+      # rollout зовёт sync сразу после publish, а реестр отдаёт новую версию не сразу: в 1.6.0
+      # все sync упали в bunx на «No version matching». Ждём ту же abbreviated-запись пакета
+      # (тот же URL и Accept), которую следом запросит bunx.
+      - name: дождаться версии в npm
+        env:
+          VERSION: ${{ inputs.version }}
+          ATTEMPTS: '60'
+          INTERVAL: '10'
+        run: |
+          url='https://registry.npmjs.org/@alxwlw%2fstack'
+          accept='application/vnd.npm.install-v1+json; q=1.0, application/json; q=0.8, */*'
+          for i in $(seq 1 "$ATTEMPTS"); do
+            if curl -fsS -H "Accept: $accept" "$url" |
+              node -e 'const d = JSON.parse(require("fs").readFileSync(0, "utf8")); process.exit(d.versions?.[process.env.VERSION] ? 0 : 1)'; then
+              echo "@alxwlw/stack@$VERSION есть в реестре"
+              exit 0
+            fi
+            if [ "$i" -lt "$ATTEMPTS" ]; then sleep "$INTERVAL"; fi
+          done
+          echo "::error::@alxwlw/stack@$VERSION не появилась в реестре за $ATTEMPTS попыток"
+          exit 1
       - env:
           VERSION: ${{ inputs.version }}
         run: bunx "@alxwlw/stack@$VERSION" sync
