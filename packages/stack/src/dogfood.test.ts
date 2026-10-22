@@ -1,5 +1,13 @@
 import { spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+	chmodSync,
+	existsSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -153,7 +161,8 @@ test('канон-файл workflow-stack-sync.yml передаёт reusable sync
 });
 
 // sync.yml ждёт версию в реестре до bunx: rollout стартует сразу после publish, и в 1.6.0 все
-// sync упали на «No version matching». Шаг гоняется в bash с curl-заглушкой, а не сверяется текстом.
+// sync упали на «No version matching»; в 1.7.0 — pnpm install на tsconfig, опубликованной позже
+// stack. Шаг гоняется в bash с curl-заглушкой, отдающей тело по имени пакета, а не сверяется текстом.
 type SyncStep = { name?: string; run?: string; env?: Record<string, string> };
 const syncSteps = (
 	parseYaml(readFileSync(join(ROOT, '.github', 'workflows', 'sync.yml'), 'utf8')) as {
@@ -163,26 +172,44 @@ const syncSteps = (
 const waitIdx = syncSteps?.findIndex((s) => s.name === 'дождаться версии в npm') ?? -1;
 const waitStep = syncSteps?.[waitIdx];
 
-function runWait(body: string, attempts: string): { status: number | null; calls: number } {
+const PUBLISHED = readdirSync(join(ROOT, 'packages')).filter((p) => {
+	const manifest = join(ROOT, 'packages', p, 'package.json');
+	return existsSync(manifest) && JSON.parse(readFileSync(manifest, 'utf8')).private !== true;
+});
+
+/** `bodies` — тело ответа реестра по имени пакета без скоупа; пакета нет в карте — curl падает. */
+function runWait(
+	bodies: Record<string, string>,
+	attempts: string,
+): { status: number | null; calls: string[]; out: string } {
 	const dir = mkdtempSync(join(tmpdir(), 'sync-wait-'));
 	const calls = join(dir, 'calls');
-	writeFileSync(join(dir, 'body'), body);
-	writeFileSync(join(dir, 'curl'), `#!/bin/sh\necho x >> '${calls}'\ncat '${join(dir, 'body')}'\n`);
+	for (const [p, body] of Object.entries(bodies)) writeFileSync(join(dir, `${p}.json`), body);
+	writeFileSync(
+		join(dir, 'curl'),
+		`#!/usr/bin/env bash\np="\${!#}"; p="\${p##*%2f}"\necho "$p" >> '${calls}'\ncat '${dir}'/"$p.json"\n`,
+	);
 	chmodSync(join(dir, 'curl'), 0o755);
 	const res = spawnSync('bash', ['-eo', 'pipefail', '-c', waitStep?.run ?? 'exit 99'], {
 		env: {
 			...process.env,
 			PATH: `${dir}:${process.env.PATH}`,
 			VERSION: '1.2.3',
+			PACKAGES: waitStep?.env?.PACKAGES ?? '',
 			ATTEMPTS: attempts,
 			INTERVAL: '0',
 		},
 		encoding: 'utf8',
 	});
-	const n = existsSync(calls) ? readFileSync(calls, 'utf8').split('\n').filter(Boolean).length : 0;
+	const n = existsSync(calls) ? readFileSync(calls, 'utf8').split('\n').filter(Boolean) : [];
 	rmSync(dir, { recursive: true, force: true });
-	return { status: res.status, calls: n };
+	return { status: res.status, calls: n, out: res.stdout };
 }
+
+const has = '{"versions":{"1.2.2":{},"1.2.3":{}}}';
+// dist-tags с той же строкой не должны сойти за версию.
+const lacks = '{"dist-tags":{"latest":"1.2.3"},"versions":{"1.2.2":{}}}';
+const all = (body: string) => Object.fromEntries(PUBLISHED.map((p) => [p, body]));
 
 test('sync.yml ждёт версию в npm до bunx и с тем же VERSION', () => {
 	expect(waitIdx).toBeGreaterThanOrEqual(0);
@@ -193,15 +220,32 @@ test('sync.yml ждёт версию в npm до bunx и с тем же VERSION'
 	expect(waitStep?.env?.VERSION).toBe('${{ inputs.version }}');
 });
 
-test('шаг ожидания выходит на первой попытке, когда версия уже в реестре', () => {
-	const r = runWait('{"versions":{"1.2.2":{},"1.2.3":{}}}', '3');
-	expect(r).toEqual({ status: 0, calls: 1 });
+test('шаг ожидания ждёт каждый публикуемый пакет из packages/', () => {
+	expect(PUBLISHED.length).toBeGreaterThan(1);
+	expect((waitStep?.env?.PACKAGES ?? '').split(' ').toSorted()).toEqual(PUBLISHED.toSorted());
 });
 
-test('шаг ожидания падает после ATTEMPTS попыток, когда версии нет', () => {
-	// dist-tags с той же строкой не должны сойти за версию.
-	const r = runWait('{"dist-tags":{"latest":"1.2.3"},"versions":{"1.2.2":{}}}', '3');
-	expect(r).toEqual({ status: 1, calls: 3 });
+test('шаг ожидания выходит на первой попытке, когда все версии уже в реестре', () => {
+	const r = runWait(all(has), '3');
+	expect(r.status).toBe(0);
+	expect(r.calls.toSorted()).toEqual(PUBLISHED.toSorted());
+});
+
+test('шаг ожидания падает после ATTEMPTS попыток и называет пакет, которого нет', () => {
+	const r = runWait({ ...all(has), tsconfig: lacks }, '3');
+	expect(r.status).toBe(1);
+	// Найденные пакеты не опрашиваются повторно: первый круг — все, дальше — только tsconfig.
+	expect(r.calls.filter((p) => p === 'tsconfig')).toHaveLength(3);
+	expect(r.calls).toHaveLength(PUBLISHED.length + 2);
+	expect(r.out).toContain('tsconfig');
+});
+
+test('шаг ожидания не принимает упавший запрос к реестру за наличие версии', () => {
+	// Тела для repo-rules нет — заглушка curl выходит с ошибкой, как curl -f на 404/5xx.
+	const { 'repo-rules': _, ...rest } = all(has);
+	const r = runWait(rest, '2');
+	expect(r.status).toBe(1);
+	expect(r.out).toContain('repo-rules');
 });
 
 // Renovate самого стека двигает пины канона. Пресет канона он подключать не должен: тот выключает
