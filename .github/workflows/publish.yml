@@ -11,7 +11,7 @@ jobs:
   selftest:
     runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
       - run: bun test
       - run: pnpm exec oxlint --type-aware
@@ -32,7 +32,7 @@ jobs:
     needs: selftest
     runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
       - run: |
           # Раннер приносит npm 10.x от ноды своего образа, а proto пинит ноду, но npm не шимит.
