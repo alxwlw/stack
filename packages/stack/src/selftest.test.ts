@@ -22,13 +22,13 @@ function sync(dir: string, cfg: StackConfig): SyncResult {
 	return syncRepo(dir, loadCanon(cfg), cfg.exceptions);
 }
 
-// Фикстура в `fixtures/` — только семя; всё остальное приносит sync, как у потребителя.
 // Дрейф каталогов фикстуры: план репозитория, отфильтрованный по кодам правила каталогов.
 const catalogDrift = (dir: string, cfg: StackConfig) =>
 	planRepo(dir, loadCanon(cfg)).filter(
 		(f) => f.code === 'catalog-drift' || f.code === 'catalog-missing',
 	);
 
+// Фикстура в `fixtures/` — только семя; всё остальное приносит sync, как у потребителя.
 function syncedFixture(profile: 'node' | 'contracts' | 'infra'): { dir: string; cfg: StackConfig } {
 	const dir = copyFixture(profile);
 	const cfg = readStackConfig(dir);
