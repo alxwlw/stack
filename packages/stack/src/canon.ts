@@ -86,7 +86,7 @@ export function loadCanon(cfg: StackConfig, dir: string = canonDir()): Canon {
 		satisfiedBy: f.satisfiedBy,
 	}));
 	const all = loadCatalogs(dir);
-	const groups = ['dev', ...cfg.with.filter((g) => g !== 'dev')];
+	const groups = ['dev', ...cfg.with];
 	const catalogs = Object.fromEntries(
 		groups.filter((g) => g in all).map((g) => [g, all[g] as Record<string, string>]),
 	);

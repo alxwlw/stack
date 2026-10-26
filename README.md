@@ -92,7 +92,7 @@ npx stack check
 `check` never writes anything. Exit codes: `0` — nothing has drifted; `1` — it found something:
 drift that `stack sync` fixes, or a report-only finding to fix by hand (the hint under the list counts
 each kind; the finding codes say which is which); `2` — a usage error (no `.stack.jsonc` yet, an
-unknown `--profile`, a bad flag).
+unknown `--profile`, an unknown group in `with` (from `.stack.jsonc` or `--with`), a bad flag).
 There is no `--help`: argument parsing is strict, and `stack init --profile <node|contracts|infra>`
 is the only way to create the config file in the first place. All three commands accept
 `--repo <path>` to target a repo other than the current directory.

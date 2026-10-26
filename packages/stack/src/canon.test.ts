@@ -279,7 +279,10 @@ test('README: группа «Seeds …» засевает все свои фай
 		const strategies = manifest
 			.filter((f) => f.group === group)
 			.map((f) => f.strategy ?? 'verbatim');
-		if (adds.startsWith('Seeds') && !strategies.every((s) => s === 'create-if-absent'))
+		if (
+			adds.startsWith('Seeds') &&
+			!(strategies.length > 0 && strategies.every((s) => s === 'create-if-absent'))
+		)
 			broken.push(group);
 		if (adds.startsWith('Syncs') && !strategies.includes('verbatim')) broken.push(group);
 	}
