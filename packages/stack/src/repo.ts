@@ -85,17 +85,22 @@ export function repoFromFiles(files: ReadonlyMap<string, string>): Repo {
 	return renovate ? { files, packages, renovate, unreadable } : { files, packages, unreadable };
 }
 
-// Каталог по пути из канона читается как ошибка EISDIR и в files не попадает.
-function readFile(root: string, path: string): string | undefined {
+type Read = { text: string } | { missing: true } | { failed: Error };
+
+// ENOENT — нет файла. Любая другая ошибка (EACCES, EISDIR) — файл есть, но не читается.
+function readFile(root: string, path: string): Read {
 	try {
-		return readFileSync(join(root, path), 'utf8');
-	} catch {
-		return undefined;
+		return { text: readFileSync(join(root, path), 'utf8') };
+	} catch (err) {
+		const e = err instanceof Error ? err : new Error(String(err));
+		return (e as { code?: string }).code === 'ENOENT' ? { missing: true } : { failed: e };
 	}
 }
 
 // Диск: dest и satisfiedBy канон-файлов, конфиги Renovate и dependabot, pnpm-workspace.yaml,
 // корневой package.json; при pnpm-workspace.yaml — ещё вложенные package.json без SKIP.
+// Нечитаемый package.json и нечитаемый конфиг Renovate дают ту же unreadable-file, что нечитаемый
+// разбор; у канон-файлов и dependabot нечитаемый путь — просто нет файла.
 export function loadRepo(root: string, canon: Canon): Repo {
 	const paths = new Set<string>(['package.json', 'pnpm-workspace.yaml']);
 	for (const f of canon.files) {
@@ -104,15 +109,44 @@ export function loadRepo(root: string, canon: Canon): Repo {
 	}
 	for (const p of [...RENOVATE_CONFIGS, ...DEPENDABOT_CONFIGS]) paths.add(p);
 	const files = new Map<string, string>();
+	const failedManifests: Finding[] = [];
+	const failedRenovate = new Set<string>();
 	const add = (path: string) => {
-		const text = readFile(root, path);
-		if (text !== undefined) files.set(path, text);
+		const r = readFile(root, path);
+		if ('text' in r) files.set(path, r.text);
+		else if ('failed' in r && basename(path) === 'package.json') {
+			failedManifests.push({
+				code: 'unreadable-file',
+				target: path,
+				message: `${path} does not parse: ${r.failed.message}`,
+			});
+		} else if ('failed' in r && RENOVATE_CONFIGS.includes(path)) failedRenovate.add(path);
 	};
 	for (const p of paths) add(p);
 	if (files.has('pnpm-workspace.yaml')) {
 		for (const file of new Glob('**/package.json').scanSync({ cwd: root })) {
-			if (!SKIP.test(file) && !files.has(file)) add(file);
+			if (!SKIP.test(file) && !paths.has(file)) add(file);
 		}
 	}
-	return repoFromFiles(files);
+	// Первый найденный конфиг Renovate, в том числе нечитаемый, заслоняет остальные.
+	const first = RENOVATE_CONFIGS.find((p) => files.has(p) || failedRenovate.has(p));
+	const failedFirst = first !== undefined && failedRenovate.has(first) ? first : undefined;
+	const forParse = new Map(files);
+	if (failedFirst !== undefined) for (const p of RENOVATE_CONFIGS) forParse.delete(p);
+	const repo = { ...repoFromFiles(forParse), files };
+	if (failedManifests.length === 0 && failedFirst === undefined) return repo;
+	const rank = (f: Finding) =>
+		f.target === 'package.json' ? 0 : basename(f.target) === 'package.json' ? 1 : 2;
+	const unreadable = [...repo.unreadable, ...failedManifests];
+	if (failedFirst !== undefined) {
+		unreadable.push({
+			code: 'unreadable-file',
+			target: failedFirst,
+			message: `${failedFirst} does not parse as JSON5`,
+		});
+	}
+	unreadable.sort((a, b) => rank(a) - rank(b));
+	return failedFirst === undefined
+		? { ...repo, unreadable }
+		: { ...repo, renovate: { path: failedFirst }, unreadable };
 }

@@ -1,3 +1,6 @@
+import { chmodSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { expect, test } from 'bun:test';
 
 import { checkEnginesNode, checkInlineVersions, checkRenovatePreset } from './deps.ts';
@@ -174,9 +177,86 @@ test('package.json не объект (null, массив) — разобран �
 	expect(repo.packages.get('a/package.json')).toEqual({});
 });
 
-test('читаются только файлы: каталог по пути из канона в files не попадает', () => {
-	const dir = repoDir({ 'renovate.json5/inner.txt': 'x' });
-	const repo = loadRepo(dir, testCanon({ files: [{ dest: 'renovate.json5', content: '{}' }] }));
-	expect(repo.files.has('renovate.json5')).toBe(false);
-	expect(repo.renovate).toBeUndefined();
+test('читаются только файлы: каталог по пути канон-файла в files не попадает, находки нет', () => {
+	const dir = repoDir({ 'seed.txt/inner.txt': 'x' });
+	const repo = loadRepo(dir, testCanon({ files: [{ dest: 'seed.txt', content: 'a' }] }));
+	expect(repo.files.has('seed.txt')).toBe(false);
+	expect(repo.unreadable).toEqual([]);
+});
+
+test('loadRepo читает .github/dependabot.yml и .github/dependabot.yaml', () => {
+	const repo = loadRepo(
+		repoDir({
+			'.github/dependabot.yml': 'version: 2',
+			'.github/dependabot.yaml': 'version: 3',
+		}),
+		testCanon(),
+	);
+	expect(repo.files.get('.github/dependabot.yml')).toBe('version: 2');
+	expect(repo.files.get('.github/dependabot.yaml')).toBe('version: 3');
+});
+
+// chmod 0 не действует от root
+test.skipIf(process.getuid?.() === 0)(
+	'нечитаемый (EACCES) package.json — одна unreadable-file, как у правил',
+	() => {
+		const dir = repoDir({ 'package.json': '{}' });
+		chmodSync(join(dir, 'package.json'), 0);
+		const repo = loadRepo(dir, testCanon());
+		expect(repo.unreadable).toEqual(checkEnginesNode(dir, testCanon()));
+		expect(repo.unreadable).toHaveLength(1);
+		expect(repo.unreadable[0]?.message).toStartWith('package.json does not parse: EACCES');
+		expect(repo.packages.size).toBe(0);
+	},
+);
+
+test.skipIf(process.getuid?.() === 0)(
+	'нечитаемые вложенный package.json и корневой — по одной находке, порядок корень, вложенный',
+	() => {
+		const dir = repoDir({
+			'pnpm-workspace.yaml': 'packages: []',
+			'package.json': '{}',
+			'packages/a/package.json': '{}',
+		});
+		chmodSync(join(dir, 'package.json'), 0);
+		chmodSync(join(dir, 'packages/a/package.json'), 0);
+		expect(byTarget(loadRepo(dir, testCanon()))).toEqual([
+			'package.json',
+			'packages/a/package.json',
+		]);
+	},
+);
+
+test('каталог renovate.json — одна находка и заслоняет renovate.json5', () => {
+	const dir = repoDir({
+		'renovate.json/inner.txt': 'x',
+		'renovate.json5': '{',
+	});
+	const repo = loadRepo(dir, testCanon());
+	expect(repo.renovate).toEqual({ path: 'renovate.json' });
+	expect(repo.unreadable).toEqual([
+		{
+			code: 'unreadable-file',
+			target: 'renovate.json',
+			message: 'renovate.json does not parse as JSON5',
+		},
+	]);
+	expect(repo.unreadable).toEqual(
+		checkRenovatePreset(dir).filter((f) => f.code === 'unreadable-file'),
+	);
+	expect(repo.files.get('renovate.json5')).toBe('{');
+});
+
+test('порядок unreadable при нечитаемых файлах: корневой, вложенный, Renovate', () => {
+	const repo = loadRepo(
+		repoDir({
+			'pnpm-workspace.yaml': 'packages: []',
+			'package.json/inner.txt': 'x',
+			'packages/a/package.json': '{',
+			'renovate.json/inner.txt': 'x',
+		}),
+		testCanon(),
+	);
+	expect(byTarget(repo)).toEqual(['package.json', 'packages/a/package.json', 'renovate.json']);
+	expect(repo.unreadable[0]?.message).toStartWith('package.json does not parse: EISDIR');
 });
