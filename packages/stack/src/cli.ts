@@ -5,6 +5,7 @@ import { parseArgs } from 'node:util';
 import { assertKnownGroups, loadCanon } from './canon.ts';
 import { checkRepo, syncRepo } from './check.ts';
 import { type Profile, PROFILES, readStackConfig, StackConfigError } from './config.ts';
+import { allowedLine, isHeld } from './exceptions.ts';
 import { type Finding, isDrift } from './findings.ts';
 import { initConfig } from './init.ts';
 
@@ -61,17 +62,15 @@ try {
 		const cfg = readStackConfig(repoRoot);
 		const { applied, held } = syncRepo(repoRoot, loadCanon(cfg), cfg.exceptions);
 		for (const f of held) {
-			console.warn(`allowed (${f.suppressedBy?.reason}): ${f.target} — ${f.message}`);
+			console.warn(allowedLine(f));
 		}
 		for (const d of applied) console.log(d.fix);
 		console.log(`canon ${applied.length === 0 ? 'already up to date' : 'applied'}`);
 	} else if (command === 'check') {
 		const cfg = readStackConfig(repoRoot);
 		const findings = checkRepo(repoRoot, loadCanon(cfg), cfg.exceptions);
-		const blocking = findings.filter((f) => !f.suppressedBy);
-		for (const f of findings.filter((f) => f.suppressedBy)) {
-			console.warn(`allowed (${f.suppressedBy?.reason}): ${f.target} — ${f.message}`);
-		}
+		const blocking = findings.filter((f) => !isHeld(f));
+		for (const f of findings.filter(isHeld)) console.warn(allowedLine(f));
 		for (const f of blocking) console.error(`${f.code}: ${f.target} — ${f.message}`);
 		if (blocking.length) {
 			console.error(`\n${fixHint(blocking)}`);

@@ -35,7 +35,7 @@ export function checkInlineVersions(repoRoot: string, canon: Canon): Finding[] {
 					code: 'inline-version',
 					target: `${file}:${name}`,
 					message: `${name} is declared as "${spec}" instead of catalog:`,
-					address: { name },
+					name,
 				});
 			}
 		}

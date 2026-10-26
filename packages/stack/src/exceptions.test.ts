@@ -1,46 +1,68 @@
 import { expect, test } from 'bun:test';
 
 import type { Exception } from './config.ts';
-import { applyExceptions, type Finding } from './findings.ts';
+import { addressOf, allowedLine, resolve } from './exceptions.ts';
+import type { Finding } from './findings.ts';
 
-const finding = (over: Pick<Finding, 'code' | 'target'> & Partial<Finding>): Finding => ({
-	message: 'm',
-	...over,
-});
-
-const drift = finding({
+const drift: Finding = {
 	code: 'file-drift',
 	target: '.editorconfig',
-	address: { file: '.editorconfig' },
-});
-const missing = finding({
+	message: 'm',
+	file: '.editorconfig',
+};
+const missing: Finding = {
 	code: 'file-missing',
 	target: '.gitleaks.toml',
-	address: { file: '.gitleaks.toml' },
-});
-const devReact = finding({
+	message: 'm',
+	file: '.gitleaks.toml',
+};
+const devReact: Finding = {
 	code: 'catalog-drift',
 	target: 'catalogs.dev.react',
-	address: { catalog: 'dev', name: 'react' },
-});
-const libsReact = finding({
+	message: 'm',
+	catalog: 'dev',
+	name: 'react',
+};
+const libsReact: Finding = {
 	code: 'catalog-missing',
 	target: 'catalogs.libs.react',
-	address: { catalog: 'libs', name: 'react' },
-});
-const inlineReact = finding({
+	message: 'm',
+	catalog: 'libs',
+	name: 'react',
+};
+const inlineReact: Finding = {
 	code: 'inline-version',
 	target: 'packages/app/package.json:react',
-	address: { name: 'react' },
-});
-const inlineZod = finding({
+	message: 'm',
+	name: 'react',
+};
+const inlineZod: Finding = {
 	code: 'inline-version',
 	target: 'packages/app/package.json:zod',
-	address: { name: 'zod' },
-});
-const dependabot = finding({ code: 'dependabot-config', target: '.github/dependabot.yml' });
-const engines = finding({ code: 'engines-node', target: 'package.json:engines.node' });
-const unreadable = finding({ code: 'unreadable-file', target: 'packages/app/package.json' });
+	message: 'm',
+	name: 'zod',
+};
+const pm: Finding = {
+	code: 'package-manager',
+	target: 'package.json:packageManager',
+	message: 'm',
+};
+const staleF: Finding = { code: 'stale-exception', target: '.prototools', message: 'm' };
+const dependabot: Finding = {
+	code: 'dependabot-config',
+	target: '.github/dependabot.yml',
+	message: 'm',
+};
+const engines: Finding = {
+	code: 'engines-node',
+	target: 'package.json:engines.node',
+	message: 'm',
+};
+const unreadable: Finding = {
+	code: 'unreadable-file',
+	target: 'packages/app/package.json',
+	message: 'm',
+};
 
 const onEditorconfig: Exception = { file: '.editorconfig', reason: 'исторический отступ' };
 const onGitleaks: Exception = { file: '.gitleaks.toml', reason: 'временно без файла' };
@@ -65,34 +87,52 @@ const table: [string, Finding, Exception, boolean][] = [
 	['catalog+name не гасит inline-version другого пакета', inlineZod, onLibsReact, false],
 	['catalog+name не гасит файл', drift, onLibsReact, false],
 	[
-		'dependabot-config без адреса не гасится даже при совпадении target с file',
+		'dependabot-config неподавляема и не гасится даже при совпадении target с file',
 		dependabot,
 		{ file: '.github/dependabot.yml', reason: 'r' },
 		false,
 	],
 	[
-		'engines-node без адреса не гасится даже при совпадении target с file',
+		'engines-node неподавляема и не гасится даже при совпадении target с file',
 		engines,
 		{ file: 'package.json:engines.node', reason: 'r' },
 		false,
 	],
 	[
-		'unreadable-file без адреса не гасится даже при совпадении target с file',
+		'unreadable-file неподавляема и не гасится даже при совпадении target с file',
 		unreadable,
 		{ file: 'packages/app/package.json', reason: 'r' },
 		false,
 	],
+	[
+		'package-manager гасится исключением на .prototools',
+		pm,
+		{ file: '.prototools', reason: 'r' },
+		true,
+	],
+	[
+		'package-manager не гасится исключением на package.json',
+		pm,
+		{ file: 'package.json', reason: 'r' },
+		false,
+	],
 ];
 
+const flat = (fs: Finding[], es: Exception[]): Finding[] => {
+	const r = resolve(fs, es);
+	return [...r.findings, ...r.stale];
+};
+
 test.each(table)('%s', (_name, f, e, covered) => {
-	const out = applyExceptions([f], [e]);
+	const r = resolve([f], [e]);
+	const out = [...r.findings, ...r.stale];
 	const same = out.find((x) => x.code === f.code && x.target === f.target);
 	expect(same?.suppressedBy).toEqual(covered ? e : undefined);
 	expect(out.filter((x) => x.code === 'stale-exception')).toHaveLength(covered ? 0 : 1);
 });
 
 test('одно исключение catalog+name гасит и запись каталога, и inline-version — и не протухает', () => {
-	const out = applyExceptions([libsReact, inlineReact, inlineZod], [onLibsReact]);
+	const out = flat([libsReact, inlineReact, inlineZod], [onLibsReact]);
 	expect(out.map((f) => [f.target, f.suppressedBy?.reason])).toEqual([
 		['catalogs.libs.react', 'миграция с React 18'],
 		['packages/app/package.json:react', 'миграция с React 18'],
@@ -101,7 +141,7 @@ test('одно исключение catalog+name гасит и запись ка
 });
 
 test('протухшее исключение — находка с адресом исключения и его причиной в сообщении', () => {
-	const out = applyExceptions([drift], [onEditorconfig, onGitleaks, onLibsReact]);
+	const out = flat([drift], [onEditorconfig, onGitleaks, onLibsReact]);
 	expect(out.map((f) => [f.code, f.target])).toEqual([
 		['file-drift', '.editorconfig'],
 		['stale-exception', '.gitleaks.toml'],
@@ -112,7 +152,7 @@ test('протухшее исключение — находка с адресо
 });
 
 test('копия исключения гасит так же, как оригинал: решение по содержимому, не по ссылке', () => {
-	const out = applyExceptions([drift], [{ ...onEditorconfig }]);
+	const out = flat([drift], [{ ...onEditorconfig }]);
 	expect(out).toHaveLength(1);
 	expect(out[0]?.suppressedBy).toEqual(onEditorconfig);
 });
@@ -121,8 +161,28 @@ test('копия исключения гасит так же, как ориги�
 // шло в stale-exception. Теперь протухшесть — «не покрывает ни одной находки», и оба покрывают.
 test('два исключения на одну находку: гасит первое, второе не считается протухшим', () => {
 	const twin: Exception = { ...onEditorconfig, reason: 'второе оправдание' };
-	const out = applyExceptions([drift], [onEditorconfig, twin]);
+	const out = flat([drift], [onEditorconfig, twin]);
 	expect(out.map((f) => [f.code, f.suppressedBy?.reason])).toEqual([
 		['file-drift', 'исторический отступ'],
 	]);
+});
+
+test('allowedLine печатает причину, цель и сообщение удержанной находки', () => {
+	expect(allowedLine({ ...drift, suppressedBy: onEditorconfig })).toBe(
+		'allowed (исторический отступ): .editorconfig — m',
+	);
+});
+
+test('адрес находки строит таблица: предмет в адрес, неподавляемая — без адреса', () => {
+	expect(addressOf(drift)).toEqual({ file: '.editorconfig' });
+	expect(addressOf(devReact)).toEqual({ catalog: 'dev', name: 'react' });
+	expect(addressOf(inlineReact)).toEqual({ name: 'react' });
+	expect(addressOf(pm)).toEqual({ file: '.prototools' });
+	expect(addressOf(engines)).toBeUndefined();
+});
+
+test('stale-exception не гасится ничем: сама находка остаётся, исключение тоже протухает', () => {
+	const r = resolve([staleF], [{ file: '.prototools', reason: 'r' }]);
+	expect(r.findings).toEqual([staleF]);
+	expect(r.stale.map((f) => f.target)).toEqual(['.prototools']);
 });

@@ -1,64 +1,37 @@
 import type { Exception } from './config.ts';
 
-export type FindingCode =
-	| 'file-drift'
-	| 'file-missing'
-	| 'catalog-drift'
-	| 'catalog-missing'
-	| 'inline-version'
-	| 'engines-node'
-	| 'package-manager'
-	| 'renovate-preset'
-	| 'dependabot-config'
-	| 'unreadable-file'
-	| 'stale-exception';
-
-export interface Finding {
-	code: FindingCode;
+interface FindingBase {
 	target: string;
 	message: string;
-	// Что в этой находке может адресовать исключение из .stack.jsonc: файл — его dest, запись
-	// каталога — catalog+name, inline-version — name. Находка без адреса не подавляется никогда.
-	address?: Omit<Exception, 'reason'>;
 	suppressedBy?: Exception;
 }
 
+// Предмет находки — данные для сопоставления с исключением из .stack.jsonc: файл — его dest,
+// запись каталога — catalog+name, inline-version — name. Адрес из них строит exceptions.ts;
+// находки без предмета не подавляются никогда.
+export type Finding = FindingBase &
+	(
+		| { code: 'file-drift' | 'file-missing'; file: string }
+		| { code: 'catalog-drift' | 'catalog-missing'; catalog: string; name: string }
+		| { code: 'inline-version'; name: string }
+		| {
+				code:
+					| 'package-manager'
+					| 'engines-node'
+					| 'renovate-preset'
+					| 'dependabot-config'
+					| 'unreadable-file'
+					| 'stale-exception';
+		  }
+	);
+export type FindingCode = Finding['code'];
+export type FindingOf<C extends FindingCode> = Finding & { code: C };
+
 // Расхождение, которое sync умеет закрыть: находка плюс действие. check печатает message,
 // sync — fix после apply(). Правила из deps.ts дают Finding без действия — только отчёт.
-export interface Drift extends Finding {
-	fix: string;
-	apply(): void;
-}
+export type Drift = Finding & { fix: string; apply(): void };
 
 // Drift — находка, которую закрывает `stack sync` (у неё есть apply); остальное правят руками.
 export function isDrift(f: Finding): f is Drift {
 	return typeof (f as Partial<Drift>).apply === 'function';
-}
-
-export function covers(e: Exception, f: Finding): boolean {
-	const a = f.address;
-	if (!a) return false;
-	if (e.file != null) return a.file === e.file;
-	// Исключение catalog+name гасит не только свою запись каталога, но и inline-version того же
-	// пакета в любом package.json: пакет, который держат на своей версии, объявляют напрямую, а не
-	// через catalog:, и одно оправдание покрывает оба симптома одной причины (fixtures/node: knip).
-	return a.name === e.name && (a.catalog == null || a.catalog === e.catalog);
-}
-
-// Правила отдают сырые находки; здесь — единственное место, где исключение сопоставляется с
-// находкой, и здесь же исключение без находки становится stale-exception.
-export function applyExceptions(findings: Finding[], exceptions: Exception[]): Finding[] {
-	const suppressed = findings.map((f) => {
-		const e = exceptions.find((e) => covers(e, f));
-		return e ? { ...f, suppressedBy: e } : f;
-	});
-	// Исключение без находки — мёртвая запись: канон уже изменился, а оправдание осталось.
-	const stale = exceptions
-		.filter((e) => !findings.some((f) => covers(e, f)))
-		.map<Finding>((e) => ({
-			code: 'stale-exception',
-			target: e.file ?? `catalogs.${e.catalog}.${e.name}`,
-			message: `exception no longer covers anything: ${e.reason}`,
-		}));
-	return [...suppressed, ...stale];
 }

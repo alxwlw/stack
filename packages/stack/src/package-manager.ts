@@ -29,7 +29,6 @@ export function planPackageManager(repoRoot: string, canon: Canon): Drift[] {
 			code: 'package-manager',
 			target: 'package.json:packageManager',
 			message: `"${current}" instead of "${want}" — pnpm would switch to it and bypass .prototools`,
-			address: { file: '.prototools' },
 			fix: `package.json packageManager: ${current} → ${want}`,
 			apply() {
 				// modify+applyEdits меняет только значение поля: отступы и порядок ключей остаются.

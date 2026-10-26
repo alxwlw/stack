@@ -37,7 +37,8 @@ export function planCatalogs(repoRoot: string, canon: Canon): Drift[] {
 					from == null
 						? `catalog entry missing: expected ${version}`
 						: `${from} instead of ${version}`,
-				address: { catalog: group, name },
+				catalog: group,
+				name,
 				fix: `catalog ${group}.${name}: ${from ?? '—'} → ${version}`,
 				apply() {
 					// setIn создаёт недостающие узлы и не трогает соседей и их комментарии.

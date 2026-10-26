@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { expect, test } from 'bun:test';
 
 import type { Canon } from './canon.ts';
+import { addressOf } from './exceptions.ts';
 import { planPackageManager } from './package-manager.ts';
 
 // pnpmPin не равен реальному пину канона: иначе зашитая в package-manager.ts константа 11.15.0
@@ -26,7 +27,7 @@ function packageManagerOf(dir: string): unknown {
 test('packageManager на другой версии pnpm — дрейф, apply ставит пин канона', () => {
 	const dir = repoWith('{ "name": "r", "packageManager": "pnpm@11.1.2" }\n');
 	const plan = planPackageManager(dir, canon);
-	expect(plan.map((d) => [d.code, d.target, d.address])).toEqual([
+	expect(plan.map((d): unknown[] => [d.code, d.target, addressOf(d)])).toEqual([
 		['package-manager', 'package.json:packageManager', { file: '.prototools' }],
 	]);
 	plan[0]?.apply();

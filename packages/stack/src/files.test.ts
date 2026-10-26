@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { expect, test } from 'bun:test';
 
 import type { Canon } from './canon.ts';
+import { addressOf } from './exceptions.ts';
 import { planFiles } from './files.ts';
 
 const canon: Canon = {
@@ -71,7 +72,7 @@ test('находка о файле несёт адрес для исключен
 	sync(repo);
 	writeFileSync(join(repo, '.editorconfig'), 'свой\n');
 	rmSync(join(repo, '.gitleaks.toml'));
-	expect(planFiles(repo, canon).map((f) => [f.code, f.address])).toEqual([
+	expect(planFiles(repo, canon).map((f): unknown[] => [f.code, addressOf(f)])).toEqual([
 		['file-drift', { file: '.editorconfig' }],
 		['file-missing', { file: '.gitleaks.toml' }],
 	]);

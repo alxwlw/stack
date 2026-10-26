@@ -6,6 +6,7 @@ import { expect, test } from 'bun:test';
 
 import type { Canon } from './canon.ts';
 import { planCatalogs } from './catalogs.ts';
+import { addressOf } from './exceptions.ts';
 
 const canon: Canon = {
 	files: [],
@@ -132,7 +133,7 @@ test('находка о записи каталога несёт адрес дл
 	const repo = repoFixture(
 		'packages:\n  - packages/*\n\ncatalogs:\n  dev:\n    oxlint: 1.74.0\n    typescript: 7.0.1\n',
 	);
-	expect(planCatalogs(repo, canon).map((f) => [f.code, f.address])).toEqual([
+	expect(planCatalogs(repo, canon).map((f): unknown[] => [f.code, addressOf(f)])).toEqual([
 		['catalog-drift', { catalog: 'dev', name: 'oxlint' }],
 		['catalog-drift', { catalog: 'dev', name: 'typescript' }],
 	]);

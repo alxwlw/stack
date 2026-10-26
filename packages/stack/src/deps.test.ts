@@ -12,6 +12,7 @@ import {
 	checkRenovatePreset,
 	STACK_RENOVATE_PRESET,
 } from './deps.ts';
+import { addressOf } from './exceptions.ts';
 
 // Пин нарочно не совпадает с реальным каноном (26.x): иначе тест engines-node не отличит
 // canon.nodePin от зашитой константы.
@@ -40,7 +41,9 @@ test('пакет канона, объявленный версией вмест�
 		'node_modules/x/package.json': '{ "name": "x", "devDependencies": { "oxlint": "1.60.0" } }',
 	});
 	// Имена берутся из всех групп канона (dev и libs), lodash в каноне нет, node_modules пропущен.
-	expect(checkInlineVersions(dir, canon).map((f) => [f.code, f.target, f.address])).toEqual([
+	expect(
+		checkInlineVersions(dir, canon).map((f): unknown[] => [f.code, f.target, addressOf(f)]),
+	).toEqual([
 		['inline-version', 'packages/a/package.json:react', { name: 'react' }],
 		['inline-version', 'packages/a/package.json:oxlint', { name: 'oxlint' }],
 	]);
