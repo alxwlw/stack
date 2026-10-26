@@ -101,6 +101,15 @@ test('битый корневой package.json — checkEnginesNode находк
 	expect(checkEnginesNode(dir, canon)[0]?.code).toBe('unreadable-file');
 });
 
+test('битый корневой package.json с pnpm-workspace.yaml — checkEnginesNode молчит, находку даёт checkInlineVersions', () => {
+	const dir = repo({
+		'pnpm-workspace.yaml': 'packages:\n  - packages/*\n',
+		'package.json': '{ "name": "r", ',
+	});
+	expect(checkEnginesNode(dir, canon)).toEqual([]);
+	expect(checkInlineVersions(dir, canon).map((f) => f.target)).toEqual(['package.json']);
+});
+
 test('без pnpm-workspace.yaml правила каталогов молчат', () => {
 	const dir = repo({
 		'package.json': '{ "name": "infra", "devDependencies": { "oxlint": "1.70.0" } }',

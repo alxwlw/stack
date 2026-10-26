@@ -147,3 +147,20 @@ test('renovate-preset и dependabot-config не подавляются искл�
 	}
 	expect(findings.filter((f) => f.code === 'stale-exception')).toHaveLength(2);
 });
+
+test('сломанный корневой package.json — одна находка unreadable-file, с pnpm-workspace.yaml и без', () => {
+	for (const withWorkspace of [true, false]) {
+		const repo = withRenovate(mkdtempSync(join(tmpdir(), 'stack-repo-')));
+		writeFileSync(join(repo, 'package.json'), '{ "name": "r", ');
+		if (withWorkspace) {
+			writeFileSync(join(repo, 'pnpm-workspace.yaml'), 'packages:\n  - packages/*\n');
+		}
+		const unreadable = checkRepo(repo, { ...canon, files: [], catalogs: {} }, []).filter(
+			(f) => f.code === 'unreadable-file',
+		);
+		expect(
+			unreadable.map((f) => f.target),
+			`workspace: ${withWorkspace}`,
+		).toEqual(['package.json']);
+	}
+});

@@ -50,6 +50,8 @@ export function checkEnginesNode(repoRoot: string, canon: Canon): Finding[] {
 	try {
 		pkg = JSON.parse(readFileSync(path, 'utf8')) as { engines?: { node?: string } };
 	} catch (err) {
+		// С pnpm-workspace.yaml checkInlineVersions сканирует и корневой package.json: её находка уже есть.
+		if (existsSync(join(repoRoot, 'pnpm-workspace.yaml'))) return [];
 		return [
 			{
 				code: 'unreadable-file',
