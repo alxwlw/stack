@@ -45,7 +45,7 @@ export interface Repo {
 	packages: ReadonlyMap<string, Record<string, unknown>>;
 	/** Первый конфиг Renovate в порядке поиска самого Renovate; config нет — файл не разобрался. */
 	renovate?: { path: string; config?: unknown };
-	/** Ровно одна находка unreadable-file на каждый неразобранный package.json, pnpm-workspace.yaml и конфиг Renovate. */
+	/** Ровно одна находка unreadable-file на каждый неразобранный package.json, pnpm-workspace.yaml и первый конфиг Renovate. */
 	unreadable: Finding[];
 }
 
