@@ -271,6 +271,21 @@ test('README: таблица групп перечисляет ровно гру
 	);
 });
 
+// «Seeds» в README обещает засев: файл принадлежит репозиторию, sync его не перезаписывает.
+test('README: группа «Seeds …» засевает все свои файлы, группа «Syncs …» синхронизирует хотя бы один дословно', () => {
+	const manifest = loadManifest();
+	const broken: string[] = [];
+	for (const [group, adds] of readmeGroupRows()) {
+		const strategies = manifest
+			.filter((f) => f.group === group)
+			.map((f) => f.strategy ?? 'verbatim');
+		if (adds.startsWith('Seeds') && !strategies.every((s) => s === 'create-if-absent'))
+			broken.push(group);
+		if (adds.startsWith('Syncs') && !strategies.includes('verbatim')) broken.push(group);
+	}
+	expect(broken).toEqual([]);
+});
+
 const MOON_TASKS = ['typescript', 'oxlint', 'oxfmt', 'bun-test'];
 
 test('moon-tasks: четыре файла задач синхронизируются дословно, stack.yml — засев', () => {

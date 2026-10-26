@@ -4,9 +4,9 @@
 	// verbatimModuleSyntax MUST be false here: it elides type-only imports, and
 	// reflect-metadata DI resolves constructor params from those imports —
 	// eliding them yields UnknownDependenciesException at runtime while tsc and
-	// local dev pass. (This canon still requires explicit @Inject on every
-	// @Injectable ctor param — enforced by the oxlint canon's
-	// stack/require-nest-di-decorator rule.)
+	// local dev pass. The oxlint canon's stack/require-nest-di-decorator rule
+	// guards a different runtime-only DI failure: in an @Injectable/@Controller/
+	// @Catch class, a constructor param with a default value must carry @Optional().
 	"extends": "./refs.json",
 	"compilerOptions": {
 		"experimentalDecorators": true,
