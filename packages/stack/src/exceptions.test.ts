@@ -85,6 +85,12 @@ const table: [string, Finding, Exception, boolean][] = [
 		true,
 	],
 	['catalog+name не гасит inline-version другого пакета', inlineZod, onLibsReact, false],
+	[
+		'catalog-missing не гасится исключением другого каталога',
+		libsReact,
+		{ catalog: 'dev', name: 'react', reason: 'r' },
+		false,
+	],
 	['catalog+name не гасит файл', drift, onLibsReact, false],
 	[
 		'dependabot-config неподавляема и не гасится даже при совпадении target с file',
