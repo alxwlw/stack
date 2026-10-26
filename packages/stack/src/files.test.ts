@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { expect, test } from 'bun:test';
 
 import type { Canon } from './canon.ts';
+import { syncRepo } from './check.ts';
 import { planFiles } from './files.ts';
 
 const canon: Canon = {
@@ -20,9 +21,7 @@ const canon: Canon = {
 
 // Применить план — то, что делает `stack sync`; возвращает план, чтобы пинить его строки fix.
 function sync(repo: string) {
-	const plan = planFiles(repo, canon);
-	for (const d of plan) d.apply();
-	return plan;
+	return syncRepo(repo, canon, []).applied;
 }
 
 test('verbatim-файл кладётся (включая вложенный путь) и перезаписывается', () => {
@@ -105,7 +104,9 @@ test('create-if-absent с satisfiedBy: ничего нет — засевает�
 	expect(plan.map((d) => [d.code, d.target, d.fix])).toEqual([
 		['file-missing', 'renovate.json5', 'seeded renovate.json5'],
 	]);
-	for (const d of plan) d.apply();
+	expect(syncRepo(repo, seedWithAlternatives, []).applied.map((d) => d.target)).toEqual([
+		'renovate.json5',
+	]);
 	expect(readFileSync(join(repo, 'renovate.json5'), 'utf8')).toBe('{}\n');
 	expect(planFiles(repo, seedWithAlternatives)).toEqual([]);
 });

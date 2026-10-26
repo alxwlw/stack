@@ -1,3 +1,4 @@
+import { applyChanges } from './apply.ts';
 import type { Canon } from './canon.ts';
 import { planCatalogs } from './catalogs.ts';
 import {
@@ -30,13 +31,14 @@ export interface SyncResult {
 export function syncRepo(repoRoot: string, canon: Canon, exceptions: Exception[]): SyncResult {
 	const result: SyncResult = { applied: [], held: [] };
 	for (const d of resolve(planRepo(repoRoot, canon), exceptions).findings) {
-		if (isHeld(d)) {
-			result.held.push(d);
-			continue;
-		}
-		d.apply();
-		result.applied.push(d);
+		if (isHeld(d)) result.held.push(d);
+		else result.applied.push(d);
 	}
+	// Правки собираются по файлу: каждый затронутый файл читается и пишется один раз.
+	applyChanges(
+		repoRoot,
+		result.applied.map((d) => d.change),
+	);
 	return result;
 }
 

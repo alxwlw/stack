@@ -27,11 +27,17 @@ export type Finding = FindingBase &
 export type FindingCode = Finding['code'];
 export type FindingOf<C extends FindingCode> = Finding & { code: C };
 
-// Расхождение, которое sync умеет закрыть: находка плюс действие. check печатает message,
-// sync — fix после apply(). Правила из deps.ts дают Finding без действия — только отчёт.
-export type Drift = Finding & { fix: string; apply(): void };
+// Правка одного файла как данные: применитель собирает правки по файлу и пишет его один раз.
+export type Change =
+	| { file: string; kind: 'write'; content: string }
+	| { file: string; kind: 'yaml-set'; path: string[]; value: string }
+	| { file: string; kind: 'json-set'; path: string[]; value: string };
 
-// Drift — находка, которую закрывает `stack sync` (у неё есть apply); остальное правят руками.
+// Расхождение, которое sync умеет закрыть: находка плюс правка. check печатает message,
+// sync — fix после applyChanges. Правила из deps.ts дают Finding без правки — только отчёт.
+export type Drift = Finding & { fix: string; change: Change };
+
+// Drift — находка, которую закрывает `stack sync` (у неё есть change); остальное правят руками.
 export function isDrift(f: Finding): f is Drift {
-	return typeof (f as Partial<Drift>).apply === 'function';
+	return 'change' in f;
 }
