@@ -34,7 +34,7 @@ export function syncRepo(repoRoot: string, canon: Canon, exceptions: Exception[]
 		if (isHeld(d)) result.held.push(d);
 		else result.applied.push(d);
 	}
-	// Правки собираются по файлу: каждый затронутый файл читается и пишется один раз.
+	// Правки собираются по файлу: применитель читает и пишет файл не больше одного раза.
 	applyChanges(
 		repoRoot,
 		result.applied.map((d) => d.change),

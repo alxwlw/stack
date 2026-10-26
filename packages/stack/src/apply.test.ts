@@ -58,7 +58,11 @@ test('applyChanges: write во вложенный путь создаёт кат
 	const root = mkdtempSync(join(tmpdir(), 'stack-apply-'));
 	applyChanges(root, [
 		{ file: '.moon/tasks/x.yml', kind: 'write', content: 'tasks: {}\n' },
-		{ file: 'ws.yaml', kind: 'write', content: 'catalogs:\n  dev:\n    a: 1.0.0\n' },
+		{
+			file: 'ws.yaml',
+			kind: 'write',
+			content: 'packages:\n  - packages/*\n# из канона\ncatalogs:\n  dev:\n    a: 1.0.0\n',
+		},
 	]);
 	expect(readFileSync(join(root, '.moon/tasks/x.yml'), 'utf8')).toBe('tasks: {}\n');
 	applyChanges(root, [
@@ -66,6 +70,6 @@ test('applyChanges: write во вложенный путь создаёт кат
 		{ file: 'ws.yaml', kind: 'yaml-set', path: ['catalogs', 'dev', 'b'], value: '3.0.0' },
 	]);
 	expect(readFileSync(join(root, 'ws.yaml'), 'utf8')).toBe(
-		'catalogs:\n  dev:\n    a: 2.0.0\n    b: 3.0.0\n',
+		'packages:\n  - packages/*\n# из канона\ncatalogs:\n  dev:\n    a: 2.0.0\n    b: 3.0.0\n',
 	);
 });

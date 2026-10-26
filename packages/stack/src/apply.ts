@@ -25,7 +25,7 @@ function renderFile(file: string, current: string | undefined, changes: Change[]
 			if (c.kind === 'yaml-set') doc.setIn(c.path, c.value);
 		}
 		// singleQuote: oxfmt (canon .oxfmtrc.jsonc) formats YAML with singleQuote:true, and
-		// this file's own pre-existing catalogs already use single quotes for scoped names.
+		// pnpm-workspace.yaml's own pre-existing catalogs already use single quotes for scoped names.
 		// New scoped-package keys (@foo/bar isn't a plain-scalar-safe start char) default to
 		// double quotes otherwise, so a freshly-synced workspace fails `oxfmt --check`.
 		// lineWidth: 0 — без переноса: по умолчанию yaml режет скаляры длиннее 80 колонок во
@@ -52,7 +52,7 @@ export function renderChanges(
 	return out;
 }
 
-// Читает каждый затронутый файл один раз, рендерит, пишет каждый файл один раз.
+// Не больше одного чтения и одной записи на файл (write-цели не читаются).
 export function applyChanges(root: string, changes: readonly Change[]): void {
 	const current = new Map<string, string | undefined>();
 	for (const c of changes) {
