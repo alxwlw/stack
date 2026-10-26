@@ -30,7 +30,7 @@ export function planFiles(repoRoot: string, canon: Canon): Drift[] {
 			code: exists ? 'file-drift' : 'file-missing',
 			target: f.dest,
 			message: exists ? `${f.dest} differs from canon` : `canon file missing: ${f.dest}`,
-			address: { file: f.dest },
+			file: f.dest,
 			fix: `${f.strategy === 'create-if-absent' ? 'seeded' : 'updated'} ${f.dest}`,
 			apply() {
 				mkdirSync(dirname(target), { recursive: true });

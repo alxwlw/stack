@@ -26,9 +26,14 @@ function packageManagerOf(dir: string): unknown {
 test('packageManager на другой версии pnpm — дрейф, apply ставит пин канона', () => {
 	const dir = repoWith('{ "name": "r", "packageManager": "pnpm@11.1.2" }\n');
 	const plan = planPackageManager(dir, canon);
-	expect(plan.map((d) => [d.code, d.target, d.address])).toEqual([
-		['package-manager', 'package.json:packageManager', { file: '.prototools' }],
-	]);
+	expect(
+		plan.map((d) => [
+			d.code,
+			d.target,
+			// Предметных полей нет: адрес .prototools даёт таблица в exceptions.ts.
+			['file', 'catalog', 'name'].filter((k) => k in d),
+		]),
+	).toEqual([['package-manager', 'package.json:packageManager', []]]);
 	plan[0]?.apply();
 	expect(packageManagerOf(dir)).toBe('pnpm@10.99.0');
 	expect(planPackageManager(dir, canon)).toEqual([]);

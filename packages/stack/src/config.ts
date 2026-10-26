@@ -3,16 +3,11 @@ import { join } from 'node:path';
 
 import { parse as parseJsonc, type ParseError } from 'jsonc-parser';
 
+import { type Exception, exceptionProblem } from './exceptions.ts';
+
 export const STACK_CONFIG_FILE = '.stack.jsonc';
 export const PROFILES = ['node', 'contracts', 'infra'] as const;
 export type Profile = (typeof PROFILES)[number];
-
-export interface Exception {
-	file?: string;
-	catalog?: string;
-	name?: string;
-	reason: string;
-}
 
 export interface StackConfig {
 	profile: Profile;
@@ -49,22 +44,9 @@ export function readStackConfig(repoRoot: string): StackConfig {
 	const exceptions = raw.exceptions ?? [];
 	if (!Array.isArray(exceptions))
 		throw new StackConfigError(`${STACK_CONFIG_FILE}: "exceptions" must be an array`);
-	const present = (v: unknown): boolean => v !== undefined;
-	const nonEmpty = (v: unknown): boolean => typeof v === 'string' && v !== '';
-	// exceptions пришёл из JSON и типизирован через "as" — реальный элемент массива может быть
-	// null/undefined, даже когда тип обещает Exception; проверяем честно, не полагаясь на "as".
-	for (const e of exceptions as (Exception | null | undefined)[]) {
-		if (e == null || !e.reason)
-			throw new StackConfigError(
-				`${STACK_CONFIG_FILE}: exception is missing "reason": ${JSON.stringify(e)}`,
-			);
-		const isFileOnly = nonEmpty(e.file) && !present(e.catalog) && !present(e.name);
-		const isEntryOnly = nonEmpty(e.catalog) && nonEmpty(e.name) && !present(e.file);
-		if (!isFileOnly && !isEntryOnly) {
-			throw new StackConfigError(
-				`${STACK_CONFIG_FILE}: an exception must address either "file" or a "catalog"+"name" pair: ${JSON.stringify(e)}`,
-			);
-		}
+	for (const e of exceptions) {
+		const problem = exceptionProblem(e);
+		if (problem) throw new StackConfigError(`${STACK_CONFIG_FILE}: ${problem}`);
 	}
 	return { profile: profile as Profile, with: groups, exceptions };
 }

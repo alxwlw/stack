@@ -40,9 +40,15 @@ test('пакет канона, объявленный версией вмест�
 		'node_modules/x/package.json': '{ "name": "x", "devDependencies": { "oxlint": "1.60.0" } }',
 	});
 	// Имена берутся из всех групп канона (dev и libs), lodash в каноне нет, node_modules пропущен.
-	expect(checkInlineVersions(dir, canon).map((f) => [f.code, f.target, f.address])).toEqual([
-		['inline-version', 'packages/a/package.json:react', { name: 'react' }],
-		['inline-version', 'packages/a/package.json:oxlint', { name: 'oxlint' }],
+	expect(
+		checkInlineVersions(dir, canon).map((f) => [
+			f.code,
+			f.target,
+			'name' in f ? f.name : undefined,
+		]),
+	).toEqual([
+		['inline-version', 'packages/a/package.json:react', 'react'],
+		['inline-version', 'packages/a/package.json:oxlint', 'oxlint'],
 	]);
 });
 
