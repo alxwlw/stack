@@ -10,7 +10,7 @@ import type { Finding } from './findings.ts';
 // package.json в этих каталогах не читаются: чужой или собранный файл — не предмет проверки.
 export const SKIP = /node_modules|\.worktrees|\.moon\/cache|(^|\/)(dist|build)\//;
 
-// Имена и порядок поиска — как у самого Renovate (renovate.json{,c,5} для каждого места; первый
+// Имена и порядок поиска — как у самого Renovate (расширения json, jsonc, json5 для каждого места; первый
 // найденный файл и есть конфиг), без устаревшего package.json#renovate. JSON5.parse читает и JSONC.
 export const RENOVATE_CONFIGS = [
 	'renovate.json',
