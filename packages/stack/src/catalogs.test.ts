@@ -6,6 +6,7 @@ import { expect, test } from 'bun:test';
 
 import type { Canon } from './canon.ts';
 import { planCatalogs } from './catalogs.ts';
+import { syncRepo } from './check.ts';
 
 const canon: Canon = {
 	files: [],
@@ -21,11 +22,9 @@ function repoFixture(ws: string): string {
 	return dir;
 }
 
-// Применить план — то, что делает `stack sync`; возвращает план, чтобы пинить его строки fix.
+// Применить план — то, что делает `stack sync`; возвращает applied из syncRepo, чтобы пинить строки fix.
 function sync(repo: string, c: Canon = canon) {
-	const plan = planCatalogs(repo, c);
-	for (const d of plan) d.apply();
-	return plan;
+	return syncRepo(repo, c, []).applied;
 }
 
 const WS_WITH_COMMENT = `packages:
@@ -87,7 +86,7 @@ test('повторный sync — пустой план, файл байт-в-б
 // Task 13: a scoped name (`@foo/bar`) isn't a plain-scalar-safe YAML key, so the `yaml` package
 // quotes it either way — but its default is double quotes, and oxfmt (canon .oxfmtrc.jsonc,
 // singleQuote:true) then reformats it right back, painting a workspace file `sync` just wrote.
-// Mutation: dropping `{ singleQuote: true }` from doc.toString() in planCatalogs' apply() turns
+// Mutation: dropping `{ singleQuote: true }` from doc.toString() in renderChanges (apply.ts) turns
 // this red.
 test('новая scoped-запись каталога пишется в одинарных кавычках (singleQuote: true)', () => {
 	const repo = repoFixture('packages:\n  - packages/*\n');

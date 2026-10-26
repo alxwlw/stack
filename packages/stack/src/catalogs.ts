@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { parseDocument } from 'yaml';
@@ -40,18 +40,11 @@ export function planCatalogs(repoRoot: string, canon: Canon): Drift[] {
 				catalog: group,
 				name,
 				fix: `catalog ${group}.${name}: ${from ?? '—'} → ${version}`,
-				apply() {
-					// setIn создаёт недостающие узлы и не трогает соседей и их комментарии.
-					doc.setIn(['catalogs', group, name], version);
-					// singleQuote: oxfmt (canon .oxfmtrc.jsonc) formats YAML with singleQuote:true, and
-					// this file's own pre-existing catalogs already use single quotes for scoped names.
-					// New scoped-package keys (@foo/bar isn't a plain-scalar-safe start char) default to
-					// double quotes otherwise, so a freshly-synced workspace fails `oxfmt --check`.
-					// ponytail: doc общий на весь план, файл пишется на каждую запись; один flush в
-					// конце, если ~40 записей первого sync станут заметны.
-					// lineWidth: 0 — без переноса: по умолчанию yaml режет скаляры длиннее 80 колонок во
-					// всём документе, и sync переписал бы строки, к каталогам не относящиеся.
-					writeFileSync(path, doc.toString({ singleQuote: true, lineWidth: 0 }));
+				change: {
+					kind: 'yaml-set',
+					file: WORKSPACE_FILE,
+					path: ['catalogs', group, name],
+					value: version,
 				},
 			});
 		}

@@ -1,5 +1,5 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 import type { Canon } from './canon.ts';
 import type { Drift } from './findings.ts';
@@ -32,10 +32,7 @@ export function planFiles(repoRoot: string, canon: Canon): Drift[] {
 			message: exists ? `${f.dest} differs from canon` : `canon file missing: ${f.dest}`,
 			file: f.dest,
 			fix: `${f.strategy === 'create-if-absent' ? 'seeded' : 'updated'} ${f.dest}`,
-			apply() {
-				mkdirSync(dirname(target), { recursive: true });
-				writeFileSync(target, f.content);
-			},
+			change: { kind: 'write', file: f.dest, content: f.content },
 		});
 	}
 	return plan;

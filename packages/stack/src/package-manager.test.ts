@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { expect, test } from 'bun:test';
 
 import type { Canon } from './canon.ts';
+import { syncRepo } from './check.ts';
 import { planPackageManager } from './package-manager.ts';
 
 // pnpmPin не равен реальному пину канона: иначе зашитая в package-manager.ts константа 11.15.0
@@ -23,7 +24,7 @@ function packageManagerOf(dir: string): unknown {
 	).packageManager;
 }
 
-test('packageManager на другой версии pnpm — дрейф, apply ставит пин канона', () => {
+test('packageManager на другой версии pnpm — дрейф, sync ставит пин канона', () => {
 	const dir = repoWith('{ "name": "r", "packageManager": "pnpm@11.1.2" }\n');
 	const plan = planPackageManager(dir, canon);
 	expect(
@@ -34,7 +35,9 @@ test('packageManager на другой версии pnpm — дрейф, apply �
 			['file', 'catalog', 'name'].filter((k) => k in d),
 		]),
 	).toEqual([['package-manager', 'package.json:packageManager', []]]);
-	plan[0]?.apply();
+	expect(syncRepo(dir, canon, []).applied.map((d) => [d.code, d.fix])).toEqual([
+		['package-manager', 'package.json packageManager: pnpm@11.1.2 → pnpm@10.99.0'],
+	]);
 	expect(packageManagerOf(dir)).toBe('pnpm@10.99.0');
 	expect(planPackageManager(dir, canon)).toEqual([]);
 });
@@ -54,11 +57,11 @@ test('нечитаемый package.json — правило молчит (unreada
 	expect(planPackageManager(repoWith('{ nope'), canon)).toEqual([]);
 });
 
-test('apply меняет одну строку: 4-пробельные отступы и порядок ключей сохранены', () => {
+test('sync меняет одну строку: 4-пробельные отступы и порядок ключей сохранены', () => {
 	const before =
 		'{\n    "name": "r",\n    "packageManager": "pnpm@11.1.2",\n    "private": true\n}\n';
 	const dir = repoWith(before);
-	planPackageManager(dir, canon)[0]?.apply();
+	syncRepo(dir, canon, []);
 	expect(readFileSync(join(dir, 'package.json'), 'utf8')).toBe(
 		before.replace('pnpm@11.1.2', 'pnpm@10.99.0'),
 	);

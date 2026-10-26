@@ -1,7 +1,5 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-
-import { applyEdits, modify } from 'jsonc-parser';
 
 import type { Canon } from './canon.ts';
 import type { Drift } from './findings.ts';
@@ -30,11 +28,7 @@ export function planPackageManager(repoRoot: string, canon: Canon): Drift[] {
 			target: 'package.json:packageManager',
 			message: `"${current}" instead of "${want}" — pnpm would switch to it and bypass .prototools`,
 			fix: `package.json packageManager: ${current} → ${want}`,
-			apply() {
-				// modify+applyEdits меняет только значение поля: отступы и порядок ключей остаются.
-				const now = readFileSync(path, 'utf8');
-				writeFileSync(path, applyEdits(now, modify(now, ['packageManager'], want, {})));
-			},
+			change: { kind: 'json-set', file: 'package.json', path: ['packageManager'], value: want },
 		},
 	];
 }

@@ -1,8 +1,9 @@
+import * as fs from 'node:fs';
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 
-import { expect, test } from 'bun:test';
+import { expect, spyOn, test } from 'bun:test';
 
 import type { Canon } from './canon.ts';
 import { checkRepo, syncRepo } from './check.ts';
@@ -13,6 +14,8 @@ function withRenovate(repo: string): string {
 	writeFileSync(join(repo, 'renovate.json5'), `{ extends: ['${STACK_RENOVATE_PRESET}'] }\n`);
 	return repo;
 }
+
+const realWrite = fs.writeFileSync;
 
 const canon: Canon = {
 	files: [{ dest: '.editorconfig', content: 'root = true\n' }],
@@ -69,10 +72,7 @@ test('исключение, подошедшее к находке, не меш�
 test('checkRepo агрегирует находки из разных источников: файл и каталог одновременно', () => {
 	const repo = mkdtempSync(join(tmpdir(), 'stack-repo-'));
 	writeFileSync(join(repo, '.editorconfig'), 'сломали\n');
-	writeFileSync(
-		join(repo, 'pnpm-workspace.yaml'),
-		'packages:\n  - packages/*\n\ncatalogs:\n  dev:\n    oxlint: 1.70.0\n',
-	);
+	writeFileSync(join(repo, 'pnpm-workspace.yaml'), WS_BEFORE);
 	const codes = checkRepo(repo, canon, []).map((f) => f.code);
 	expect(codes).toContain('file-drift');
 	expect(codes).toContain('catalog-drift');
@@ -91,14 +91,26 @@ test('sync не трогает файл, удержанный исключени
 	expect(checkRepo(repo, canon, exceptions).filter((f) => !f.suppressedBy)).toEqual([]);
 });
 
+const OVERRIDES = `overrides:
+  "pkg>dep": "git+https://github.com/example/some-long-fork-name.git#${'a'.repeat(40)}"
+  # длинный plain-скаляр
+  plain: some very long plain scalar value that goes well past the eighty column limit of yaml
+`;
+const WS_BEFORE = `packages:
+  - packages/*
+
+catalogs:
+  # из канона
+  dev:
+    oxlint: 1.70.0
+
+${OVERRIDES}`;
+
 test('sync оставляет запись каталога, удержанную catalog+name, и применяет остальное', () => {
 	const repo = withRenovate(mkdtempSync(join(tmpdir(), 'stack-repo-')));
-	writeFileSync(
-		join(repo, 'pnpm-workspace.yaml'),
-		'packages:\n  - packages/*\n\ncatalogs:\n  dev:\n    oxlint: 1.70.0\n',
-	);
+	writeFileSync(join(repo, 'pnpm-workspace.yaml'), WS_BEFORE);
 	// Вторая запись dev-каталога: соседняя запись в том же файле не должна затереть удержанную
-	// (planCatalogs делит один doc на все записи, apply пишет файл целиком).
+	// (применитель пишет pnpm-workspace.yaml целиком, один раз).
 	const twoEntries: Canon = {
 		...canon,
 		catalogs: { dev: { oxlint: '1.83.0', typescript: '7.0.2' } },
@@ -111,6 +123,8 @@ test('sync оставляет запись каталога, удержанну�
 	const workspace = readFileSync(join(repo, 'pnpm-workspace.yaml'), 'utf8');
 	expect(workspace).toContain('oxlint: 1.70.0');
 	expect(workspace).toContain('typescript: 7.0.2');
+	expect(workspace).toContain('  # из канона\n  dev:');
+	expect(workspace.slice(workspace.indexOf('overrides:'))).toBe(OVERRIDES);
 	expect(checkRepo(repo, twoEntries, exceptions).filter((f) => !f.suppressedBy)).toEqual([]);
 });
 
@@ -163,4 +177,26 @@ test('сломанный корневой package.json — одна находк
 			`workspace: ${withWorkspace}`,
 		).toEqual(['package.json']);
 	}
+});
+
+// DX-17: sync пишет каждый файл один раз, сколько бы находок в нём ни было.
+test('syncRepo: два дрейфа каталога, packageManager и файл — по одной записи на путь', () => {
+	const repo = withRenovate(mkdtempSync(join(tmpdir(), 'stack-repo-')));
+	writeFileSync(join(repo, 'pnpm-workspace.yaml'), 'packages:\n  - packages/*\n');
+	writeFileSync(join(repo, 'package.json'), '{ "packageManager": "pnpm@1.0.0" }\n');
+	const twoEntries: Canon = {
+		...canon,
+		catalogs: { dev: { oxlint: '1.83.0', typescript: '7.0.2' } },
+	};
+	const writes: string[] = [];
+	const spy = spyOn(fs, 'writeFileSync').mockImplementation(((path: string, data: string) => {
+		writes.push(relative(repo, path));
+		return realWrite(path, data);
+	}) as typeof fs.writeFileSync);
+	try {
+		expect(syncRepo(repo, twoEntries, []).applied).toHaveLength(4);
+	} finally {
+		spy.mockRestore();
+	}
+	expect(writes.toSorted()).toEqual(['.editorconfig', 'package.json', 'pnpm-workspace.yaml']);
 });

@@ -47,7 +47,7 @@ One statement that a consumer departs from the canon, with a `code` (`FindingCod
 _Avoid_: violation, error, issue
 
 **Drift**:
-A finding that `stack sync` can close, because it carries the action to do so (`apply`). A finding without an action, such as `engines-node`, is only reported. `Drift`, `isDrift` in `packages/stack/src/findings.ts`.
+A finding that `stack sync` can close, because it carries a `Change` (an edit of one file as data) that `applyChanges` writes, one write per file. A finding without a change, such as `engines-node`, is only reported. `Drift`, `Change`, `isDrift` in `packages/stack/src/findings.ts`; `applyChanges` in `packages/stack/src/apply.ts`.
 _Avoid_: diff, mismatch
 
 **Exception**:
