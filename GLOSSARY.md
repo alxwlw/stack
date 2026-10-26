@@ -81,7 +81,7 @@ _Avoid_: deploy, propagation
 ### Tests of the canon
 
 **Fixture**:
-A minimal consumer under `fixtures/<profile>/` holding only its seed (`.stack.jsonc`, a `package.json`, a workspace file without catalogs). Tests copy it and run `syncRepo` to obtain what a real consumer would have (`syncedFixture` in `packages/stack/src/selftest.test.ts`).
+A minimal consumer under `fixtures/<profile>/` holding only its seed (typically `.stack.jsonc`, a `package.json` and a workspace file without catalogs). Tests copy it and run `syncRepo` to obtain what a real consumer would have (`syncedFixture` in `packages/stack/src/selftest.test.ts`).
 _Avoid_: snapshot, example repo
 
 **Dogfood test**:
