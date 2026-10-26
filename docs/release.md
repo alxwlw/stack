@@ -23,7 +23,7 @@ package and nothing is published; and `rollout.yml` would dispatch any successfu
 2. Run `bun scripts/release.ts version X.Y.Z`. It writes `version` into every `packages/*/package.json`
    and the same version into each `@alxwlw/*` entry of `canon/catalogs.json`. `release.ts` finds every
    `packages/*` directory with a `package.json` by itself, but two lists name packages explicitly: the
-   publish loop in `.github/workflows/publish.yml` and `PACKAGES` in the wait step of
+   publish loop in `.github/workflows/publish.yml` and the package list of the wait step in
    `.github/workflows/sync.yml`. A new package is added to both in the same PR. Until it is, the tests
    `scripts/release.test.ts` (publish.yml publishes every package from packageDirs) and
    `packages/stack/src/dogfood.test.ts` (the wait step waits for every published package in `packages/`)
@@ -63,7 +63,7 @@ secret (`owner/repo`, one per line); the App credentials are `STACK_BOT_APP_ID` 
 This repository is public, so the log carries counters only: `dispatched: N, failed: M`. A failed
 dispatch is counted and its message is dropped, because it can name the consumer.
 
-On the consumer side the reusable `sync.yml` waits until every package in its `PACKAGES` list is visible in the
+On the consumer side the reusable `sync.yml` waits until every package named in its wait step is visible in the
 npm registry, and only then runs `bunx @alxwlw/stack@X.Y.Z sync` and opens the PR.
 
 ### VERSION arrives with the tag prefix
