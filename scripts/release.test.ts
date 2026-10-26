@@ -48,6 +48,13 @@ test('packageDirs: все каталоги packages/ с package.json, по ал�
 	expect(packageDirs(REPO_ROOT)).toEqual(['oxlint-config', 'repo-rules', 'stack', 'tsconfig']);
 });
 
+test('packageDirs: пропускает файлы и каталоги без package.json', () => {
+	const root = fixtureRoot();
+	mkdirSync(join(root, 'packages', 'no-manifest'));
+	writeFileSync(join(root, 'packages', 'stray-file'), '');
+	expect(packageDirs(root)).toEqual(['oxlint-config', 'repo-rules', 'stack', 'tsconfig']);
+});
+
 describe('setVersion', () => {
 	test('проставляет одну версию пакетам и каталогу канона', () => {
 		const root = fixtureRoot();
@@ -116,6 +123,28 @@ describe('checkTag', () => {
 describe('CLI', () => {
 	const run = (...args: string[]) =>
 		Bun.spawnSync(['bun', 'scripts/release.ts', ...args], { cwd: REPO_ROOT });
+
+	test('подкоманда без аргумента и неизвестная подкоманда — код 2', () => {
+		expect(run('version').exitCode).toBe(2);
+		expect(run('check-tag').exitCode).toBe(2);
+		expect(run('bump', '1.2.3').exitCode).toBe(2);
+	});
+
+	test('version не по semver — код 1 и сообщение', () => {
+		const r = run('version', 'v1.2');
+		expect(r.exitCode).toBe(1);
+		expect(r.stderr.toString()).toContain('version is not semver: "v1.2"');
+	});
+
+	test('version пишет в дерево из cwd, а не в репозиторий', () => {
+		const root = fixtureRoot();
+		const r = Bun.spawnSync(['bun', join(REPO_ROOT, 'scripts/release.ts'), 'version', '3.4.5'], {
+			cwd: root,
+		});
+		expect(r.exitCode).toBe(0);
+		expect(pkgVersion(root, 'tsconfig')).toBe('3.4.5');
+		expect(pkgVersion(REPO_ROOT, 'tsconfig')).not.toBe('3.4.5');
+	});
 
 	test('без аргументов — usage и код 2', () => {
 		const r = run();
