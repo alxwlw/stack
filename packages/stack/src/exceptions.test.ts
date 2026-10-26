@@ -1,7 +1,16 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { expect, test } from 'bun:test';
 
-import type { Exception } from './config.ts';
-import { addressOf, allowedLine, resolve } from './exceptions.ts';
+import {
+	addressOf,
+	allowedLine,
+	type Exception,
+	EXCEPTION_SHAPES,
+	exceptionProblem,
+	resolve,
+} from './exceptions.ts';
 import type { Finding } from './findings.ts';
 
 const drift: Finding = {
@@ -191,4 +200,41 @@ test('stale-exception не гасится ничем: сама находка о
 	const r = resolve([staleF], [{ file: '.prototools', reason: 'r' }]);
 	expect(r.findings).toEqual([staleF]);
 	expect(r.stale.map((f) => f.target)).toEqual(['.prototools']);
+});
+
+test('schema.json: oneOf исключения — ровно формы EXCEPTION_SHAPES', () => {
+	const schema = JSON.parse(readFileSync(join(import.meta.dir, '..', 'schema.json'), 'utf8')) as {
+		properties: { exceptions: { items: { oneOf: { required: string[] }[] } } };
+	};
+	const shapes = schema.properties.exceptions.items.oneOf.map((s) => [...s.required].sort());
+	expect(shapes).toEqual(EXCEPTION_SHAPES.map((s) => [...s].sort()));
+});
+
+// Каждая строка — одна форма записи: допустима ли она. Пары «да» и «нет» стоят рядом, чтобы правило
+// нельзя было выполнить, просто приняв всё или отвергнув всё.
+const shapeTable: [string, unknown, boolean][] = [
+	['file с причиной — допустима', { file: '.editorconfig', reason: 'r' }, true],
+	['catalog+name с причиной — допустима', { catalog: 'libs', name: 'react', reason: 'r' }, true],
+	['пустой file — недопустима', { file: '', reason: 'r' }, false],
+	['catalog без name — недопустима', { catalog: 'libs', reason: 'r' }, false],
+	['file вместе с catalog — недопустима', { file: 'a', catalog: 'libs', reason: 'r' }, false],
+	['file вместе с name — недопустима', { file: 'a', name: 'react', reason: 'r' }, false],
+	[
+		'null у catalog считается присутствующим — недопустима',
+		{ file: 'a', catalog: null, reason: 'r' },
+		false,
+	],
+	['без адреса — недопустима', { reason: 'r' }, false],
+];
+
+test.each(shapeTable)('форма исключения: %s', (_name, raw, ok) => {
+	expect(exceptionProblem(raw) === undefined).toBe(ok);
+});
+
+test('запись без причины и запись с неверной формой — разные тексты, причина первая', () => {
+	expect(exceptionProblem(null)).toBe('exception is missing "reason": null');
+	expect(exceptionProblem({ file: 'a' })).toBe('exception is missing "reason": {"file":"a"}');
+	expect(exceptionProblem({ file: 'a', reason: 'r', name: 'x' })).toBe(
+		'an exception must address either "file" or a "catalog"+"name" pair: {"file":"a","reason":"r","name":"x"}',
+	);
 });

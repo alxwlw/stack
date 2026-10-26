@@ -1,13 +1,12 @@
 import type { Canon } from './canon.ts';
 import { planCatalogs } from './catalogs.ts';
-import type { Exception } from './config.ts';
 import {
 	checkDependabot,
 	checkEnginesNode,
 	checkInlineVersions,
 	checkRenovatePreset,
 } from './deps.ts';
-import { type Held, isHeld, resolve } from './exceptions.ts';
+import { type Exception, type Held, isHeld, resolve } from './exceptions.ts';
 import { planFiles } from './files.ts';
 import type { Drift, Finding } from './findings.ts';
 import { planPackageManager } from './package-manager.ts';

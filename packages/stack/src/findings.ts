@@ -1,4 +1,4 @@
-import type { Exception } from './config.ts';
+import type { Exception } from './exceptions.ts';
 
 interface FindingBase {
 	target: string;
