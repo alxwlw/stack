@@ -1,10 +1,10 @@
 import type { Canon } from './canon.ts';
 import type { Finding } from './findings.ts';
-import { DEPENDABOT_CONFIGS, type Repo } from './repo.ts';
+import { DEPENDABOT_CONFIGS, type Repo, WORKSPACE_FILE } from './repo.ts';
 
 // Только при pnpm-workspace.yaml: без него каталогов нет, и inline-версия — единственный способ.
 export function checkInlineVersions(repo: Repo, canon: Canon): Finding[] {
-	if (!repo.paths.has('pnpm-workspace.yaml')) return [];
+	if (!repo.paths.has(WORKSPACE_FILE)) return [];
 	const canonNames = new Set(Object.values(canon.catalogs).flatMap((e) => Object.keys(e)));
 	const findings: Finding[] = [];
 	for (const [file, pkg] of repo.packages) {

@@ -256,6 +256,24 @@ test('каталог renovate.json — одна находка и заслоня
 	expect(repo.files.get('renovate.json5')).toBe('{');
 });
 
+test('нечитаемый renovate.json не отнимает у paths существующий renovate.json5', () => {
+	const repo = loadRepo(
+		repoDir({ 'renovate.json/inner.txt': 'x', 'renovate.json5': '{}' }),
+		testCanon(),
+	);
+	expect(repo.paths.has('renovate.json5')).toBe(true);
+});
+
+test('битый pnpm-workspace.yaml — в находке только первая строка ошибки yaml', () => {
+	const repo = repoFromFiles(new Map([['pnpm-workspace.yaml', 'a: [\n']]));
+	expect(repo.unreadable).toHaveLength(1);
+	const message = repo.unreadable[0]?.message ?? '';
+	expect(message).toBe(
+		'pnpm-workspace.yaml does not parse: Flow sequence in block collection must be sufficiently indented and end with a ] at line 2, column 1:',
+	);
+	expect(message).not.toContain('\n');
+});
+
 test('порядок unreadable при нечитаемых файлах: корневой, вложенный, Renovate', () => {
 	const repo = loadRepo(
 		repoDir({

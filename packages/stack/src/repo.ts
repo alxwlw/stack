@@ -29,13 +29,13 @@ export const RENOVATE_CONFIGS = [
 	'.renovaterc.json5',
 ];
 
-const WORKSPACE_FILE = 'pnpm-workspace.yaml';
+export const WORKSPACE_FILE = 'pnpm-workspace.yaml';
 
 export const DEPENDABOT_CONFIGS = ['.github/dependabot.yml', '.github/dependabot.yaml'];
 
 // Репозиторий потребителя как значение: правила получают его и не читают диск сами.
 export interface Repo {
-	/** Прочитанные файлы как текст; нет ключа — нет файла. */
+	/** Содержимое прочитанных файлов; нечитаемый (каталог, нет прав) в files не попадает — его существование в paths. */
 	files: ReadonlyMap<string, string>;
 	/** Какие из прочитанных загрузчиком путей существуют — как у existsSync: каталог и нечитаемый файл тоже есть. */
 	paths: ReadonlySet<string>;
@@ -62,8 +62,8 @@ const rank = (f: Finding): number =>
 				: 3;
 
 // Чистая часть: разбирает package.json (по basename; вложенные — только при pnpm-workspace.yaml среди
-// путей), pnpm-workspace.yaml и первый из RENOVATE_CONFIGS. Пути — ключи files и extra (существующие,
-// но не прочитанные файлы). Порядок unreadable: корневой package.json, pnpm-workspace.yaml, вложенные
+// путей), pnpm-workspace.yaml и первый из RENOVATE_CONFIGS. Пути — ключи files и extra (существующие
+// пути, которые не разбираются: не прочитанные или удержанные от разбора). Порядок unreadable: корневой package.json, pnpm-workspace.yaml, вложенные
 // package.json в порядке files, конфиг Renovate.
 export function repoFromFiles(
 	files: ReadonlyMap<string, string>,
@@ -85,7 +85,7 @@ export function repoFromFiles(
 			unreadable.push({
 				code: 'unreadable-file',
 				target: WORKSPACE_FILE,
-				message: `${WORKSPACE_FILE} does not parse: ${(doc.errors[0] as Error).message}`,
+				message: `${WORKSPACE_FILE} does not parse: ${(doc.errors[0] as Error).message.split('\n')[0]}`,
 			});
 		}
 	}
@@ -149,8 +149,10 @@ function readFile(root: string, path: string): Read {
 
 // Диск: dest и satisfiedBy канон-файлов, конфиги Renovate и dependabot, pnpm-workspace.yaml,
 // корневой package.json; при pnpm-workspace.yaml — ещё вложенные package.json без SKIP.
-// Нечитаемый package.json, pnpm-workspace.yaml и конфиг Renovate дают unreadable-file; у канон-файлов
-// и dependabot нечитаемый путь значим только как существующий (repo.paths), содержимое им не нужно.
+// Ровно одна unreadable-file приходится на package.json (корневой и вложенные), pnpm-workspace.yaml и
+// конфиг Renovate. Verbatim канон-файл сравнивается по содержимому, поэтому нечитаемый (например,
+// каталог) для правила отсутствует: file-missing, затем sync падает с EISDIR — громко, намеренно.
+// Create-if-absent dest/satisfiedBy и конфиги dependabot нужны правилам только как существующие пути.
 export function loadRepo(root: string, canon: Canon): Repo {
 	const candidates = new Set<string>(['package.json', WORKSPACE_FILE]);
 	for (const f of canon.files) {

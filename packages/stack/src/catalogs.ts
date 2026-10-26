@@ -1,8 +1,6 @@
 import type { Canon } from './canon.ts';
 import type { Drift } from './findings.ts';
-import type { Repo } from './repo.ts';
-
-const WORKSPACE_FILE = 'pnpm-workspace.yaml';
+import { type Repo, WORKSPACE_FILE } from './repo.ts';
 
 // doc.getIn() возвращает unknown: скаляр (обычный случай) или узел yaml-коллекции,
 // если запись каталога сломана (не скаляр). String() на объекте даёт "[object Object]" —
