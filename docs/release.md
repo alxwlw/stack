@@ -8,7 +8,9 @@ this page explains the order and the reasons behind it. For what consumers see, 
 
 All packages under `packages/*` share one version, and so do the `@alxwlw/*` entries of
 `packages/stack/canon/catalogs.json`. A release is a tag `vX.Y.Z` on the commit that carries that
-version. A prerelease tag (`vX.Y.Z-rc.N`) passes the same checks as a plain one.
+version. Prerelease tags (`vX.Y.Z-rc.N`) are not supported. `publish.yml` runs `npm publish` without
+`--tag`, and npm 11 refuses a prerelease version without one, so the `publish` job fails at its first
+package and nothing is published; and `rollout.yml` would dispatch any successful release to every consumer.
 
 - Bump the minor when a consumer's `check` can turn red after the update, or when the canon gained an
   input or a group. Anything else is a patch.
@@ -19,8 +21,13 @@ version. A prerelease tag (`vX.Y.Z-rc.N`) passes the same checks as a plain one.
 
 1. Branch from a fresh `main`.
 2. Run `bun scripts/release.ts version X.Y.Z`. It writes `version` into every `packages/*/package.json`
-   and the same version into each `@alxwlw/*` entry of `canon/catalogs.json`. A package added under
-   `packages/` joins the release on its own.
+   and the same version into each `@alxwlw/*` entry of `canon/catalogs.json`. `release.ts` finds every
+   `packages/*` directory with a `package.json` by itself, but two lists name packages explicitly: the
+   publish loop in `.github/workflows/publish.yml` and `PACKAGES` in the wait step of
+   `.github/workflows/sync.yml`. A new package is added to both in the same PR. Until it is, the tests
+   `scripts/release.test.ts` (publish.yml publishes every package from packageDirs) and
+   `packages/stack/src/dogfood.test.ts` (the wait step waits for every published package in `packages/`)
+   fail.
 3. Run the repository gates: `bun test`, `pnpm exec oxlint --type-aware`, `pnpm exec oxfmt --check .`,
    `pnpm exec tsc --build`, `proto run actionlint -- -color`.
 4. Open a PR titled `chore(release): X.Y.Z` and merge it.
@@ -39,8 +46,10 @@ version. A prerelease tag (`vX.Y.Z-rc.N`) passes the same checks as a plain one.
 3. Job `selftest` runs the test, lint, format and typecheck gates, then
    `bun scripts/release.ts check-tag "$GITHUB_REF_NAME"`, which fails when the version of any package
    differs from the tag.
-4. Job `publish` publishes each package from its own directory with `--provenance`, through npm trusted
-   publishing (OIDC, no npm token). A version that is already in the registry is skipped, so a re-run
+4. Job `publish` publishes each package named in its loop, from its own directory, with `--provenance`,
+   through npm trusted publishing (OIDC, no npm token). It does not publish every directory under
+   `packages/`: a new package is included only after it is added to that loop (see step 2 of
+   «Cut a release»). A version that is already in the registry is skipped, so a re-run
    after a partial publish finishes the rest.
 
 ## Rollout
@@ -54,7 +63,7 @@ secret (`owner/repo`, one per line); the App credentials are `STACK_BOT_APP_ID` 
 This repository is public, so the log carries counters only: `dispatched: N, failed: M`. A failed
 dispatch is counted and its message is dropped, because it can name the consumer.
 
-On the consumer side the reusable `sync.yml` waits until every package of the version is visible in the
+On the consumer side the reusable `sync.yml` waits until every package in its `PACKAGES` list is visible in the
 npm registry, and only then runs `bunx @alxwlw/stack@X.Y.Z sync` and opens the PR.
 
 ### VERSION arrives with the tag prefix
