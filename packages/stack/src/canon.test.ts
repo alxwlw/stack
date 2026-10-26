@@ -107,6 +107,10 @@ test('loadCanon: неизвестная группа в with — StackConfigErro
 	expect(() => loadCanon(cfg({ with: ['moon-task'] }), dir)).toThrow(
 		'unknown group "moon-task" in "with", expected one of: libs, moon-tasks, renovate',
 	);
+	// Опечатка не в первой позиции тоже ловится.
+	expect(() => loadCanon(cfg({ with: ['libs', 'moon-task'] }), dir)).toThrow(
+		'unknown group "moon-task" in "with", expected one of: libs, moon-tasks, renovate',
+	);
 	// Устаревшая группа принимается и ничего не включает.
 	expect(loadCanon(cfg({ with: ['renovate'] }), dir).files).toEqual(loadCanon(cfg(), dir).files);
 });

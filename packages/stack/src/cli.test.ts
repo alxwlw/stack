@@ -222,3 +222,11 @@ test('init с неизвестной --with — код 2, файл не созд
 	expect(r.code).toBe(2);
 	expect(existsSync(join(dir, '.stack.jsonc'))).toBe(false);
 });
+
+test('init с опечаткой во второй --with — код 2, файл не создан', async () => {
+	const dir = emptyRepo();
+	const r = await run(['init', '--profile', 'node', '--with', 'libs', '--with', 'moon-task'], dir);
+	expect(r.code).toBe(2);
+	expect(r.err).toContain('unknown group "moon-task"');
+	expect(existsSync(join(dir, '.stack.jsonc'))).toBe(false);
+});
