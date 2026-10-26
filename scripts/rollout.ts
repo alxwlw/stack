@@ -1,7 +1,7 @@
 import { createSign } from 'node:crypto';
 import { appendFileSync } from 'node:fs';
 
-import { SEMVER_RE } from './semver.ts';
+import { stripTagPrefix } from './release.ts';
 
 const DISPATCH_WORKFLOW = 'stack-sync.yml';
 const DISPATCH_REF = 'main';
@@ -21,20 +21,6 @@ export interface RolloutDeps {
 	dispatch: (repo: string, token: string, version: string) => Promise<void>;
 }
 
-/**
- * `github.event.workflow_run.head_branch` для пуша тега — это ИМЯ ТЕГА (`v1.2.3`), не голая
- * версия. `sync.yml` строит из неё `stack/v${VERSION}` — необрезанный префикс даёт `stack/vv1.2.3`
- * (см. docs/release.md, «VERSION приходит с префиксом»). Валидирует результат и падает громко на
- * мусоре, а не молча шлёт его по всем потребителям.
- */
-export function stripTagPrefix(tag: string): string {
-	const version = tag.startsWith('v') ? tag.slice(1) : tag;
-	if (!SEMVER_RE.test(version)) {
-		throw new Error(`not a version tag: "${tag}"`);
-	}
-	return version;
-}
-
 /** Установка App, чей `account.login` совпадает с владельцем `owner/repo`, — токеном одной
  * установки нельзя разослать в обе организации потребителей сразу. GitHub гарантирует
  * уникальность логина без учёта регистра, поэтому сравнение регистронезависимое: иначе опечатка
@@ -51,7 +37,7 @@ export function pickInstallation(
 /**
  * Рассылает `workflow_dispatch` каждому потребителю из `consumers` (`owner/repo` построчно).
  * Печатает и возвращает только счётчики: **ни имя репозитория, ни текст ошибки dispatch не
- * должны попасть в лог публичного репозитория** (репозиторий публичный, см. docs/release.md).
+ * должны попасть в лог публичного репозитория** (репозиторий публичный, см. docs/release.md, «Rollout»).
  * Поэтому per-repo сбой гасится в `failed`, а не пробрасывается или логируется.
  */
 export async function rollout(

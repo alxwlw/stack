@@ -2,23 +2,7 @@ import { createVerify, generateKeyPairSync } from 'node:crypto';
 
 import { expect, test } from 'bun:test';
 
-import {
-	type Installation,
-	pickInstallation,
-	rollout,
-	signAppJwt,
-	stripTagPrefix,
-} from './rollout.ts';
-
-test('stripTagPrefix: срезает префикс v тега перед сравнением с semver', () => {
-	expect(stripTagPrefix('v1.2.3')).toBe('1.2.3');
-	expect(stripTagPrefix('1.2.3')).toBe('1.2.3');
-});
-
-test('stripTagPrefix: плавающий major-тег и мусор — ошибка, а не молчаливая рассылка', () => {
-	expect(() => stripTagPrefix('v1')).toThrow();
-	expect(() => stripTagPrefix('main')).toThrow();
-});
+import { type Installation, pickInstallation, rollout, signAppJwt } from './rollout.ts';
 
 test('pickInstallation: находит установку по владельцу репозитория', () => {
 	const installations: Installation[] = [

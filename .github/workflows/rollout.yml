@@ -17,6 +17,6 @@ jobs:
           STACK_BOT_PRIVATE_KEY: ${{ secrets.STACK_BOT_PRIVATE_KEY }}
           CONSUMERS: ${{ secrets.STACK_CONSUMERS }}
           # Имя тега (`v1.2.3`), не голая версия: scripts/rollout.ts сам срезает префикс и
-          # валидирует semver — см. его stripTagPrefix и docs/release.md.
+          # валидирует semver — см. его stripTagPrefix и docs/release.md, «VERSION arrives with the tag prefix».
           VERSION: ${{ github.event.workflow_run.head_branch }}
         run: bun scripts/rollout.ts

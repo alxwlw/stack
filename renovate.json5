@@ -23,7 +23,7 @@
 	],
 	packageRules: [
 		{
-			description: 'Свои пакеты и ссылки на себя: версии ставит scripts/version.ts, v1 двигает релиз',
+			description: 'Свои пакеты и ссылки на себя: версии ставит scripts/release.ts, v1 двигает релиз',
 			matchPackageNames: ['@alxwlw/**', 'alxwlw/stack'],
 			enabled: false,
 		},

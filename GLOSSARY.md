@@ -67,7 +67,7 @@ _Avoid_: update, apply, fix
 ### Releasing
 
 **Lockstep version**:
-The single version number shared by the four packages (`@alxwlw/stack`, `@alxwlw/oxlint-config`, `@alxwlw/tsconfig`, `@alxwlw/repo-rules`) and by the `@alxwlw/*` entries of the dev catalog. `setVersion` in `scripts/version.ts`.
+The single version number shared by the four packages (`@alxwlw/stack`, `@alxwlw/oxlint-config`, `@alxwlw/tsconfig`, `@alxwlw/repo-rules`) and by the `@alxwlw/*` entries of the dev catalog. `setVersion` in `scripts/release.ts`.
 _Avoid_: unified version, monorepo version
 
 **Floating major tag**:
