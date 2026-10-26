@@ -19,6 +19,8 @@ sync by a small CLI instead of copy-pasted by hand.
 
 A repo adopts the canon once, drifts away from it never (or gets caught doing so in CI).
 
+Terms used here and in the code (profile, group, drift, exception, rollout, …) are defined in [`GLOSSARY.md`](./GLOSSARY.md).
+
 ## Who it's for
 
 Repositories already on:
