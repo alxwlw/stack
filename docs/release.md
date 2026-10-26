@@ -46,7 +46,7 @@ version. A prerelease tag (`vX.Y.Z-rc.N`) passes the same checks as a plain one.
 ## Rollout
 
 When `publish` succeeds, `rollout.yml` runs `bun scripts/rollout.ts`. It signs a JWT for the GitHub App,
-takes the App's installation token for each consumer's owner, and dispatches `stack-sync.yml` on the
+takes the App's installation token for each consumer's owner, and dispatches the `stack-sync` workflow on the
 consumer's `main` with the version as input. The consumers are the lines of the `STACK_CONSUMERS`
 secret (`owner/repo`, one per line); the App credentials are `STACK_BOT_APP_ID` and
 `STACK_BOT_PRIVATE_KEY`. An empty list is not an error: the run logs that there is nothing to roll out.
