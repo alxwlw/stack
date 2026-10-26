@@ -11,7 +11,7 @@ The one shared set of toolchain files and pinned dependency versions, shipped in
 _Avoid_: template, boilerplate, preset
 
 **Consumer**:
-A repository that adopts the canon and is kept in line with it by `stack sync` and `stack check` (for example `acme/app`). It states how in its `.stack.jsonc` (`readStackConfig`, `packages/stack/src/config.ts`). Loaded once per command as a value by `loadRepo` (`packages/stack/src/repo.ts`), which reports an unreadable or unparsable `package.json` (root and nested), `pnpm-workspace.yaml` or Renovate config as exactly one `unreadable-file` finding (`files` holds the content of the files read, `paths` only their existence: a verbatim canon file is compared by content, so an unreadable one counts as missing and `sync` then fails loudly with EISDIR, while create-if-absent canon files and the dependabot config matter to the rules only as existing paths); the rules are pure functions of that value and the canon.
+A repository that adopts the canon and is kept in line with it by `stack sync` and `stack check` (for example `acme/app`). It states how in its `.stack.jsonc` (`readStackConfig`, `packages/stack/src/config.ts`). Loaded once per command as a value by `loadRepo` (`packages/stack/src/repo.ts`): the content of the files it could read, and which paths exist. An unreadable or unparsable `package.json` (root or nested), `pnpm-workspace.yaml` or Renovate config becomes exactly one `unreadable-file` finding; the rules are pure functions of that value and the canon.
 _Avoid_: client, downstream, target repo
 
 **Profile**:
