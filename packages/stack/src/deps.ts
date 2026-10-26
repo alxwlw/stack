@@ -6,8 +6,7 @@ import JSON5 from 'json5';
 
 import type { Canon } from './canon.ts';
 import type { Finding } from './findings.ts';
-
-const SKIP = /node_modules|\.worktrees|\.moon\/cache|(^|\/)(dist|build)\//;
+import { DEPENDABOT_CONFIGS, RENOVATE_CONFIGS, SKIP } from './repo.ts';
 
 export function checkInlineVersions(repoRoot: string, canon: Canon): Finding[] {
 	if (!existsSync(join(repoRoot, 'pnpm-workspace.yaml'))) return [];
@@ -72,23 +71,6 @@ export function checkEnginesNode(repoRoot: string, canon: Canon): Finding[] {
 	];
 }
 
-// Имена и порядок поиска — как у самого Renovate (renovate.json{,c,5} для каждого места; первый
-// найденный файл и есть конфиг), без устаревшего package.json#renovate. JSON5.parse читает и JSONC.
-export const RENOVATE_CONFIGS = [
-	'renovate.json',
-	'renovate.jsonc',
-	'renovate.json5',
-	'.github/renovate.json',
-	'.github/renovate.jsonc',
-	'.github/renovate.json5',
-	'.gitlab/renovate.json',
-	'.gitlab/renovate.jsonc',
-	'.gitlab/renovate.json5',
-	'.renovaterc',
-	'.renovaterc.json',
-	'.renovaterc.jsonc',
-	'.renovaterc.json5',
-];
 // Строка подключения пресета канона. Ровно с тегом мажора: без тега или с #main потребитель
 // получал бы неопубликованный канон, а пресет — тот же источник, что и rollout (плавающий v1).
 export const STACK_RENOVATE_PRESET = 'github>alxwlw/stack//renovate/canon.json5#v1';
@@ -125,8 +107,6 @@ export function checkRenovatePreset(repoRoot: string): Finding[] {
 				},
 			];
 }
-
-const DEPENDABOT_CONFIGS = ['.github/dependabot.yml', '.github/dependabot.yaml'];
 
 // Renovate — единственный бот канона: второй бот открывал бы те же PR, а dependabot не умеет
 // выключить каталоги канона или .prototools.

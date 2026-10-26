@@ -7,7 +7,7 @@ import { parse as parseJsonc } from 'jsonc-parser';
 
 import { canonDir, canonGroups, filesFor, loadCanon, loadManifest, parsePins } from './canon.ts';
 import { PROFILES, type StackConfig, StackConfigError } from './config.ts';
-import { RENOVATE_CONFIGS } from './deps.ts';
+import { RENOVATE_CONFIGS } from './repo.ts';
 
 // Ruling 33: filesFor() только фильтрует список канон-файлов — оно не замечает, если два
 // файла манифеста целят в один и тот же dest внутри одного профиля. planFiles() в этом случае
