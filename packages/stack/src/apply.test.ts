@@ -1,10 +1,10 @@
-import { mkdtempSync, readFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { expect, test } from 'bun:test';
 
 import { applyChanges, renderChanges } from './apply.ts';
+import { repoDir } from './testkit.ts';
 
 test('две записи одного каталога — один итог на файл, обе записи в нём, комментарий цел', () => {
 	const ws = 'packages:\n  - packages/*\ncatalogs:\n  # из канона\n  dev:\n    oxlint: 1.70.0\n';
@@ -54,22 +54,46 @@ test('json-set подряд по одному файлу: обе правки в
 	expect(out.get('p.json')).toBe('{\n    "a": "x",\n    "b": "y"\n}\n');
 });
 
-test('applyChanges: write во вложенный путь создаёт каталоги, yaml-set правит существующий файл', () => {
-	const root = mkdtempSync(join(tmpdir(), 'stack-apply-'));
-	applyChanges(root, [
-		{ file: '.moon/tasks/x.yml', kind: 'write', content: 'tasks: {}\n' },
-		{
-			file: 'ws.yaml',
-			kind: 'write',
-			content: 'packages:\n  - packages/*\n# из канона\ncatalogs:\n  dev:\n    a: 1.0.0\n',
-		},
-	]);
+const WS = 'packages:\n  - packages/*\n# из канона\ncatalogs:\n  dev:\n    a: 1.0.0\n';
+
+test('applyChanges: write во вложенный путь создаёт каталоги, yaml-set правит файл из снимка', () => {
+	const root = repoDir({ 'ws.yaml': WS });
+	applyChanges(
+		root,
+		[{ file: '.moon/tasks/x.yml', kind: 'write', content: 'tasks: {}\n' }],
+		new Map(),
+	);
 	expect(readFileSync(join(root, '.moon/tasks/x.yml'), 'utf8')).toBe('tasks: {}\n');
-	applyChanges(root, [
-		{ file: 'ws.yaml', kind: 'yaml-set', path: ['catalogs', 'dev', 'a'], value: '2.0.0' },
-		{ file: 'ws.yaml', kind: 'yaml-set', path: ['catalogs', 'dev', 'b'], value: '3.0.0' },
-	]);
+	applyChanges(
+		root,
+		[
+			{ file: 'ws.yaml', kind: 'yaml-set', path: ['catalogs', 'dev', 'a'], value: '2.0.0' },
+			{ file: 'ws.yaml', kind: 'yaml-set', path: ['catalogs', 'dev', 'b'], value: '3.0.0' },
+		],
+		new Map([['ws.yaml', WS]]),
+	);
 	expect(readFileSync(join(root, 'ws.yaml'), 'utf8')).toBe(
 		'packages:\n  - packages/*\n# из канона\ncatalogs:\n  dev:\n    a: 2.0.0\n    b: 3.0.0\n',
 	);
+});
+
+// Диск читает загрузчик, один раз: применитель правит то, что в снимке, а не то, что лежит сейчас.
+test('applyChanges: текущее содержимое берётся из снимка, а не с диска', () => {
+	const root = repoDir({ 'ws.yaml': 'disk: 1\n' });
+	applyChanges(
+		root,
+		[{ file: 'ws.yaml', kind: 'yaml-set', path: ['snap'], value: '2' }],
+		new Map([['ws.yaml', 'snapshot: 1\n']]),
+	);
+	expect(readFileSync(join(root, 'ws.yaml'), 'utf8')).toBe("snapshot: 1\nsnap: '2'\n");
+});
+
+test('applyChanges: файла нет в снимке — правка создаёт его', () => {
+	const root = repoDir({});
+	applyChanges(
+		root,
+		[{ file: 'p.json', kind: 'json-set', path: ['packageManager'], value: 'pnpm@1.0.0' }],
+		new Map(),
+	);
+	expect(readFileSync(join(root, 'p.json'), 'utf8')).toBe('{"packageManager":"pnpm@1.0.0"}');
 });

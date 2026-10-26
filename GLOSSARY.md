@@ -11,7 +11,7 @@ The one shared set of toolchain files and pinned dependency versions, shipped in
 _Avoid_: template, boilerplate, preset
 
 **Consumer**:
-A repository that adopts the canon and is kept in line with it by `stack sync` and `stack check` (for example `acme/app`). It states how in its `.stack.jsonc` (`readStackConfig`, `packages/stack/src/config.ts`).
+A repository that adopts the canon and is kept in line with it by `stack sync` and `stack check` (for example `acme/app`). It states how in its `.stack.jsonc` (`readStackConfig`, `packages/stack/src/config.ts`). Loaded once per command as a value by `loadRepo` (`packages/stack/src/repo.ts`): the content of the files it could read, and which paths exist. An unreadable or unparsable `package.json` (root or nested), `pnpm-workspace.yaml` or Renovate config becomes exactly one `unreadable-file` finding; the rules are pure functions of that value and the canon.
 _Avoid_: client, downstream, target repo
 
 **Profile**:
@@ -37,7 +37,7 @@ One package name with its pinned version inside a catalog; the unit that drifts 
 _Avoid_: dependency line
 
 **Pin**:
-A tool version fixed in the consumer's `.prototools` (node, pnpm and the other proto-managed tools); the canon's own pins are in `canon/files/prototools`, and `loadCanon` reads the node and pnpm ones as `nodePin` and `pnpmPin`.
+A tool version fixed in the consumer's `.prototools` (node, pnpm and the other proto-managed tools); the canon's own pins are in `canon/files/prototools`, and `loadCanon` reads them as `Canon.pins` (`node` and `pnpm` are required).
 _Avoid_: lock, freeze
 
 ### Verdicts

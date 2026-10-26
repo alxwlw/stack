@@ -1,26 +1,20 @@
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { expect, test } from 'bun:test';
 
 import type { Canon } from './canon.ts';
-import { planCatalogs } from './catalogs.ts';
-import { syncRepo } from './check.ts';
+import { plan, planRepo, syncRepo } from './check.ts';
+import { repoDir, testCanon, testRepo } from './testkit.ts';
 
-const canon: Canon = {
-	files: [],
-	catalogs: { dev: { oxlint: '1.83.0', typescript: '7.0.2' } },
-	nodePin: '26.8.1',
-	pnpmPin: '11.15.0',
-};
+const canon = testCanon({ catalogs: { dev: { oxlint: '1.83.0', typescript: '7.0.2' } } });
 const withCatalogs = (catalogs: Canon['catalogs']): Canon => ({ ...canon, catalogs });
 
-function repoFixture(ws: string): string {
-	const dir = mkdtempSync(join(tmpdir(), 'stack-repo-'));
-	writeFileSync(join(dir, 'pnpm-workspace.yaml'), ws);
-	return dir;
-}
+// Дрейф каталогов репозитория, у которого pnpm-workspace.yaml — ws (null — файла нет).
+const catalogDrift = (ws: string | null, c: Canon = canon) =>
+	plan(testRepo(c, { 'pnpm-workspace.yaml': ws }), c).filter(
+		(f) => f.code === 'catalog-drift' || f.code === 'catalog-missing',
+	);
 
 // Применить план — то, что делает `stack sync`; возвращает applied из syncRepo, чтобы пинить строки fix.
 function sync(repo: string, c: Canon = canon) {
@@ -39,7 +33,7 @@ catalogs:
 `;
 
 test('выставляет версии dev и сохраняет комментарии и чужие каталоги', () => {
-	const repo = repoFixture(WS_WITH_COMMENT);
+	const repo = repoDir({ 'pnpm-workspace.yaml': WS_WITH_COMMENT });
 	sync(repo);
 	const out = readFileSync(join(repo, 'pnpm-workspace.yaml'), 'utf8');
 	expect(out).toContain('# версии инструментов приходят из канона');
@@ -49,8 +43,8 @@ test('выставляет версии dev и сохраняет коммент
 });
 
 test('пин строк fix: dev.oxlint — апдейт, dev.typescript — новая запись', () => {
-	const plan = sync(repoFixture(WS_WITH_COMMENT));
-	expect(plan.map((d) => [d.code, d.fix])).toEqual([
+	const applied = sync(repoDir({ 'pnpm-workspace.yaml': WS_WITH_COMMENT }));
+	expect(applied.map((d) => [d.code, d.fix])).toEqual([
 		['catalog-drift', 'catalog dev.oxlint: 1.74.0 → 1.83.0'],
 		['catalog-missing', 'catalog dev.typescript: — → 7.0.2'],
 	]);
@@ -68,7 +62,7 @@ overrides:
 const fromOverrides = (s: string) => s.slice(s.indexOf('\noverrides:'));
 
 test('sync не переносит длинные строки вне каталогов', () => {
-	const repo = repoFixture(WS_WITH_LONG_LINES);
+	const repo = repoDir({ 'pnpm-workspace.yaml': WS_WITH_LONG_LINES });
 	sync(repo);
 	const out = readFileSync(join(repo, 'pnpm-workspace.yaml'), 'utf8');
 	expect(out).toContain('typescript: 7.0.2');
@@ -76,7 +70,7 @@ test('sync не переносит длинные строки вне катал
 });
 
 test('повторный sync — пустой план, файл байт-в-байт тот же', () => {
-	const repo = repoFixture(WS_WITH_LONG_LINES);
+	const repo = repoDir({ 'pnpm-workspace.yaml': WS_WITH_LONG_LINES });
 	sync(repo);
 	const once = readFileSync(join(repo, 'pnpm-workspace.yaml'), 'utf8');
 	expect(sync(repo)).toEqual([]);
@@ -89,7 +83,7 @@ test('повторный sync — пустой план, файл байт-в-б
 // Mutation: dropping `{ singleQuote: true }` from doc.toString() in renderChanges (apply.ts) turns
 // this red.
 test('новая scoped-запись каталога пишется в одинарных кавычках (singleQuote: true)', () => {
-	const repo = repoFixture('packages:\n  - packages/*\n');
+	const repo = repoDir({ 'pnpm-workspace.yaml': 'packages:\n  - packages/*\n' });
 	sync(repo, withCatalogs({ dev: { '@scope/pkg': '2.0.0' } }));
 	const out = readFileSync(join(repo, 'pnpm-workspace.yaml'), 'utf8');
 	expect(out).toContain("'@scope/pkg': 2.0.0");
@@ -97,15 +91,18 @@ test('новая scoped-запись каталога пишется в один
 });
 
 test('создаёт узел catalogs, если его не было', () => {
-	const repo = repoFixture('packages:\n  - packages/*\n');
+	const repo = repoDir({ 'pnpm-workspace.yaml': 'packages:\n  - packages/*\n' });
 	sync(repo);
 	expect(readFileSync(join(repo, 'pnpm-workspace.yaml'), 'utf8')).toContain('dev:');
 });
 
 test('план покрывает все группы канона, не только dev', () => {
-	const repo = repoFixture('packages:\n  - packages/*\n');
-	const plan = sync(repo, withCatalogs({ dev: { oxlint: '1.83.0' }, libs: { react: '19.2.7' } }));
-	expect(plan.map((d) => d.fix)).toEqual([
+	const repo = repoDir({ 'pnpm-workspace.yaml': 'packages:\n  - packages/*\n' });
+	const applied = sync(
+		repo,
+		withCatalogs({ dev: { oxlint: '1.83.0' }, libs: { react: '19.2.7' } }),
+	);
+	expect(applied.map((d) => d.fix)).toEqual([
 		'catalog dev.oxlint: — → 1.83.0',
 		'catalog libs.react: — → 19.2.7',
 	]);
@@ -113,52 +110,46 @@ test('план покрывает все группы канона, не тол�
 });
 
 test('sync идемпотентен: после применения план пуст', () => {
-	const repo = repoFixture('packages:\n  - packages/*\n');
+	const repo = repoDir({ 'pnpm-workspace.yaml': 'packages:\n  - packages/*\n' });
 	sync(repo);
-	expect(planCatalogs(repo, canon)).toEqual([]);
+	expect(planRepo(repo, canon)).toEqual([]);
 });
 
 test('план краснеет на устаревшей версии и на отсутствующей записи', () => {
-	const repo = repoFixture('packages:\n  - packages/*\n\ncatalogs:\n  dev:\n    oxlint: 1.74.0\n');
-	const codes = planCatalogs(repo, canon).map((f) => f.code);
-	expect(codes).toContain('catalog-drift');
-	expect(codes).toContain('catalog-missing');
+	const ws = 'packages:\n  - packages/*\n\ncatalogs:\n  dev:\n    oxlint: 1.74.0\n';
+	expect(catalogDrift(ws).map((f) => f.code)).toEqual(['catalog-drift', 'catalog-missing']);
+	const repo = repoDir({ 'pnpm-workspace.yaml': ws });
 	sync(repo);
-	expect(planCatalogs(repo, canon)).toEqual([]);
+	expect(planRepo(repo, canon)).toEqual([]);
 });
 
 test('находка о записи каталога несёт предмет для исключения: catalog+name своей записи', () => {
-	const repo = repoFixture(
-		'packages:\n  - packages/*\n\ncatalogs:\n  dev:\n    oxlint: 1.74.0\n    typescript: 7.0.1\n',
-	);
-	expect(
-		planCatalogs(repo, canon).map((f) => [
-			f.code,
-			'catalog' in f ? f.catalog : undefined,
-			'name' in f ? f.name : undefined,
-		]),
-	).toEqual([
-		['catalog-drift', 'dev', 'oxlint'],
-		['catalog-drift', 'dev', 'typescript'],
+	const ws =
+		'packages:\n  - packages/*\n\ncatalogs:\n  dev:\n    oxlint: 1.74.0\n    typescript: 7.0.1\n';
+	expect(catalogDrift(ws)).toMatchObject([
+		{ code: 'catalog-drift', catalog: 'dev', name: 'oxlint' },
+		{ code: 'catalog-drift', catalog: 'dev', name: 'typescript' },
 	]);
 });
 
 test('запись каталога, сломанная в YAML-мэппинг, не превращается в "[object Object]"', () => {
-	const repo = repoFixture(
+	const typescript = catalogDrift(
 		'packages:\n  - packages/*\n\ncatalogs:\n  dev:\n    typescript:\n      pinned: true\n',
-	);
-	const typescript = planCatalogs(repo, canon).find((f) => f.target === 'catalogs.dev.typescript');
+	).find((f) => f.target === 'catalogs.dev.typescript');
 	expect(typescript?.code).toBe('catalog-drift');
 	expect(typescript?.message).toContain('"pinned":true');
 	expect(typescript?.message).not.toContain('[object Object]');
 });
 
 test('число без кавычек в YAML (typescript: 7) не считается расхождением с канон-строкой "7"', () => {
-	const repo = repoFixture('packages:\n  - packages/*\n\ncatalogs:\n  dev:\n    typescript: 7\n');
-	expect(planCatalogs(repo, withCatalogs({ dev: { typescript: '7' } }))).toEqual([]);
+	expect(
+		catalogDrift(
+			'packages:\n  - packages/*\n\ncatalogs:\n  dev:\n    typescript: 7\n',
+			withCatalogs({ dev: { typescript: '7' } }),
+		),
+	).toEqual([]);
 });
 
 test('репозиторий без pnpm-workspace.yaml не проверяется', () => {
-	const repo = mkdtempSync(join(tmpdir(), 'stack-repo-'));
-	expect(planCatalogs(repo, canon)).toEqual([]);
+	expect(catalogDrift(null)).toEqual([]);
 });

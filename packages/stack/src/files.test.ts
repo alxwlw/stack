@@ -1,31 +1,30 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { expect, test } from 'bun:test';
 
-import type { Canon } from './canon.ts';
-import { syncRepo } from './check.ts';
-import { planFiles } from './files.ts';
+import { plan, planRepo, syncRepo } from './check.ts';
+import { repoDir, testCanon, testRepo } from './testkit.ts';
 
-const canon: Canon = {
+const canon = testCanon({
 	files: [
 		{ dest: '.editorconfig', content: 'root = true\n' },
 		{ dest: '.gitleaks.toml', content: '[extend]\n', strategy: 'create-if-absent' },
 		{ dest: '.moon/tasks/stack.yml', content: 'tasks: {}\n' },
 	],
-	catalogs: {},
-	nodePin: '26.8.1',
-	pnpmPin: '11.15.0',
-};
+});
 
 // Применить план — то, что делает `stack sync`; возвращает applied из syncRepo, чтобы пинить строки fix.
 function sync(repo: string) {
 	return syncRepo(repo, canon, []).applied;
 }
 
+// Дрейф файлов канона: остальные правила плана на стенде молчат.
+const fileDrift = (over: Record<string, string | null>, c = canon) =>
+	plan(testRepo(c, over), c).filter((f) => f.code === 'file-drift' || f.code === 'file-missing');
+
 test('verbatim-файл кладётся (включая вложенный путь) и перезаписывается', () => {
-	const repo = mkdtempSync(join(tmpdir(), 'stack-repo-'));
+	const repo = repoDir({});
 	const first = sync(repo);
 	expect(first.map((d) => [d.code, d.fix])).toEqual([
 		['file-missing', 'updated .editorconfig'],
@@ -41,7 +40,7 @@ test('verbatim-файл кладётся (включая вложенный пу
 });
 
 test('create-if-absent засевается один раз и больше не трогается', () => {
-	const repo = mkdtempSync(join(tmpdir(), 'stack-repo-'));
+	const repo = repoDir({});
 	sync(repo);
 	expect(readFileSync(join(repo, '.gitleaks.toml'), 'utf8')).toBe('[extend]\n');
 	writeFileSync(join(repo, '.gitleaks.toml'), '[extend]\nlocal = 1\n');
@@ -49,37 +48,41 @@ test('create-if-absent засевается один раз и больше не
 	expect(readFileSync(join(repo, '.gitleaks.toml'), 'utf8')).toContain('local = 1');
 });
 
+test('create-if-absent: чужое содержимое — не расхождение (по значению, без диска)', () => {
+	expect(fileDrift({ '.gitleaks.toml': '[extend]\nlocal = 1\n' })).toEqual([]);
+});
+
 test('sync идемпотентен: после применения план пуст', () => {
-	const repo = mkdtempSync(join(tmpdir(), 'stack-repo-'));
+	const repo = repoDir({});
 	sync(repo);
-	expect(planFiles(repo, canon)).toEqual([]);
+	expect(planRepo(repo, canon)).toEqual([]);
 });
 
 test('план находит отсутствие и расхождение', () => {
-	const repo = mkdtempSync(join(tmpdir(), 'stack-repo-'));
-	expect(planFiles(repo, canon).map((f) => f.code)).toContain('file-missing');
-	sync(repo);
-	writeFileSync(join(repo, '.editorconfig'), 'сломали\n');
-	expect(planFiles(repo, canon).map((f) => [f.code, f.target, f.message])).toEqual([
-		['file-drift', '.editorconfig', '.editorconfig differs from canon'],
-	]);
+	expect(fileDrift({ '.editorconfig': null }).map((f) => f.code)).toEqual(['file-missing']);
+	expect(
+		fileDrift({ '.editorconfig': 'сломали\n' }).map((f) => [f.code, f.target, f.message]),
+	).toEqual([['file-drift', '.editorconfig', '.editorconfig differs from canon']]);
 });
 
 test('находка о файле несёт предмет для исключения: file = dest', () => {
-	const repo = mkdtempSync(join(tmpdir(), 'stack-repo-'));
-	sync(repo);
-	writeFileSync(join(repo, '.editorconfig'), 'свой\n');
-	rmSync(join(repo, '.gitleaks.toml'));
-	expect(planFiles(repo, canon).map((f) => [f.code, 'file' in f ? f.file : undefined])).toEqual([
-		['file-drift', '.editorconfig'],
-		['file-missing', '.gitleaks.toml'],
+	expect(fileDrift({ '.editorconfig': 'свой\n', '.gitleaks.toml': null })).toMatchObject([
+		{ code: 'file-drift', file: '.editorconfig' },
+		{ code: 'file-missing', file: '.gitleaks.toml' },
 	]);
+});
+
+test('пустой репозиторий: по находке file-missing на каждый файл канона, в порядке канона', () => {
+	expect(
+		fileDrift({ '.editorconfig': null, '.gitleaks.toml': null, '.moon/tasks/stack.yml': null }).map(
+			(f) => f.target,
+		),
+	).toEqual(['.editorconfig', '.gitleaks.toml', '.moon/tasks/stack.yml']);
 });
 
 // satisfiedBy: засев конфига, у которого несколько законных имён (Renovate ищет renovate.json,
 // .github/renovate.json5 и т. д.), — любой существующий вариант закрывает засев.
-const seedWithAlternatives: Canon = {
-	...canon,
+const seedWithAlternatives = testCanon({
 	files: [
 		{
 			dest: 'renovate.json5',
@@ -88,40 +91,49 @@ const seedWithAlternatives: Canon = {
 			satisfiedBy: ['renovate.json', '.github/renovate.json5'],
 		},
 	],
-};
+});
 
 test('create-if-absent с satisfiedBy: существующий альтернативный путь закрывает засев', () => {
-	const repo = mkdtempSync(join(tmpdir(), 'stack-repo-'));
-	mkdirSync(join(repo, '.github'));
-	writeFileSync(join(repo, '.github/renovate.json5'), '{ extends: [] }\n');
-	expect(planFiles(repo, seedWithAlternatives)).toEqual([]);
-	expect(existsSync(join(repo, 'renovate.json5'))).toBe(false);
+	expect(
+		fileDrift(
+			{ 'renovate.json5': null, '.github/renovate.json5': '{ extends: [] }\n' },
+			seedWithAlternatives,
+		),
+	).toEqual([]);
 });
 
 test('create-if-absent с satisfiedBy: ничего нет — засевается dest', () => {
-	const repo = mkdtempSync(join(tmpdir(), 'stack-repo-'));
-	const plan = planFiles(repo, seedWithAlternatives);
-	expect(plan.map((d) => [d.code, d.target, d.fix])).toEqual([
-		['file-missing', 'renovate.json5', 'seeded renovate.json5'],
-	]);
+	expect(
+		fileDrift({ 'renovate.json5': null }, seedWithAlternatives).map((d) => [
+			d.code,
+			d.target,
+			d.fix,
+		]),
+	).toEqual([['file-missing', 'renovate.json5', 'seeded renovate.json5']]);
+	const repo = repoDir({});
 	expect(syncRepo(repo, seedWithAlternatives, []).applied.map((d) => d.target)).toEqual([
 		'renovate.json5',
 	]);
 	expect(readFileSync(join(repo, 'renovate.json5'), 'utf8')).toBe('{}\n');
-	expect(planFiles(repo, seedWithAlternatives)).toEqual([]);
+	expect(planRepo(repo, seedWithAlternatives)).toEqual([]);
 });
 
 // satisfiedBy — свойство засева: у verbatim-записи канон владеет содержимым, и существующий
 // «альтернативный» путь не должен выключать синхронизацию dest.
 test('verbatim с satisfiedBy: существующий путь из satisfiedBy не отменяет план dest', () => {
-	const verbatimWithAlternatives: Canon = {
-		...canon,
+	const verbatimWithAlternatives = testCanon({
 		files: [{ dest: 'renovate.json5', content: '{}\n', satisfiedBy: ['renovate.json'] }],
-	};
-	const repo = mkdtempSync(join(tmpdir(), 'stack-repo-'));
-	writeFileSync(join(repo, 'renovate.json'), '{}\n');
-	const plan = planFiles(repo, verbatimWithAlternatives);
-	expect(plan.map((d) => [d.code, d.target, d.fix])).toEqual([
-		['file-missing', 'renovate.json5', 'updated renovate.json5'],
-	]);
+	});
+	expect(
+		fileDrift({ 'renovate.json5': null, 'renovate.json': '{}\n' }, verbatimWithAlternatives).map(
+			(d) => [d.code, d.target, d.fix],
+		),
+	).toEqual([['file-missing', 'renovate.json5', 'updated renovate.json5']]);
+});
+
+test('planRepo читает диск: удалённый засев — file-missing', () => {
+	const repo = repoDir({});
+	sync(repo);
+	rmSync(join(repo, '.gitleaks.toml'));
+	expect(planRepo(repo, canon).map((d) => d.target)).toEqual(['.gitleaks.toml']);
 });

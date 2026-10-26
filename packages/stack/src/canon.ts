@@ -24,9 +24,15 @@ export type CanonCatalogs = Record<string, Record<string, string>>;
 export interface Canon {
 	files: { dest: string; content: string; strategy?: SyncStrategy; satisfiedBy?: string[] }[];
 	catalogs: CanonCatalogs;
-	nodePin: string;
-	pnpmPin: string;
+	pins: Pins;
 }
+
+// Пины инструментов из .prototools канона: node и pnpm обязательны, прочие строки верхнего уровня допустимы.
+export type Pins = {
+	readonly node: string;
+	readonly pnpm: string;
+	readonly [tool: string]: string;
+};
 
 export function canonDir(): string {
 	return join(dirname(fileURLToPath(import.meta.url)), '..', 'canon');
@@ -96,15 +102,17 @@ export function loadCanon(cfg: StackConfig, dir: string = canonDir()): Canon {
 	if (!prototools) {
 		throw new Error('canon manifest has no .prototools entry for profile ' + cfg.profile);
 	}
-	const pin = /^node\s*=\s*"([^"]+)"/m.exec(prototools.content);
-	if (!pin?.[1]) throw new Error('canon .prototools has no node pin');
+	const { node, pnpm, ...rest } = parsePins(prototools.content);
+	if (!node) throw new Error('canon .prototools has no node pin');
 	// Пин pnpm нужен правилу package-manager: поле packageManager — второй источник версии pnpm.
-	const pnpm = /^pnpm\s*=\s*"([^"]+)"/m.exec(prototools.content);
-	if (!pnpm?.[1]) throw new Error('canon .prototools has no pnpm pin');
-	return {
-		files,
-		catalogs,
-		nodePin: pin[1],
-		pnpmPin: pnpm[1],
-	};
+	if (!pnpm) throw new Error('canon .prototools has no pnpm pin');
+	return { files, catalogs, pins: { ...rest, node, pnpm } };
+}
+
+// Строковые значения верхнего уровня .prototools; таблица [plugins] и нестроковые значения — не пины.
+export function parsePins(prototools: string): Record<string, string> {
+	const parsed = Bun.TOML.parse(prototools) as Record<string, unknown>;
+	return Object.fromEntries(
+		Object.entries(parsed).filter((e): e is [string, string] => typeof e[1] === 'string'),
+	);
 }

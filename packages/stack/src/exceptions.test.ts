@@ -1,5 +1,4 @@
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 
 import { expect, test } from 'bun:test';
 
@@ -12,6 +11,7 @@ import {
 	resolve,
 } from './exceptions.ts';
 import type { Finding } from './findings.ts';
+import { SCHEMA_PATH } from './testkit.ts';
 
 const drift: Finding = {
 	code: 'file-drift',
@@ -209,7 +209,7 @@ interface SchemaBranch {
 
 const exceptionBranches = (): SchemaBranch[] =>
 	(
-		JSON.parse(readFileSync(join(import.meta.dir, '..', 'schema.json'), 'utf8')) as {
+		JSON.parse(readFileSync(SCHEMA_PATH, 'utf8')) as {
 			properties: { exceptions: { items: { oneOf: SchemaBranch[] } } };
 		}
 	).properties.exceptions.items.oneOf;

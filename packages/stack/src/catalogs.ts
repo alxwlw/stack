@@ -1,12 +1,6 @@
-import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
-
-import { parseDocument } from 'yaml';
-
 import type { Canon } from './canon.ts';
 import type { Drift } from './findings.ts';
-
-const WORKSPACE_FILE = 'pnpm-workspace.yaml';
+import { type Repo, WORKSPACE_FILE } from './repo.ts';
 
 // doc.getIn() возвращает unknown: скаляр (обычный случай) или узел yaml-коллекции,
 // если запись каталога сломана (не скаляр). String() на объекте даёт "[object Object]" —
@@ -19,10 +13,10 @@ function displayValue(v: unknown): string {
 }
 
 // Один проход и один предикат для check и sync — см. planFiles.
-export function planCatalogs(repoRoot: string, canon: Canon): Drift[] {
-	const path = join(repoRoot, WORKSPACE_FILE);
-	if (!existsSync(path)) return [];
-	const doc = parseDocument(readFileSync(path, 'utf8'));
+export function planCatalogs(repo: Repo, canon: Canon): Drift[] {
+	// Документа нет: файла нет или он не разобрался (находка — в repo.unreadable).
+	const doc = repo.workspace;
+	if (doc === undefined) return [];
 	const plan: Drift[] = [];
 	for (const [group, entries] of Object.entries(canon.catalogs)) {
 		for (const [name, version] of Object.entries(entries)) {

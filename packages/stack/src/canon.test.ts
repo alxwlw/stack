@@ -5,9 +5,13 @@ import { join } from 'node:path';
 import { expect, test } from 'bun:test';
 import { parse as parseJsonc } from 'jsonc-parser';
 
-import { canonDir, canonGroups, filesFor, loadCanon, loadManifest } from './canon.ts';
+import { canonGroups, filesFor, loadCanon, loadManifest, parsePins } from './canon.ts';
 import { PROFILES, type StackConfig, StackConfigError } from './config.ts';
-import { RENOVATE_CONFIGS } from './deps.ts';
+import { RENOVATE_CONFIGS } from './repo.ts';
+import { canonFile, SCHEMA_PATH } from './testkit.ts';
+
+// Не канон-файл: README лежит рядом с пакетом, а не в canon/.
+const README_PATH = join(import.meta.dir, '..', '..', '..', 'README.md');
 
 // Ruling 33: filesFor() только фильтрует список канон-файлов — оно не замечает, если два
 // файла манифеста целят в один и тот же dest внутри одного профиля. planFiles() в этом случае
@@ -31,7 +35,10 @@ function canonFixture(): string {
 	mkdirSync(join(dir, 'files'), { recursive: true });
 	writeFileSync(join(dir, 'files', 'editorconfig'), 'root = true\n');
 	writeFileSync(join(dir, 'files', 'gitleaks-local.toml'), '[extend]\n');
-	writeFileSync(join(dir, 'files', 'prototools'), 'node = "26.8.1"\npnpm = "11.15.0"\n');
+	writeFileSync(
+		join(dir, 'files', 'prototools'),
+		'node = "26.8.1"\npnpm = "11.15.0"\n\n[plugins]\nx = "file://x.toml"\n',
+	);
 	writeFileSync(
 		join(dir, 'files', 'contracts.prototools'),
 		'node = "0.0.0-fixture"\npnpm = "0.0.0-fixture"\n',
@@ -81,7 +88,10 @@ test('loadCanon: файлы профиля с содержимым и страт
 	expect(loadCanon(cfg(), canonFixture()).files).toEqual([
 		{ dest: '.editorconfig', content: 'root = true\n' },
 		{ dest: '.gitleaks.toml', content: '[extend]\n', strategy: 'create-if-absent' },
-		{ dest: '.prototools', content: 'node = "26.8.1"\npnpm = "11.15.0"\n' },
+		{
+			dest: '.prototools',
+			content: 'node = "26.8.1"\npnpm = "11.15.0"\n\n[plugins]\nx = "file://x.toml"\n',
+		},
 	]);
 });
 
@@ -115,16 +125,28 @@ test('loadCanon: неизвестная группа в with — StackConfigErro
 	expect(loadCanon(cfg({ with: ['renovate'] }), dir).files).toEqual(loadCanon(cfg(), dir).files);
 });
 
-test('loadCanon: пин node берётся из канон-.prototools своего профиля', () => {
+test('loadCanon: пины — строковые значения верхнего уровня канон-.prototools своего профиля', () => {
 	const dir = canonFixture();
-	expect(loadCanon(cfg(), dir).nodePin).toBe('26.8.1');
-	expect(loadCanon(cfg({ profile: 'contracts' }), dir).nodePin).toBe('0.0.0-fixture');
+	expect(loadCanon(cfg(), dir).pins).toEqual({ node: '26.8.1', pnpm: '11.15.0' });
+	expect(loadCanon(cfg({ profile: 'contracts' }), dir).pins).toEqual({
+		node: '0.0.0-fixture',
+		pnpm: '0.0.0-fixture',
+	});
 });
 
-test('loadCanon: пин pnpm берётся из канон-.prototools своего профиля', () => {
+test('loadCanon: прочие строковые пины верхнего уровня канон-.prototools попадают в pins', () => {
 	const dir = canonFixture();
-	expect(loadCanon(cfg(), dir).pnpmPin).toBe('11.15.0');
-	expect(loadCanon(cfg({ profile: 'contracts' }), dir).pnpmPin).toBe('0.0.0-fixture');
+	writeFileSync(
+		join(dir, 'files', 'prototools'),
+		'node = "26.8.1"\npnpm = "11.15.0"\nbun = "1.0.0"\n',
+	);
+	expect(loadCanon(cfg(), dir).pins).toEqual({ node: '26.8.1', pnpm: '11.15.0', bun: '1.0.0' });
+});
+
+test('parsePins: таблицы и нестроковые значения — не пины', () => {
+	expect(parsePins('node = "1.2.3"\nretries = 3\n\n[plugins]\nx = "file://x.toml"\n')).toEqual({
+		node: '1.2.3',
+	});
 });
 
 test('loadCanon: в каноне .prototools нет пина pnpm — ошибка', () => {
@@ -156,15 +178,28 @@ test('loadCanon: в каноне .prototools нет пина node — ошибк
 	expect(() => loadCanon(cfg(), dir)).toThrow('canon .prototools has no node pin');
 });
 
+// canonFile — вход тестов в канон: файла нет в профиле (или вообще нет) — ошибка с dest и профилем, а не пустая строка.
+test('canonFile: файла нет в профиле — ошибка с dest и профилем', () => {
+	expect(() => canonFile('.oxfmtrc.jsonc', 'infra')).toThrow(
+		'no canon file .oxfmtrc.jsonc for profile infra',
+	);
+});
+
+test('canonFile: несуществующий dest — ошибка с dest и профилем', () => {
+	expect(() => canonFile('.no-such-file.toml')).toThrow(
+		'no canon file .no-such-file.toml for profile node',
+	);
+});
+
 test('канон gitleaks: eth-private-key ловится по eth_priv и не обещает лишнего', () => {
-	const toml = readFileSync(join(canonDir(), 'files', 'gitleaks-canon.toml'), 'utf8');
+	const toml = canonFile('.gitleaks.canon.toml');
 	expect(toml.split('\n')[0]).not.toContain('pre-commit');
 	expect(toml).toMatch(/keywords = \[[^\]]*'eth_priv'/);
 	expect(toml).toContain(String.raw`'''docs/superpowers/(specs|plans|archive)/'''`);
 });
 
 test('канон markdownlint не обещает глоб oxfmt, которого нет', () => {
-	const jsonc = readFileSync(join(canonDir(), 'files', 'markdownlint-cli2.jsonc'), 'utf8');
+	const jsonc = canonFile('.markdownlint-cli2.jsonc');
 	// Только комментарии: `globs` самого конфига законно содержат **/*.mdx.
 	const comments = jsonc
 		.split('\n')
@@ -175,18 +210,14 @@ test('канон markdownlint не обещает глоб oxfmt, которог
 });
 
 test('канон markdownlint: игноры планов и спек superpowers на месте', () => {
-	const cfg = parseJsonc(
-		readFileSync(join(canonDir(), 'files', 'markdownlint-cli2.jsonc'), 'utf8'),
-	) as { ignores?: string[] };
+	const cfg = parseJsonc(canonFile('.markdownlint-cli2.jsonc')) as { ignores?: string[] };
 	expect(cfg.ignores).toEqual(
 		expect.arrayContaining(['docs/superpowers/plans/**', 'docs/superpowers/specs/**']),
 	);
 });
 
 test('канон markdownlint: опция gitignore указывает на .markdownlintignore', () => {
-	const cfg = parseJsonc(
-		readFileSync(join(canonDir(), 'files', 'markdownlint-cli2.jsonc'), 'utf8'),
-	) as { gitignore?: string };
+	const cfg = parseJsonc(canonFile('.markdownlint-cli2.jsonc')) as { gitignore?: string };
 	expect(cfg.gitignore).toBe('.markdownlintignore');
 });
 
@@ -230,7 +261,7 @@ test('канон Renovate: workflow и засев конфига — в кажд
 
 // Связка канон-файла workflow с reusable стека проверяется в dogfood.test.ts: там разбирается YAML.
 test('канон Renovate: засев конфига подключает пресет стека @v1', () => {
-	const seed = readFileSync(join(canonDir(), 'files', 'renovate.template.json5'), 'utf8');
+	const seed = canonFile('renovate.json5');
 	expect(seed).toContain("'github>alxwlw/stack//renovate/canon.json5#v1'");
 	expect(seed).toContain("'config:recommended'");
 });
@@ -241,7 +272,7 @@ test('schema.json: enum групп with = группы манифеста ∪ к
 	const g = canonGroups();
 	const expectedGroups = [...g.files, ...g.catalogs, ...g.deprecated].sort();
 
-	const schema = JSON.parse(readFileSync(join(canonDir(), '..', 'schema.json'), 'utf8')) as {
+	const schema = JSON.parse(readFileSync(SCHEMA_PATH, 'utf8')) as {
 		properties?: { with?: { items?: { enum?: string[] } } };
 	};
 	const schemaEnum = schema.properties?.with?.items?.enum;
@@ -251,7 +282,7 @@ test('schema.json: enum групп with = группы манифеста ∪ к
 
 // Строки таблицы «Group» в README: имя группы (текст между обратными кавычками первой ячейки) → вторая ячейка.
 function readmeGroupRows(): Map<string, string> {
-	const lines = readFileSync(join(canonDir(), '..', '..', '..', 'README.md'), 'utf8').split('\n');
+	const lines = readFileSync(README_PATH, 'utf8').split('\n');
 	const start = lines.findIndex((l) => l.startsWith('| Group'));
 	const rows = new Map<string, string>();
 	for (const line of lines.slice(start + 1)) {
@@ -302,8 +333,7 @@ test('moon-tasks: четыре файла задач синхронизирую�
 });
 
 test('moon-tasks: форма потребителей — Bun, tsc --noEmit от корня, lint с отчётом о лишних disable', () => {
-	const read = (name: string): string =>
-		readFileSync(join(canonDir(), 'files', 'moon-tasks', `${name}.yml`), 'utf8');
+	const read = (name: string): string => canonFile(`.moon/tasks/${name}.yml`);
 	expect(read('typescript')).toContain(
 		"'$workspaceRoot/node_modules/typescript/bin/tsc', '--noEmit'",
 	);
