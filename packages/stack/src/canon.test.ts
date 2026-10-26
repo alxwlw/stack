@@ -5,8 +5,8 @@ import { join } from 'node:path';
 import { expect, test } from 'bun:test';
 import { parse as parseJsonc } from 'jsonc-parser';
 
-import { canonDir, filesFor, loadCanon, loadCatalogs, loadManifest } from './canon.ts';
-import { PROFILES, type StackConfig } from './config.ts';
+import { canonDir, canonGroups, filesFor, loadCanon, loadManifest } from './canon.ts';
+import { PROFILES, type StackConfig, StackConfigError } from './config.ts';
 import { RENOVATE_CONFIGS } from './deps.ts';
 
 // Ruling 33: filesFor() только фильтрует список канон-файлов — оно не замечает, если два
@@ -92,14 +92,23 @@ test('loadCanon: файл группы приезжает только при wi
 	expect(dests(cfg({ with: ['moon-tasks'] }))).toContain('.moon/tasks/stack.yml');
 });
 
-test('loadCanon: каталоги — dev всегда, группа только при with, неизвестная группа игнорируется', () => {
+test('loadCanon: каталоги — dev всегда, группа только при with', () => {
 	const dir = canonFixture();
 	const dev = { oxlint: '1.83.0', typescript: '7.0.2' };
 	expect(loadCanon(cfg(), dir).catalogs).toEqual({ dev });
-	const withGroups = loadCanon(cfg({ with: ['libs', 'nope'] }), dir).catalogs;
-	// toEqual не различает { nope: undefined } и отсутствие ключа — ключи проверяем явно.
+	const withGroups = loadCanon(cfg({ with: ['libs'] }), dir).catalogs;
 	expect(Object.keys(withGroups)).toEqual(['dev', 'libs']);
 	expect(withGroups).toEqual({ dev, libs: { react: '19.2.7' } });
+});
+
+test('loadCanon: неизвестная группа в with — StackConfigError с её именем и списком допустимых', () => {
+	const dir = canonFixture();
+	expect(() => loadCanon(cfg({ with: ['moon-task'] }), dir)).toThrow(StackConfigError);
+	expect(() => loadCanon(cfg({ with: ['moon-task'] }), dir)).toThrow(
+		'unknown group "moon-task" in "with", expected one of: libs, moon-tasks, renovate',
+	);
+	// Устаревшая группа принимается и ничего не включает.
+	expect(loadCanon(cfg({ with: ['renovate'] }), dir).files).toEqual(loadCanon(cfg(), dir).files);
 });
 
 test('loadCanon: пин node берётся из канон-.prototools своего профиля', () => {
@@ -225,17 +234,8 @@ test('канон Renovate: засев конфига подключает пре
 // `init` пишет `$schema` в .stack.jsonc, редактор валидирует против него: enum групп в schema.json
 // должен покрывать все group из манифеста, каталоги кроме dev и устаревшие группы.
 test('schema.json: enum групп with = группы манифеста ∪ каталоги (кроме dev) ∪ устаревшие', () => {
-	const manifest = loadManifest();
-	const manifestGroups = new Set<string>();
-	for (const file of manifest) {
-		if (file.group) manifestGroups.add(file.group);
-	}
-	const catalogs = loadCatalogs();
-	const catalogGroups = Object.keys(catalogs).filter((g) => g !== 'dev');
-	const deprecatedGroups = ['renovate']; // принимается ради старых .stack.jsonc, ничего не делает
-	const expectedGroups = Array.from(
-		new Set([...manifestGroups, ...catalogGroups, ...deprecatedGroups]),
-	).sort();
+	const g = canonGroups();
+	const expectedGroups = [...g.files, ...g.catalogs, ...g.deprecated].sort();
 
 	const schema = JSON.parse(readFileSync(join(canonDir(), '..', 'schema.json'), 'utf8')) as {
 		properties?: { with?: { items?: { enum?: string[] } } };
@@ -243,6 +243,28 @@ test('schema.json: enum групп with = группы манифеста ∪ к
 	const schemaEnum = schema.properties?.with?.items?.enum;
 	expect(schemaEnum).toBeDefined();
 	expect((schemaEnum ?? []).sort()).toEqual(expectedGroups);
+});
+
+// Строки таблицы «Group» в README: имя группы (текст между обратными кавычками первой ячейки) → вторая ячейка.
+function readmeGroupRows(): Map<string, string> {
+	const lines = readFileSync(join(canonDir(), '..', '..', '..', 'README.md'), 'utf8').split('\n');
+	const start = lines.findIndex((l) => l.startsWith('| Group'));
+	const rows = new Map<string, string>();
+	for (const line of lines.slice(start + 1)) {
+		if (line.trim() === '') break;
+		if (!line.startsWith('| `')) continue;
+		const cells = line.split('|').map((c) => c.trim());
+		const name = /`([^`]+)`/.exec(cells[1] ?? '')?.[1];
+		if (name) rows.set(name, cells[2] ?? '');
+	}
+	return rows;
+}
+
+test('README: таблица групп перечисляет ровно группы канона', () => {
+	const g = canonGroups();
+	expect([...readmeGroupRows().keys()].sort()).toEqual(
+		[...g.files, ...g.catalogs, ...g.deprecated].sort(),
+	);
 });
 
 const MOON_TASKS = ['typescript', 'oxlint', 'oxfmt', 'bun-test'];
