@@ -62,12 +62,12 @@ export function checkEnginesNode(repoRoot: string, canon: Canon): Finding[] {
 	}
 	const range = pkg.engines?.node;
 	if (!range) return [];
-	if (Bun.semver.satisfies(canon.nodePin, range)) return [];
+	if (Bun.semver.satisfies(canon.pins.node, range)) return [];
 	return [
 		{
 			code: 'engines-node',
 			target: 'package.json:engines.node',
-			message: `"${range}" doesn't cover the canon pin ${canon.nodePin} — proto will rewrite .prototools from engines`,
+			message: `"${range}" doesn't cover the canon pin ${canon.pins.node} — proto will rewrite .prototools from engines`,
 		},
 	];
 }

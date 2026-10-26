@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import { expect, test } from 'bun:test';
 
-import { type Canon, canonDir } from './canon.ts';
+import { canonDir } from './canon.ts';
 import {
 	checkDependabot,
 	checkEnginesNode,
@@ -12,15 +12,11 @@ import {
 	checkRenovatePreset,
 	STACK_RENOVATE_PRESET,
 } from './deps.ts';
+import { testCanon } from './testkit.ts';
 
-// Пин нарочно не совпадает с реальным каноном (26.x): иначе тест engines-node не отличит
-// canon.nodePin от зашитой константы.
-const canon: Canon = {
-	files: [],
-	catalogs: { dev: { oxlint: '1.83.0' }, libs: { react: '19.2.7' } },
-	nodePin: '25.4.1',
-	pnpmPin: '11.15.0',
-};
+// Пин node у testCanon нарочно не совпадает с реальным каноном (26.x): иначе тест engines-node
+// не отличит canon.pins.node от зашитой константы.
+const canon = testCanon({ catalogs: { dev: { oxlint: '1.83.0' }, libs: { react: '19.2.7' } } });
 
 function repo(files: Record<string, string>): string {
 	const dir = mkdtempSync(join(tmpdir(), 'stack-repo-'));
@@ -78,7 +74,7 @@ test('engines.node, не покрывающий пин, — находка', () 
 			'"^24" doesn\'t cover the canon pin 25.4.1 — proto will rewrite .prototools from engines',
 		],
 	]);
-	// ^25 покрывает пин фикстуры, но не реальный 26.x — константа вместо canon.nodePin красит тест.
+	// ^25 покрывает пин фикстуры, но не реальный 26.x — константа вместо canon.pins.node красит тест.
 	const good = repo({ 'package.json': '{ "name": "r", "engines": { "node": "^25" } }' });
 	expect(checkEnginesNode(good, canon)).toEqual([]);
 	const none = repo({ 'package.json': '{ "name": "r" }' });

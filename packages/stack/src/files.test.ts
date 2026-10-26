@@ -4,20 +4,17 @@ import { join } from 'node:path';
 
 import { expect, test } from 'bun:test';
 
-import type { Canon } from './canon.ts';
 import { syncRepo } from './check.ts';
 import { planFiles } from './files.ts';
+import { testCanon } from './testkit.ts';
 
-const canon: Canon = {
+const canon = testCanon({
 	files: [
 		{ dest: '.editorconfig', content: 'root = true\n' },
 		{ dest: '.gitleaks.toml', content: '[extend]\n', strategy: 'create-if-absent' },
 		{ dest: '.moon/tasks/stack.yml', content: 'tasks: {}\n' },
 	],
-	catalogs: {},
-	nodePin: '26.8.1',
-	pnpmPin: '11.15.0',
-};
+});
 
 // Применить план — то, что делает `stack sync`; возвращает applied из syncRepo, чтобы пинить строки fix.
 function sync(repo: string) {
@@ -78,8 +75,7 @@ test('находка о файле несёт предмет для исключ
 
 // satisfiedBy: засев конфига, у которого несколько законных имён (Renovate ищет renovate.json,
 // .github/renovate.json5 и т. д.), — любой существующий вариант закрывает засев.
-const seedWithAlternatives: Canon = {
-	...canon,
+const seedWithAlternatives = testCanon({
 	files: [
 		{
 			dest: 'renovate.json5',
@@ -88,7 +84,7 @@ const seedWithAlternatives: Canon = {
 			satisfiedBy: ['renovate.json', '.github/renovate.json5'],
 		},
 	],
-};
+});
 
 test('create-if-absent с satisfiedBy: существующий альтернативный путь закрывает засев', () => {
 	const repo = mkdtempSync(join(tmpdir(), 'stack-repo-'));
@@ -114,10 +110,9 @@ test('create-if-absent с satisfiedBy: ничего нет — засевает�
 // satisfiedBy — свойство засева: у verbatim-записи канон владеет содержимым, и существующий
 // «альтернативный» путь не должен выключать синхронизацию dest.
 test('verbatim с satisfiedBy: существующий путь из satisfiedBy не отменяет план dest', () => {
-	const verbatimWithAlternatives: Canon = {
-		...canon,
+	const verbatimWithAlternatives = testCanon({
 		files: [{ dest: 'renovate.json5', content: '{}\n', satisfiedBy: ['renovate.json'] }],
-	};
+	});
 	const repo = mkdtempSync(join(tmpdir(), 'stack-repo-'));
 	writeFileSync(join(repo, 'renovate.json'), '{}\n');
 	const plan = planFiles(repo, verbatimWithAlternatives);

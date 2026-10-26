@@ -8,6 +8,7 @@ import { expect, spyOn, test } from 'bun:test';
 import type { Canon } from './canon.ts';
 import { checkRepo, syncRepo } from './check.ts';
 import { STACK_RENOVATE_PRESET } from './deps.ts';
+import { testCanon } from './testkit.ts';
 
 // Репо с конфигом Renovate на пресете канона: тесты исключений и каталогов не про бота.
 function withRenovate(repo: string): string {
@@ -17,13 +18,10 @@ function withRenovate(repo: string): string {
 
 const realWrite = fs.writeFileSync;
 
-const canon: Canon = {
+const canon = testCanon({
 	files: [{ dest: '.editorconfig', content: 'root = true\n' }],
 	catalogs: { dev: { oxlint: '1.83.0' } },
-	nodePin: '26.8.1',
-	// Не реальный пин канона — см. package-manager.test.ts.
-	pnpmPin: '10.99.0',
-};
+});
 
 test('исключение на .prototools держит и packageManager — в sync и в check', () => {
 	const repo = withRenovate(mkdtempSync(join(tmpdir(), 'stack-repo-')));

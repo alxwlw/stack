@@ -15,7 +15,7 @@ import { expect, test } from 'bun:test';
 import JSON5 from 'json5';
 import { parse as parseYaml } from 'yaml';
 
-import { canonDir, loadCatalogs } from './canon.ts';
+import { canonDir, loadCanon, loadCatalogs } from './canon.ts';
 
 // Репозиторий канона сознательно не вызывает `stack sync` на себе (его каталог dev называет
 // версии @alxwlw/* как workspace:*, sync их сломает) — поэтому ничто не мешает корневым файлам
@@ -62,9 +62,7 @@ test('корневой package.json#packageManager — pnpm на пине кан
 	const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as {
 		packageManager?: string;
 	};
-	const pin = /^pnpm\s*=\s*"([^"]+)"/m.exec(
-		readFileSync(join(canonDir(), 'files', 'prototools'), 'utf8'),
-	)?.[1];
+	const pin = loadCanon({ profile: 'node', with: [], exceptions: [] }).pins.pnpm;
 	expect(pin).toBeDefined();
 	expect(pkg.packageManager).toBe(`pnpm@${pin}`);
 });

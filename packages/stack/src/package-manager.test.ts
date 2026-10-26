@@ -4,13 +4,13 @@ import { join } from 'node:path';
 
 import { expect, test } from 'bun:test';
 
-import type { Canon } from './canon.ts';
 import { syncRepo } from './check.ts';
 import { planPackageManager } from './package-manager.ts';
+import { testCanon } from './testkit.ts';
 
-// pnpmPin не равен реальному пину канона: иначе зашитая в package-manager.ts константа 11.15.0
-// осталась бы незамеченной (то же для node в deps.test.ts).
-const canon: Canon = { files: [], catalogs: {}, nodePin: '26.8.1', pnpmPin: '10.99.0' };
+// Пин pnpm у testCanon (10.99.0) не равен реальному пину канона: иначе зашитая в package-manager.ts
+// константа осталась бы незамеченной. Ожидания ниже зависят от него — задаём явно.
+const canon = testCanon({ pins: { node: '26.8.1', pnpm: '10.99.0' } });
 
 function repoWith(packageJson: string): string {
 	const dir = mkdtempSync(join(tmpdir(), 'stack-pm-'));

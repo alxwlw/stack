@@ -20,8 +20,8 @@ export function planPackageManager(repoRoot: string, canon: Canon): Drift[] {
 	}
 	if (typeof current !== 'string' || !current.startsWith('pnpm@')) return [];
 	// `pnpm@11.15.0+sha512.…` — хэш относится к той же версии, сравниваем только её.
-	if (current.slice('pnpm@'.length).split('+')[0] === canon.pnpmPin) return [];
-	const want = `pnpm@${canon.pnpmPin}`;
+	if (current.slice('pnpm@'.length).split('+')[0] === canon.pins.pnpm) return [];
+	const want = `pnpm@${canon.pins.pnpm}`;
 	return [
 		{
 			code: 'package-manager',

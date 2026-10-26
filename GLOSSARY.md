@@ -37,7 +37,7 @@ One package name with its pinned version inside a catalog; the unit that drifts 
 _Avoid_: dependency line
 
 **Pin**:
-A tool version fixed in the consumer's `.prototools` (node, pnpm and the other proto-managed tools); the canon's own pins are in `canon/files/prototools`, and `loadCanon` reads the node and pnpm ones as `nodePin` and `pnpmPin`.
+A tool version fixed in the consumer's `.prototools` (node, pnpm and the other proto-managed tools); the canon's own pins are in `canon/files/prototools`, and `loadCanon` reads them as `Canon.pins` (`node` and `pnpm` are required).
 _Avoid_: lock, freeze
 
 ### Verdicts

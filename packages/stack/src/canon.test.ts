@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { expect, test } from 'bun:test';
 import { parse as parseJsonc } from 'jsonc-parser';
 
-import { canonDir, canonGroups, filesFor, loadCanon, loadManifest } from './canon.ts';
+import { canonDir, canonGroups, filesFor, loadCanon, loadManifest, parsePins } from './canon.ts';
 import { PROFILES, type StackConfig, StackConfigError } from './config.ts';
 import { RENOVATE_CONFIGS } from './deps.ts';
 
@@ -31,7 +31,10 @@ function canonFixture(): string {
 	mkdirSync(join(dir, 'files'), { recursive: true });
 	writeFileSync(join(dir, 'files', 'editorconfig'), 'root = true\n');
 	writeFileSync(join(dir, 'files', 'gitleaks-local.toml'), '[extend]\n');
-	writeFileSync(join(dir, 'files', 'prototools'), 'node = "26.8.1"\npnpm = "11.15.0"\n');
+	writeFileSync(
+		join(dir, 'files', 'prototools'),
+		'node = "26.8.1"\npnpm = "11.15.0"\n\n[plugins]\nx = "file://x.toml"\n',
+	);
 	writeFileSync(
 		join(dir, 'files', 'contracts.prototools'),
 		'node = "0.0.0-fixture"\npnpm = "0.0.0-fixture"\n',
@@ -81,7 +84,10 @@ test('loadCanon: файлы профиля с содержимым и страт
 	expect(loadCanon(cfg(), canonFixture()).files).toEqual([
 		{ dest: '.editorconfig', content: 'root = true\n' },
 		{ dest: '.gitleaks.toml', content: '[extend]\n', strategy: 'create-if-absent' },
-		{ dest: '.prototools', content: 'node = "26.8.1"\npnpm = "11.15.0"\n' },
+		{
+			dest: '.prototools',
+			content: 'node = "26.8.1"\npnpm = "11.15.0"\n\n[plugins]\nx = "file://x.toml"\n',
+		},
 	]);
 });
 
@@ -115,16 +121,19 @@ test('loadCanon: неизвестная группа в with — StackConfigErro
 	expect(loadCanon(cfg({ with: ['renovate'] }), dir).files).toEqual(loadCanon(cfg(), dir).files);
 });
 
-test('loadCanon: пин node берётся из канон-.prototools своего профиля', () => {
+test('loadCanon: пины — строковые значения верхнего уровня канон-.prototools своего профиля', () => {
 	const dir = canonFixture();
-	expect(loadCanon(cfg(), dir).nodePin).toBe('26.8.1');
-	expect(loadCanon(cfg({ profile: 'contracts' }), dir).nodePin).toBe('0.0.0-fixture');
+	expect(loadCanon(cfg(), dir).pins).toEqual({ node: '26.8.1', pnpm: '11.15.0' });
+	expect(loadCanon(cfg({ profile: 'contracts' }), dir).pins).toEqual({
+		node: '0.0.0-fixture',
+		pnpm: '0.0.0-fixture',
+	});
 });
 
-test('loadCanon: пин pnpm берётся из канон-.prototools своего профиля', () => {
-	const dir = canonFixture();
-	expect(loadCanon(cfg(), dir).pnpmPin).toBe('11.15.0');
-	expect(loadCanon(cfg({ profile: 'contracts' }), dir).pnpmPin).toBe('0.0.0-fixture');
+test('parsePins: таблицы и нестроковые значения — не пины', () => {
+	expect(parsePins('node = "1.2.3"\nretries = 3\n\n[plugins]\nx = "file://x.toml"\n')).toEqual({
+		node: '1.2.3',
+	});
 });
 
 test('loadCanon: в каноне .prototools нет пина pnpm — ошибка', () => {
