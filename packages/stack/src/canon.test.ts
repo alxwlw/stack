@@ -179,6 +179,19 @@ test('loadCanon: в каноне .prototools нет пина node — ошибк
 	expect(() => loadCanon(cfg(), dir)).toThrow('canon .prototools has no node pin');
 });
 
+// canonFile — вход тестов в канон: файла нет в профиле (или вообще нет) — ошибка с dest и профилем, а не пустая строка.
+test('canonFile: файла нет в профиле — ошибка с dest и профилем', () => {
+	expect(() => canonFile('.oxfmtrc.jsonc', 'infra')).toThrow(
+		'no canon file .oxfmtrc.jsonc for profile infra',
+	);
+});
+
+test('canonFile: несуществующий dest — ошибка с dest и профилем', () => {
+	expect(() => canonFile('.no-such-file.toml')).toThrow(
+		'no canon file .no-such-file.toml for profile node',
+	);
+});
+
 test('канон gitleaks: eth-private-key ловится по eth_priv и не обещает лишнего', () => {
 	const toml = canonFile('.gitleaks.canon.toml');
 	expect(toml.split('\n')[0]).not.toContain('pre-commit');
