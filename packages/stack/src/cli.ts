@@ -2,7 +2,7 @@
 import { existsSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 
-import { loadCanon } from './canon.ts';
+import { assertKnownGroups, loadCanon } from './canon.ts';
 import { checkRepo, syncRepo } from './check.ts';
 import { type Profile, PROFILES, readStackConfig, StackConfigError } from './config.ts';
 import { type Finding, isDrift } from './findings.ts';
@@ -54,6 +54,7 @@ try {
 		if (!PROFILES.includes(profile as Profile)) {
 			fail(`unknown --profile "${profile}", expected one of: ${PROFILES.join(', ')}`);
 		}
+		assertKnownGroups(values.with ?? []);
 		const path = initConfig(repoRoot, { profile: profile as Profile, with: values.with ?? [] });
 		console.log(`created ${path}`);
 	} else if (command === 'sync') {

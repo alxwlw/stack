@@ -17,7 +17,7 @@ export function planPackageManager(repoRoot: string, canon: Canon): Drift[] {
 	try {
 		current = (JSON.parse(text) as { packageManager?: unknown }).packageManager;
 	} catch {
-		// Нечитаемый package.json — находка unreadable-file у checkEnginesNode, не здесь.
+		// Нечитаемый package.json — находка unreadable-file у checkInlineVersions (есть pnpm-workspace.yaml) или у checkEnginesNode (нет), не здесь.
 		return [];
 	}
 	if (typeof current !== 'string' || !current.startsWith('pnpm@')) return [];

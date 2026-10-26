@@ -204,3 +204,29 @@ test('with renovate без конфига Renovate: sync засевает renova
 	expect(checked.err).not.toContain('renovate');
 	expect(checked.code).toBe(0);
 });
+
+test('check и sync с опечаткой в with — код 2, ошибка называет группу', async () => {
+	const dir = emptyRepo();
+	writeFileSync(join(dir, '.stack.jsonc'), '{ "profile": "node", "with": ["moon-task"] }');
+	for (const command of ['check', 'sync']) {
+		const r = await run([command], dir);
+		expect(r.code).toBe(2);
+		expect(r.err).toContain('unknown group "moon-task"');
+		expect(r.err).not.toContain('cli.ts');
+	}
+});
+
+test('init с неизвестной --with — код 2, файл не создан', async () => {
+	const dir = emptyRepo();
+	const r = await run(['init', '--profile', 'node', '--with', 'moon-task'], dir);
+	expect(r.code).toBe(2);
+	expect(existsSync(join(dir, '.stack.jsonc'))).toBe(false);
+});
+
+test('init с опечаткой во второй --with — код 2, файл не создан', async () => {
+	const dir = emptyRepo();
+	const r = await run(['init', '--profile', 'node', '--with', 'libs', '--with', 'moon-task'], dir);
+	expect(r.code).toBe(2);
+	expect(r.err).toContain('unknown group "moon-task"');
+	expect(existsSync(join(dir, '.stack.jsonc'))).toBe(false);
+});

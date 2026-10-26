@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import type { Profile, StackConfig } from './config.ts';
+import { type Profile, type StackConfig, StackConfigError } from './config.ts';
 
 export type SyncStrategy = 'verbatim' | 'create-if-absent';
 
@@ -49,7 +49,36 @@ export function loadCatalogs(dir: string = canonDir()): CanonCatalogs {
 	return JSON.parse(readFileSync(join(dir, 'catalogs.json'), 'utf8')) as CanonCatalogs;
 }
 
+// Устаревшие группы принимаются ради старых .stack.jsonc и ничего не включают.
+export const DEPRECATED_GROUPS: readonly string[] = ['renovate'];
+
+export interface CanonGroups {
+	files: string[];
+	catalogs: string[];
+	deprecated: readonly string[];
+}
+
+// Единственный источник имён групп: файловые — поле group манифеста, каталожные — ключи catalogs.json.
+export function canonGroups(dir: string = canonDir()): CanonGroups {
+	const files = [...new Set(loadManifest(dir).flatMap((f) => (f.group == null ? [] : [f.group])))];
+	const catalogs = Object.keys(loadCatalogs(dir)).filter((g) => g !== 'dev');
+	return { files, catalogs, deprecated: DEPRECATED_GROUPS };
+}
+
+export function assertKnownGroups(groups: readonly string[], dir: string = canonDir()): void {
+	const g = canonGroups(dir);
+	const known = [...g.files, ...g.catalogs, ...g.deprecated].sort();
+	for (const name of groups) {
+		if (!known.includes(name)) {
+			throw new StackConfigError(
+				`unknown group "${name}" in "with", expected one of: ${known.join(', ')}`,
+			);
+		}
+	}
+}
+
 export function loadCanon(cfg: StackConfig, dir: string = canonDir()): Canon {
+	assertKnownGroups(cfg.with, dir);
 	const files = filesFor(cfg, dir).map((f) => ({
 		dest: f.dest,
 		content: readFileSync(join(dir, f.src), 'utf8'),
@@ -57,7 +86,7 @@ export function loadCanon(cfg: StackConfig, dir: string = canonDir()): Canon {
 		satisfiedBy: f.satisfiedBy,
 	}));
 	const all = loadCatalogs(dir);
-	const groups = ['dev', ...cfg.with.filter((g) => g !== 'dev')];
+	const groups = ['dev', ...cfg.with];
 	const catalogs = Object.fromEntries(
 		groups.filter((g) => g in all).map((g) => [g, all[g] as Record<string, string>]),
 	);
