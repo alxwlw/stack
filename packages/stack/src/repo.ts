@@ -87,13 +87,17 @@ export function repoFromFiles(files: ReadonlyMap<string, string>): Repo {
 
 type Read = { text: string } | { missing: true } | { failed: Error };
 
-// ENOENT — нет файла. Любая другая ошибка (EACCES, EISDIR) — файл есть, но не читается.
+// Нет файла — так же, как его видит existsSync: ENOENT, ENOTDIR (путь под обычным файлом, например
+// `.github` — файл) и ELOOP. Любая другая ошибка (EACCES, EISDIR) — файл есть, но не читается.
+const MISSING = new Set(['ENOENT', 'ENOTDIR', 'ELOOP']);
+
 function readFile(root: string, path: string): Read {
 	try {
 		return { text: readFileSync(join(root, path), 'utf8') };
 	} catch (err) {
 		const e = err instanceof Error ? err : new Error(String(err));
-		return (e as { code?: string }).code === 'ENOENT' ? { missing: true } : { failed: e };
+		const code = (e as { code?: string }).code;
+		return code !== undefined && MISSING.has(code) ? { missing: true } : { failed: e };
 	}
 }
 

@@ -1,23 +1,12 @@
-import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
-
 import type { Canon } from './canon.ts';
 import type { Drift } from './findings.ts';
+import type { Repo } from './repo.ts';
 
 // package.json#packageManager — второй источник версии pnpm рядом с .prototools: pnpm сам
 // переключается на версию из поля, и пин канона молча перестаёт действовать. Держим поле на пине
 // канона. Адрес — .prototools: одно исключение удерживает оба симптома одного решения.
-export function planPackageManager(repoRoot: string, canon: Canon): Drift[] {
-	const path = join(repoRoot, 'package.json');
-	if (!existsSync(path)) return [];
-	const text = readFileSync(path, 'utf8');
-	let current: unknown;
-	try {
-		current = (JSON.parse(text) as { packageManager?: unknown }).packageManager;
-	} catch {
-		// Нечитаемый package.json — находка unreadable-file у checkInlineVersions (есть pnpm-workspace.yaml) или у checkEnginesNode (нет), не здесь.
-		return [];
-	}
+export function planPackageManager(repo: Repo, canon: Canon): Drift[] {
+	const current = repo.packages.get('package.json')?.packageManager;
 	if (typeof current !== 'string' || !current.startsWith('pnpm@')) return [];
 	// `pnpm@11.15.0+sha512.…` — хэш относится к той же версии, сравниваем только её.
 	if (current.slice('pnpm@'.length).split('+')[0] === canon.pins.pnpm) return [];

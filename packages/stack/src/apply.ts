@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
 import { applyEdits, modify } from 'jsonc-parser';
@@ -52,13 +52,13 @@ export function renderChanges(
 	return out;
 }
 
-// Не больше одного чтения и одной записи на файл (write-цели не читаются).
-export function applyChanges(root: string, changes: readonly Change[]): void {
-	const current = new Map<string, string | undefined>();
-	for (const c of changes) {
-		if (current.has(c.file) || c.kind === 'write') continue;
-		current.set(c.file, readFileSync(join(root, c.file), 'utf8'));
-	}
+// Текущее содержимое берётся из снимка репозитория (нет ключа — нет файла), диск не читается;
+// не больше одной записи на файл.
+export function applyChanges(
+	root: string,
+	changes: readonly Change[],
+	current: ReadonlyMap<string, string>,
+): void {
 	for (const [file, content] of renderChanges(current, changes)) {
 		const target = join(root, file);
 		mkdirSync(dirname(target), { recursive: true });

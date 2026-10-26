@@ -1,30 +1,13 @@
-import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
-
-import { Glob } from 'bun';
-import JSON5 from 'json5';
-
 import type { Canon } from './canon.ts';
 import type { Finding } from './findings.ts';
-import { DEPENDABOT_CONFIGS, RENOVATE_CONFIGS, SKIP } from './repo.ts';
+import { DEPENDABOT_CONFIGS, type Repo } from './repo.ts';
 
-export function checkInlineVersions(repoRoot: string, canon: Canon): Finding[] {
-	if (!existsSync(join(repoRoot, 'pnpm-workspace.yaml'))) return [];
+// Только при pnpm-workspace.yaml: без него каталогов нет, и inline-версия — единственный способ.
+export function checkInlineVersions(repo: Repo, canon: Canon): Finding[] {
+	if (!repo.files.has('pnpm-workspace.yaml')) return [];
 	const canonNames = new Set(Object.values(canon.catalogs).flatMap((e) => Object.keys(e)));
 	const findings: Finding[] = [];
-	for (const file of new Glob('**/package.json').scanSync({ cwd: repoRoot })) {
-		if (SKIP.test(file)) continue;
-		let pkg: Record<string, unknown>;
-		try {
-			pkg = JSON.parse(readFileSync(join(repoRoot, file), 'utf8')) as Record<string, unknown>;
-		} catch (err) {
-			findings.push({
-				code: 'unreadable-file',
-				target: file,
-				message: `${file} does not parse: ${err instanceof Error ? err.message : String(err)}`,
-			});
-			continue;
-		}
+	for (const [file, pkg] of repo.packages) {
 		for (const section of ['dependencies', 'devDependencies'] as const) {
 			for (const [name, spec] of Object.entries((pkg[section] ?? {}) as Record<string, string>)) {
 				if (!canonNames.has(name) || spec.startsWith('catalog:') || spec.startsWith('workspace:')) {
@@ -42,25 +25,10 @@ export function checkInlineVersions(repoRoot: string, canon: Canon): Finding[] {
 	return findings;
 }
 
-export function checkEnginesNode(repoRoot: string, canon: Canon): Finding[] {
-	const path = join(repoRoot, 'package.json');
-	if (!existsSync(path)) return [];
-	let pkg: { engines?: { node?: string } };
-	try {
-		pkg = JSON.parse(readFileSync(path, 'utf8')) as { engines?: { node?: string } };
-	} catch (err) {
-		// С pnpm-workspace.yaml checkInlineVersions сканирует и корневой package.json: её находка уже есть.
-		if (existsSync(join(repoRoot, 'pnpm-workspace.yaml'))) return [];
-		return [
-			{
-				code: 'unreadable-file',
-				target: 'package.json',
-				message: `package.json does not parse: ${err instanceof Error ? err.message : String(err)}`,
-			},
-		];
-	}
-	const range = pkg.engines?.node;
-	if (!range) return [];
+export function checkEnginesNode(repo: Repo, canon: Canon): Finding[] {
+	const range = (repo.packages.get('package.json')?.engines as { node?: unknown } | undefined)
+		?.node;
+	if (typeof range !== 'string' || !range) return [];
 	if (Bun.semver.satisfies(canon.pins.node, range)) return [];
 	return [
 		{
@@ -77,9 +45,9 @@ export const STACK_RENOVATE_PRESET = 'github>alxwlw/stack//renovate/canon.json5#
 
 // Пресет выключает Renovate для всего, что двигает stack sync (proto, каталоги канона dev и libs, @alxwlw/*,
 // ссылки alxwlw/stack) — без него бот и rollout перетягивают одни версии. Профиль не важен.
-export function checkRenovatePreset(repoRoot: string): Finding[] {
-	const found = RENOVATE_CONFIGS.find((p) => existsSync(join(repoRoot, p)));
-	if (!found) {
+export function checkRenovatePreset(repo: Repo): Finding[] {
+	const { renovate } = repo;
+	if (!renovate) {
 		return [
 			{
 				code: 'renovate-preset',
@@ -88,21 +56,19 @@ export function checkRenovatePreset(repoRoot: string): Finding[] {
 			},
 		];
 	}
-	let doc: unknown;
-	try {
-		doc = JSON5.parse(readFileSync(join(repoRoot, found), 'utf8'));
-	} catch {
-		return [
-			{ code: 'unreadable-file', target: found, message: `${found} does not parse as JSON5` },
-		];
-	}
-	const ext = (doc as { extends?: unknown } | null)?.extends;
+	// Конфиг не разобрался: находка unreadable-file уже в repo.unreadable.
+	if (renovate.config === undefined) return [];
+	const { config } = renovate;
+	const ext =
+		typeof config === 'object' && config !== null && 'extends' in config
+			? config.extends
+			: undefined;
 	return Array.isArray(ext) && ext.includes(STACK_RENOVATE_PRESET)
 		? []
 		: [
 				{
 					code: 'renovate-preset',
-					target: found,
+					target: renovate.path,
 					message: `"extends" must include "${STACK_RENOVATE_PRESET}" — without the canon preset the bot fights stack sync`,
 				},
 			];
@@ -110,8 +76,8 @@ export function checkRenovatePreset(repoRoot: string): Finding[] {
 
 // Renovate — единственный бот канона: второй бот открывал бы те же PR, а dependabot не умеет
 // выключить каталоги канона или .prototools.
-export function checkDependabot(repoRoot: string): Finding[] {
-	return DEPENDABOT_CONFIGS.filter((p) => existsSync(join(repoRoot, p))).map((p) => ({
+export function checkDependabot(repo: Repo): Finding[] {
+	return DEPENDABOT_CONFIGS.filter((p) => repo.files.has(p)).map((p) => ({
 		code: 'dependabot-config',
 		target: p,
 		message: `${p}: the canon's dependency bot is Renovate — move these rules into the Renovate config and delete the file`,

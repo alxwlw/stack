@@ -1,10 +1,8 @@
-import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
-
 import { parseDocument } from 'yaml';
 
 import type { Canon } from './canon.ts';
 import type { Drift } from './findings.ts';
+import type { Repo } from './repo.ts';
 
 const WORKSPACE_FILE = 'pnpm-workspace.yaml';
 
@@ -19,10 +17,10 @@ function displayValue(v: unknown): string {
 }
 
 // Один проход и один предикат для check и sync — см. planFiles.
-export function planCatalogs(repoRoot: string, canon: Canon): Drift[] {
-	const path = join(repoRoot, WORKSPACE_FILE);
-	if (!existsSync(path)) return [];
-	const doc = parseDocument(readFileSync(path, 'utf8'));
+export function planCatalogs(repo: Repo, canon: Canon): Drift[] {
+	const text = repo.files.get(WORKSPACE_FILE);
+	if (text === undefined) return [];
+	const doc = parseDocument(text);
 	const plan: Drift[] = [];
 	for (const [group, entries] of Object.entries(canon.catalogs)) {
 		for (const [name, version] of Object.entries(entries)) {

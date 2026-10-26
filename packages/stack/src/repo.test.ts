@@ -1,9 +1,9 @@
-import { chmodSync } from 'node:fs';
+import { chmodSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { expect, test } from 'bun:test';
 
-import { checkEnginesNode, checkInlineVersions, checkRenovatePreset } from './deps.ts';
+import { check } from './check.ts';
 import { loadRepo, repoFromFiles } from './repo.ts';
 import { repoDir, testCanon } from './testkit.ts';
 
@@ -72,25 +72,29 @@ test('Renovate: берётся первый существующий в поря
 	expect(repo.unreadable).toEqual([]);
 });
 
-test('находки загрузчика совпадают с находками правил побайтно', () => {
-	const dir = repoDir({
-		'pnpm-workspace.yaml': 'packages: []',
-		'package.json': '{',
-		'packages/a/package.json': '{"x":',
-		'renovate.json5': '{',
-	});
+// Единственный источник unreadable-file — repo.unreadable: правила о нечитаемом файле молчат, поэтому
+// check отдаёт каждую находку загрузчика ровно один раз, с workspace и без него.
+test('check выдаёт находки загрузчика ровно по разу, с pnpm-workspace.yaml и без', () => {
 	const canon = testCanon();
-	const repo = loadRepo(dir, canon);
-	const sort = <T extends { target: string }>(l: T[]) =>
-		[...l].sort((a, b) => a.target.localeCompare(b.target));
-	const fromRules = [
-		...checkInlineVersions(dir, canon),
-		...checkRenovatePreset(dir).filter((f) => f.code === 'unreadable-file'),
-	];
-	expect(sort(repo.unreadable)).toEqual(sort(fromRules));
-	// без pnpm-workspace.yaml корневой файл даёт находку у checkEnginesNode
-	const bare = repoDir({ 'package.json': '{' });
-	expect(loadRepo(bare, canon).unreadable).toEqual(checkEnginesNode(bare, canon));
+	const targets = (dir: string) => {
+		const repo = loadRepo(dir, canon);
+		const reported = check(repo, canon, [])
+			.filter((f) => f.code === 'unreadable-file')
+			.map((f) => f.target);
+		expect(reported).toEqual(byTarget(repo));
+		return reported;
+	};
+	expect(
+		targets(
+			repoDir({
+				'pnpm-workspace.yaml': 'packages: []',
+				'package.json': '{',
+				'packages/a/package.json': '{"x":',
+				'renovate.json5': '{',
+			}),
+		),
+	).toEqual(['package.json', 'packages/a/package.json', 'renovate.json5']);
+	expect(targets(repoDir({ 'package.json': '{' }))).toEqual(['package.json']);
 });
 
 test('infra: ни package.json, ни pnpm-workspace.yaml — пустые packages, без находок, без Renovate', () => {
@@ -203,7 +207,6 @@ test.skipIf(process.getuid?.() === 0)(
 		const dir = repoDir({ 'package.json': '{}' });
 		chmodSync(join(dir, 'package.json'), 0);
 		const repo = loadRepo(dir, testCanon());
-		expect(repo.unreadable).toEqual(checkEnginesNode(dir, testCanon()));
 		expect(repo.unreadable).toHaveLength(1);
 		expect(repo.unreadable[0]?.message).toStartWith('package.json does not parse: EACCES');
 		expect(repo.packages.size).toBe(0);
@@ -241,9 +244,6 @@ test('каталог renovate.json — одна находка и заслоня
 			message: 'renovate.json does not parse as JSON5',
 		},
 	]);
-	expect(repo.unreadable).toEqual(
-		checkRenovatePreset(dir).filter((f) => f.code === 'unreadable-file'),
-	);
 	expect(repo.files.get('renovate.json5')).toBe('{');
 });
 
@@ -259,4 +259,24 @@ test('порядок unreadable при нечитаемых файлах: кор
 	);
 	expect(byTarget(repo)).toEqual(['package.json', 'packages/a/package.json', 'renovate.json']);
 	expect(repo.unreadable[0]?.message).toStartWith('package.json does not parse: EISDIR');
+});
+
+// «Нет файла» — так же, как его видит existsSync: не только ENOENT, но и ENOTDIR (путь под обычным
+// файлом) и ELOOP (петля симлинков). Это не находка и не заслоняет следующий конфиг Renovate.
+test('путь под обычным файлом (ENOTDIR) — нет файла: Renovate берётся следующий, находки нет', () => {
+	const repo = loadRepo(
+		repoDir({ '.github': 'не каталог', '.renovaterc.json': '{ "extends": ["a"] }' }),
+		testCanon(),
+	);
+	expect(repo.renovate).toEqual({ path: '.renovaterc.json', config: { extends: ['a'] } });
+	expect(repo.unreadable).toEqual([]);
+	expect(repo.files.has('.github/renovate.json')).toBe(false);
+});
+
+test('петля симлинков (ELOOP) вместо конфига Renovate — нет файла, находки нет', () => {
+	const dir = repoDir({ '.renovaterc.json': '{}' });
+	symlinkSync('renovate.json', join(dir, 'renovate.json'));
+	const repo = loadRepo(dir, testCanon());
+	expect(repo.renovate).toEqual({ path: '.renovaterc.json', config: {} });
+	expect(repo.unreadable).toEqual([]);
 });

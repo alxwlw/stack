@@ -1,9 +1,10 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { expect, test } from 'bun:test';
 import { parse as parseJsonc } from 'jsonc-parser';
+
+import { repoDir } from './testkit.ts';
 
 const CLI = join(import.meta.dir, 'cli.ts');
 
@@ -16,28 +17,27 @@ async function run(args: string[], cwd: string) {
 	return { code: await proc.exited, out, err };
 }
 
-function emptyRepo(): string {
-	const dir = mkdtempSync(join(tmpdir(), 'stack-cli-'));
-	writeFileSync(join(dir, 'package.json'), '{ "name": "r", "engines": { "node": ">=26.8.1" } }');
-	writeFileSync(join(dir, 'pnpm-workspace.yaml'), 'packages:\n  - packages/*\n');
-	return dir;
-}
+// Репозиторий до init: package.json с engines на реальном каноне и пустой workspace.
+const BARE = {
+	'package.json': '{ "name": "r", "engines": { "node": ">=26.8.1" } }',
+	'pnpm-workspace.yaml': 'packages:\n  - packages/*\n',
+};
 
 test('init создаёт конфигурацию, повторный init — код 2', async () => {
-	const dir = emptyRepo();
+	const dir = repoDir(BARE);
 	expect((await run(['init', '--profile', 'node'], dir)).code).toBe(0);
 	expect((await run(['init', '--profile', 'node'], dir)).code).toBe(2);
 });
 
 test('check без .stack.jsonc — код 2 с подсказкой', async () => {
-	const dir = emptyRepo();
+	const dir = repoDir(BARE);
 	const r = await run(['check'], dir);
 	expect(r.code).toBe(2);
 	expect(r.err).toContain('stack init');
 });
 
 test('check до sync — код 1, после sync — код 0', async () => {
-	const dir = emptyRepo();
+	const dir = repoDir(BARE);
 	await run(['init', '--profile', 'node'], dir);
 	expect((await run(['check'], dir)).code).toBe(1);
 	const synced = await run(['sync'], dir);
@@ -48,11 +48,11 @@ test('check до sync — код 1, после sync — код 0', async () => {
 });
 
 test('неизвестная команда — код 2', async () => {
-	expect((await run(['помой-посуду'], emptyRepo())).code).toBe(2);
+	expect((await run(['помой-посуду'], repoDir(BARE))).code).toBe(2);
 });
 
 test('init без --profile — код 2', async () => {
-	const dir = emptyRepo();
+	const dir = repoDir(BARE);
 	const r = await run(['init'], dir);
 	expect(r.code).toBe(2);
 	expect(r.err).toContain('--profile');
@@ -60,7 +60,7 @@ test('init без --profile — код 2', async () => {
 });
 
 test('init с недопустимым --profile — код 2, файл не создан', async () => {
-	const dir = emptyRepo();
+	const dir = repoDir(BARE);
 	const r = await run(['init', '--profile', 'банан'], dir);
 	expect(r.code).toBe(2);
 	expect(r.err).toContain('банан');
@@ -68,7 +68,7 @@ test('init с недопустимым --profile — код 2, файл не с�
 });
 
 test('.stack.jsonc с синтаксической ошибкой — check и sync код 2', async () => {
-	const dir = emptyRepo();
+	const dir = repoDir(BARE);
 	writeFileSync(join(dir, '.stack.jsonc'), '{ nope');
 	const checked = await run(['check'], dir);
 	expect(checked.code).toBe(2);
@@ -77,7 +77,7 @@ test('.stack.jsonc с синтаксической ошибкой — check и s
 });
 
 test('повторный sync — без изменений, код 0', async () => {
-	const dir = emptyRepo();
+	const dir = repoDir(BARE);
 	await run(['init', '--profile', 'node'], dir);
 	await run(['sync'], dir);
 	const again = await run(['sync'], dir);
@@ -86,7 +86,7 @@ test('повторный sync — без изменений, код 0', async ()
 });
 
 test('подавленная находка печатается предупреждением, код 0', async () => {
-	const dir = emptyRepo();
+	const dir = repoDir(BARE);
 	await run(['init', '--profile', 'node'], dir);
 	await run(['sync'], dir);
 	rmSync(join(dir, '.editorconfig'));
@@ -105,7 +105,7 @@ test('подавленная находка печатается предупр�
 });
 
 test('неизвестный флаг — код 2, без необработанного исключения', async () => {
-	const dir = emptyRepo();
+	const dir = repoDir(BARE);
 	const r = await run(['sync', '--bogus'], dir);
 	expect(r.code).toBe(2);
 	expect(r.err).toContain('bogus');
@@ -113,7 +113,7 @@ test('неизвестный флаг — код 2, без необработа�
 });
 
 test('init с несуществующим --repo — код 2, без стектрейса', async () => {
-	const dir = join(emptyRepo(), 'nope');
+	const dir = join(repoDir(BARE), 'nope');
 	const r = await run(['init', '--profile', 'node'], dir);
 	expect(r.code).toBe(2);
 	expect(r.err).not.toContain('cli.ts');
@@ -121,7 +121,7 @@ test('init с несуществующим --repo — код 2, без стек�
 });
 
 test('sync с исключением на файл: файл не тронут, строка allowed, check — код 0', async () => {
-	const dir = emptyRepo();
+	const dir = repoDir(BARE);
 	writeFileSync(
 		join(dir, '.stack.jsonc'),
 		'{ "profile": "node", "with": [], "exceptions": [{ "file": ".editorconfig", "reason": "свой отступ" }] }',
@@ -140,7 +140,7 @@ const DEPENDABOT_CONFIG =
 	"version: 2\nupdates:\n  - package-ecosystem: 'npm'\n    directory: '/'\n    schedule:\n      interval: 'weekly'\n";
 
 async function syncedRepo(): Promise<string> {
-	const dir = emptyRepo();
+	const dir = repoDir(BARE);
 	await run(['init', '--profile', 'node'], dir);
 	await run(['sync'], dir);
 	mkdirSync(join(dir, '.github'), { recursive: true });
@@ -180,7 +180,7 @@ test('check: подавленная находка не входит в числ
 });
 
 test('check: всё чинит sync — подсказка прежняя', async () => {
-	const dir = emptyRepo();
+	const dir = repoDir(BARE);
 	await run(['init', '--profile', 'node'], dir);
 	await run(['sync'], dir);
 	rmSync(join(dir, '.editorconfig'));
@@ -192,7 +192,7 @@ test('check: всё чинит sync — подсказка прежняя', asyn
 // Группа renovate устарела и ничего не включает: репо с ней и без конфига Renovate получает засев
 // от sync, и check после этого чист — прежнее правило про ignore краснело на засеянном пресете.
 test('with renovate без конфига Renovate: sync засевает renovate.json5, check — код 0 без находок', async () => {
-	const dir = emptyRepo();
+	const dir = repoDir(BARE);
 	expect((await run(['init', '--profile', 'node', '--with', 'renovate'], dir)).code).toBe(0);
 	expect(existsSync(join(dir, 'renovate.json5'))).toBe(false);
 	const synced = await run(['sync'], dir);
@@ -206,7 +206,7 @@ test('with renovate без конфига Renovate: sync засевает renova
 });
 
 test('check и sync с опечаткой в with — код 2, ошибка называет группу', async () => {
-	const dir = emptyRepo();
+	const dir = repoDir(BARE);
 	writeFileSync(join(dir, '.stack.jsonc'), '{ "profile": "node", "with": ["moon-task"] }');
 	for (const command of ['check', 'sync']) {
 		const r = await run([command], dir);
@@ -217,14 +217,14 @@ test('check и sync с опечаткой в with — код 2, ошибка н�
 });
 
 test('init с неизвестной --with — код 2, файл не создан', async () => {
-	const dir = emptyRepo();
+	const dir = repoDir(BARE);
 	const r = await run(['init', '--profile', 'node', '--with', 'moon-task'], dir);
 	expect(r.code).toBe(2);
 	expect(existsSync(join(dir, '.stack.jsonc'))).toBe(false);
 });
 
 test('init с опечаткой во второй --with — код 2, файл не создан', async () => {
-	const dir = emptyRepo();
+	const dir = repoDir(BARE);
 	const r = await run(['init', '--profile', 'node', '--with', 'libs', '--with', 'moon-task'], dir);
 	expect(r.code).toBe(2);
 	expect(r.err).toContain('unknown group "moon-task"');

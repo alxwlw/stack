@@ -1,122 +1,126 @@
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { expect, test } from 'bun:test';
 
 import { canonDir } from './canon.ts';
-import {
-	checkDependabot,
-	checkEnginesNode,
-	checkInlineVersions,
-	checkRenovatePreset,
-	STACK_RENOVATE_PRESET,
-} from './deps.ts';
-import { testCanon } from './testkit.ts';
+import { check } from './check.ts';
+import { STACK_RENOVATE_PRESET } from './deps.ts';
+import type { FindingCode } from './findings.ts';
+import { testCanon, testRepo } from './testkit.ts';
 
 // Пин node у testCanon нарочно не совпадает с реальным каноном (26.x): иначе тест engines-node
 // не отличит canon.pins.node от зашитой константы.
 const canon = testCanon({ catalogs: { dev: { oxlint: '1.83.0' }, libs: { react: '19.2.7' } } });
 
-function repo(files: Record<string, string>): string {
-	const dir = mkdtempSync(join(tmpdir(), 'stack-repo-'));
-	for (const [p, content] of Object.entries(files)) {
-		mkdirSync(join(dir, p, '..'), { recursive: true });
-		writeFileSync(join(dir, p), content);
-	}
-	return dir;
-}
+// Находки заданных кодов у репозитория, согласованного с каноном, с правками теста (null удаляет файл).
+const found = (over: Record<string, string | null>, ...codes: FindingCode[]) =>
+	check(testRepo(canon, over), canon, []).filter((f) => codes.includes(f.code));
+
+// Конфиг Renovate теста вместо засеянного стендом: у репозитория один конфиг.
+const renovate = (over: Record<string, string>) =>
+	found({ 'renovate.json5': null, ...over }, 'renovate-preset', 'unreadable-file');
 
 test('пакет канона, объявленный версией вместо catalog:, — находка', () => {
-	const dir = repo({
-		'pnpm-workspace.yaml': 'packages:\n  - packages/*\n',
-		'package.json': '{ "name": "root" }',
-		'packages/a/package.json':
-			'{ "name": "a", "dependencies": { "react": "18.3.1" }, "devDependencies": { "oxlint": "1.70.0", "lodash": "4.17.21" } }',
-		'node_modules/x/package.json': '{ "name": "x", "devDependencies": { "oxlint": "1.60.0" } }',
-	});
-	// Имена берутся из всех групп канона (dev и libs), lodash в каноне нет, node_modules пропущен.
+	// Имена берутся из всех групп канона (dev и libs), lodash в каноне нет.
 	expect(
-		checkInlineVersions(dir, canon).map((f) => [
-			f.code,
-			f.target,
-			'name' in f ? f.name : undefined,
-		]),
-	).toEqual([
-		['inline-version', 'packages/a/package.json:react', 'react'],
-		['inline-version', 'packages/a/package.json:oxlint', 'oxlint'],
+		found(
+			{
+				'packages/a/package.json':
+					'{ "name": "a", "dependencies": { "react": "18.3.1" }, "devDependencies": { "oxlint": "1.70.0", "lodash": "4.17.21" } }',
+			},
+			'inline-version',
+		),
+	).toMatchObject([
+		{ code: 'inline-version', target: 'packages/a/package.json:react', name: 'react' },
+		{ code: 'inline-version', target: 'packages/a/package.json:oxlint', name: 'oxlint' },
 	]);
 });
 
 test('catalog: нарушением не считается', () => {
-	const dir = repo({
-		'pnpm-workspace.yaml': 'packages:\n  - packages/*\n',
-		'package.json': '{ "name": "root" }',
-		'packages/a/package.json': '{ "name": "a", "devDependencies": { "oxlint": "catalog:dev" } }',
-	});
-	expect(checkInlineVersions(dir, canon)).toEqual([]);
+	expect(
+		found(
+			{
+				'packages/a/package.json':
+					'{ "name": "a", "devDependencies": { "oxlint": "catalog:dev" } }',
+			},
+			'inline-version',
+		),
+	).toEqual([]);
 });
 
 test('workspace: тоже не нарушение', () => {
-	const dir = repo({
-		'pnpm-workspace.yaml': 'packages:\n  - packages/*\n',
-		'package.json': '{ "name": "root" }',
-		'packages/a/package.json': '{ "name": "a", "devDependencies": { "oxlint": "workspace:*" } }',
-	});
-	expect(checkInlineVersions(dir, canon)).toEqual([]);
+	expect(
+		found(
+			{
+				'packages/a/package.json':
+					'{ "name": "a", "devDependencies": { "oxlint": "workspace:*" } }',
+			},
+			'inline-version',
+		),
+	).toEqual([]);
 });
 
 test('engines.node, не покрывающий пин, — находка', () => {
-	const bad = repo({ 'package.json': '{ "name": "r", "engines": { "node": "^24" } }' });
-	expect(checkEnginesNode(bad, canon).map((f) => [f.code, f.message])).toEqual([
+	const engines = (json: string) => found({ 'package.json': json }, 'engines-node');
+	expect(
+		engines('{ "name": "r", "packageManager": "pnpm@10.99.0", "engines": { "node": "^24" } }').map(
+			(f) => [f.code, f.message],
+		),
+	).toEqual([
 		[
 			'engines-node',
 			'"^24" doesn\'t cover the canon pin 25.4.1 — proto will rewrite .prototools from engines',
 		],
 	]);
 	// ^25 покрывает пин фикстуры, но не реальный 26.x — константа вместо canon.pins.node красит тест.
-	const good = repo({ 'package.json': '{ "name": "r", "engines": { "node": "^25" } }' });
-	expect(checkEnginesNode(good, canon)).toEqual([]);
-	const none = repo({ 'package.json': '{ "name": "r" }' });
-	expect(checkEnginesNode(none, canon)).toEqual([]);
+	expect(engines('{ "name": "r", "engines": { "node": "^25" } }')).toEqual([]);
+	expect(engines('{ "name": "r" }')).toEqual([]);
 });
 
+// Порядок обхода пакетов не гарантирован: находки ищем через .find по code, а не по позиции.
 test('битый package.json — находка unreadable-file, остальные пакеты проверяются дальше', () => {
-	// Порядок Glob.scanSync не гарантирован (эмпирически — не алфавитный и не по времени
-	// создания), поэтому находки ищем через .find по code, а не по позиции в массиве.
-	const dir = repo({
-		'pnpm-workspace.yaml': 'packages:\n  - packages/*\n',
-		'package.json': '{ "name": "root" }',
-		'packages/broken/package.json': '{ "name": "broken", ',
-		'packages/a/package.json': '{ "name": "a", "devDependencies": { "oxlint": "1.70.0" } }',
-	});
-	const found = checkInlineVersions(dir, canon);
-	const unreadable = found.find((f) => f.code === 'unreadable-file');
-	expect(unreadable?.target).toBe('packages/broken/package.json');
-	const inline = found.find((f) => f.code === 'inline-version');
-	expect(inline?.target).toBe('packages/a/package.json:oxlint');
+	const result = found(
+		{
+			'packages/broken/package.json': '{ "name": "broken", ',
+			'packages/a/package.json': '{ "name": "a", "devDependencies": { "oxlint": "1.70.0" } }',
+		},
+		'unreadable-file',
+		'inline-version',
+	);
+	expect(result.find((f) => f.code === 'unreadable-file')?.target).toBe(
+		'packages/broken/package.json',
+	);
+	expect(result.find((f) => f.code === 'inline-version')?.target).toBe(
+		'packages/a/package.json:oxlint',
+	);
 });
 
-test('битый корневой package.json — checkEnginesNode находка, не исключение', () => {
-	const dir = repo({ 'package.json': '{ "name": "r", ' });
-	expect(() => checkEnginesNode(dir, canon)).not.toThrow();
-	expect(checkEnginesNode(dir, canon)[0]?.code).toBe('unreadable-file');
-});
-
-test('битый корневой package.json с pnpm-workspace.yaml — checkEnginesNode молчит, находку даёт checkInlineVersions', () => {
-	const dir = repo({
-		'pnpm-workspace.yaml': 'packages:\n  - packages/*\n',
-		'package.json': '{ "name": "r", ',
-	});
-	expect(checkEnginesNode(dir, canon)).toEqual([]);
-	expect(checkInlineVersions(dir, canon).map((f) => f.target)).toEqual(['package.json']);
+test('битый корневой package.json — engines-node молчит, находка одна, с pnpm-workspace.yaml и без', () => {
+	for (const ws of ['packages:\n  - packages/*\n', null]) {
+		const result = found(
+			{ 'package.json': '{ "name": "r", ', 'pnpm-workspace.yaml': ws },
+			'engines-node',
+			'unreadable-file',
+			'inline-version',
+		);
+		expect(
+			result.map((f) => [f.code, f.target]),
+			`workspace: ${ws !== null}`,
+		).toEqual([['unreadable-file', 'package.json']]);
+	}
 });
 
 test('без pnpm-workspace.yaml правила каталогов молчат', () => {
-	const dir = repo({
-		'package.json': '{ "name": "infra", "devDependencies": { "oxlint": "1.70.0" } }',
-	});
-	expect(checkInlineVersions(dir, canon)).toEqual([]);
+	expect(
+		found(
+			{
+				'pnpm-workspace.yaml': null,
+				'package.json': '{ "name": "infra", "devDependencies": { "oxlint": "1.70.0" } }',
+			},
+			'inline-version',
+		),
+	).toEqual([]);
 });
 
 // renovate-preset: конфиг ищется в порядке самого Renovate (первый найденный — и есть конфиг),
@@ -129,23 +133,28 @@ const WITH_PRESET = `{
 `;
 
 test('renovate-preset: renovate.json5 с пресетом — без находки', () => {
-	expect(checkRenovatePreset(repo({ 'renovate.json5': WITH_PRESET }))).toEqual([]);
+	expect(renovate({ 'renovate.json5': WITH_PRESET })).toEqual([]);
 });
 
 test('renovate-preset: .github/renovate.json с пресетом — без находки', () => {
-	const dir = repo({
-		'.github/renovate.json': `{ "extends": ["config:recommended", "${STACK_RENOVATE_PRESET}"] }\n`,
-	});
-	expect(checkRenovatePreset(dir)).toEqual([]);
+	expect(
+		renovate({
+			'.github/renovate.json': `{ "extends": ["config:recommended", "${STACK_RENOVATE_PRESET}"] }\n`,
+		}),
+	).toEqual([]);
 });
 
 // Профиль infra: pnpm-workspace.yaml нет, а пресет всё равно нужен — он выключает proto.
 test('renovate-preset: работает и без pnpm-workspace.yaml', () => {
-	const [f] = checkRenovatePreset(
-		repo({ 'renovate.json': '{ "extends": ["config:recommended"] }\n' }),
+	const result = found(
+		{
+			'pnpm-workspace.yaml': null,
+			'renovate.json5': null,
+			'renovate.json': '{ "extends": ["config:recommended"] }\n',
+		},
+		'renovate-preset',
 	);
-	expect(f?.code).toBe('renovate-preset');
-	expect(f?.target).toBe('renovate.json');
+	expect(result).toMatchObject([{ code: 'renovate-preset', target: 'renovate.json' }]);
 });
 
 test('renovate-preset: пресет без тега, с #main или с чужим мажором — находка', () => {
@@ -154,67 +163,66 @@ test('renovate-preset: пресет без тега, с #main или с чужи
 		'github>alxwlw/stack//renovate/canon.json5#main',
 		'github>alxwlw/stack//renovate/canon.json5#v0',
 	]) {
-		const [f] = checkRenovatePreset(repo({ 'renovate.json5': `{ extends: ['${ref}'] }\n` }));
+		const [f] = renovate({ 'renovate.json5': `{ extends: ['${ref}'] }\n` });
 		expect(f?.code).toBe('renovate-preset');
 		expect(f?.message).toContain(STACK_RENOVATE_PRESET);
 	}
 });
 
 test('renovate-preset: первый конфиг в порядке поиска решает, даже если другой с пресетом', () => {
-	const dir = repo({
-		'renovate.json': '{ "extends": ["config:recommended"] }\n',
-		'renovate.json5': WITH_PRESET,
-	});
-	expect(checkRenovatePreset(dir).map((f) => [f.code, f.target])).toEqual([
-		['renovate-preset', 'renovate.json'],
-	]);
+	expect(
+		renovate({
+			'renovate.json': '{ "extends": ["config:recommended"] }\n',
+			'renovate.json5': WITH_PRESET,
+		}).map((f) => [f.code, f.target]),
+	).toEqual([['renovate-preset', 'renovate.json']]);
 });
 
 // extends нет или он не массив — типичный вход при миграции с Dependabot: находка, а не TypeError.
 test('renovate-preset: конфиг без extends — находка, не исключение', () => {
 	for (const body of ['{ "packageRules": [] }\n', '{}\n']) {
-		const dir = repo({ 'renovate.json': body });
-		expect(() => checkRenovatePreset(dir)).not.toThrow();
-		const found = checkRenovatePreset(dir);
-		expect(found).toHaveLength(1);
-		expect(found[0]?.code).toBe('renovate-preset');
-		expect(found[0]?.target).toBe('renovate.json');
+		expect(() => renovate({ 'renovate.json': body })).not.toThrow();
+		const result = renovate({ 'renovate.json': body });
+		expect(result).toHaveLength(1);
+		expect(result[0]?.code).toBe('renovate-preset');
+		expect(result[0]?.target).toBe('renovate.json');
 	}
 });
 
 test('renovate-preset: extends строкой, даже равной пресету, — находка', () => {
-	const dir = repo({ 'renovate.json': `{ "extends": "${STACK_RENOVATE_PRESET}" }\n` });
-	const found = checkRenovatePreset(dir);
-	expect(found).toHaveLength(1);
-	expect(found[0]?.code).toBe('renovate-preset');
-	expect(found[0]?.target).toBe('renovate.json');
+	const result = renovate({ 'renovate.json': `{ "extends": "${STACK_RENOVATE_PRESET}" }\n` });
+	expect(result).toHaveLength(1);
+	expect(result[0]?.code).toBe('renovate-preset');
+	expect(result[0]?.target).toBe('renovate.json');
 });
 
 test('renovate-preset: конфига нет — находка с подсказкой про stack sync', () => {
-	const [f] = checkRenovatePreset(repo({}));
+	const [f] = renovate({});
 	expect(f?.code).toBe('renovate-preset');
+	expect(f?.target).toBe('renovate.json5');
 	expect(f?.message).toContain('stack sync');
 });
 
-test('renovate-preset: битый JSON5 — unreadable-file', () => {
-	expect(
-		checkRenovatePreset(repo({ 'renovate.json5': '{ extends: [ \n' })).map((f) => [
-			f.code,
-			f.target,
-		]),
-	).toEqual([['unreadable-file', 'renovate.json5']]);
+test('renovate-preset: битый JSON5 — одна unreadable-file, пресет молчит', () => {
+	expect(renovate({ 'renovate.json5': '{ extends: [ \n' }).map((f) => [f.code, f.target])).toEqual([
+		['unreadable-file', 'renovate.json5'],
+	]);
 });
 
 test('renovate-preset: засев канона проходит проверку', () => {
 	const seed = readFileSync(join(canonDir(), 'files', 'renovate.template.json5'), 'utf8');
-	expect(checkRenovatePreset(repo({ 'renovate.json5': seed }))).toEqual([]);
+	expect(renovate({ 'renovate.json5': seed })).toEqual([]);
 });
 
 test('dependabot-config: .yml и .yaml — по находке на файл, без файлов — молчит', () => {
 	const cfg = 'version: 2\nupdates:\n  - package-ecosystem: npm\n    directory: /\n';
-	expect(checkDependabot(repo({}))).toEqual([]);
-	const dir = repo({ '.github/dependabot.yml': cfg, '.github/dependabot.yaml': cfg });
-	expect(checkDependabot(dir).map((f) => [f.code, f.target])).toEqual([
+	expect(found({}, 'dependabot-config')).toEqual([]);
+	expect(
+		found(
+			{ '.github/dependabot.yml': cfg, '.github/dependabot.yaml': cfg },
+			'dependabot-config',
+		).map((f) => [f.code, f.target]),
+	).toEqual([
 		['dependabot-config', '.github/dependabot.yml'],
 		['dependabot-config', '.github/dependabot.yaml'],
 	]);

@@ -6,8 +6,7 @@ import { expect, test } from 'bun:test';
 import { parse as parseYaml } from 'yaml';
 
 import { canonDir, canonGroups, loadCanon, loadManifest } from './canon.ts';
-import { planCatalogs } from './catalogs.ts';
-import { checkRepo, syncRepo, type SyncResult } from './check.ts';
+import { checkRepo, planRepo, syncRepo, type SyncResult } from './check.ts';
 import { readStackConfig, type StackConfig } from './config.ts';
 
 const FIXTURES = join(import.meta.dir, '..', '..', '..', 'fixtures');
@@ -24,6 +23,12 @@ function sync(dir: string, cfg: StackConfig): SyncResult {
 }
 
 // Фикстура в `fixtures/` — только семя; всё остальное приносит sync, как у потребителя.
+// Дрейф каталогов фикстуры: план репозитория, отфильтрованный по кодам правила каталогов.
+const catalogDrift = (dir: string, cfg: StackConfig) =>
+	planRepo(dir, loadCanon(cfg)).filter(
+		(f) => f.code === 'catalog-drift' || f.code === 'catalog-missing',
+	);
+
 function syncedFixture(profile: 'node' | 'contracts' | 'infra'): { dir: string; cfg: StackConfig } {
 	const dir = copyFixture(profile);
 	const cfg = readStackConfig(dir);
@@ -123,23 +128,23 @@ test('check краснеет на каждой категории нарушен
 	);
 });
 
-// infra не имеет pnpm-workspace.yaml вовсе: planCatalogs должен вернуть [] потому что каталогов
+// infra не имеет pnpm-workspace.yaml вовсе: план каталогов должен быть пуст потому что каталогов
 // синхронизировать некуда — а не потому что профиль infra тихо пропущен внутри функции.
 test('infra: без pnpm-workspace.yaml синхронизация каталогов — no-op на самом первом вызове', () => {
 	const dir = copyFixture('infra');
 	const cfg = readStackConfig(dir);
 	expect(existsSync(join(dir, 'pnpm-workspace.yaml'))).toBe(false);
 	expect(existsSync(join(dir, 'package.json'))).toBe(false);
-	expect(planCatalogs(dir, loadCanon(cfg))).toEqual([]);
+	expect(catalogDrift(dir, cfg)).toEqual([]);
 });
 
 // Тот же профиль infra, но с pnpm-workspace.yaml — доказывает, что no-op выше вызван
-// отсутствием файла, а не строкой "profile === 'infra'" где-то внутри planCatalogs.
+// отсутствием файла, а не строкой "profile === 'infra'" где-то внутри правила каталогов.
 test('infra: появился pnpm-workspace.yaml — синхронизация каталогов больше не no-op', () => {
 	const dir = copyFixture('infra');
 	const cfg = readStackConfig(dir);
 	writeFileSync(join(dir, 'pnpm-workspace.yaml'), 'packages:\n  - packages/*\n');
-	expect(planCatalogs(dir, loadCanon(cfg)).length).toBeGreaterThan(0);
+	expect(catalogDrift(dir, cfg).length).toBeGreaterThan(0);
 });
 
 // node несёт живое исключение на inline-version (packages/app/package.json держит "knip" не
