@@ -243,9 +243,10 @@ the latest `v1.x.y` for consumers pinning a major:
 Renovate runs on this repo too (`.github/workflows/renovate-self.yml`, Mondays 06:00 UTC, needs a
 `RENOVATE_TOKEN` secret). Unlike a consumer it does not extend the canon preset — moving the
 canon's pins is its job. One version lives in several places here: the canon
-(`packages/stack/canon/files/prototools`, `canon/catalogs.json`), this repo's own toolchain
-(`.prototools`, `pnpm-workspace.yaml`, `package.json#packageManager`) and the fixtures. Renovate
-moves each dependency in all of those places at once, because the tests fail when they disagree:
+(`packages/stack/canon/files/prototools`, `canon/catalogs.json`) and this repo's own toolchain
+(`.prototools`, `pnpm-workspace.yaml`, `package.json#packageManager`). Renovate moves each
+dependency in both places at once, because the dogfood tests fail when the root and the canon
+disagree:
 minor and patch bumps land in the `canon pins` PR, major bumps in their own `major-canon-pins` PR.
 Merge them one at a time; Renovate rebases the other on its next run or on a manual
 `workflow_dispatch`. Merging changes nothing for consumers until a release: tag it, and the rollout

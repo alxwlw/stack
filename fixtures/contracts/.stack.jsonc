@@ -1,5 +1,5 @@
 {
 	"profile": "contracts",
-	"with": [],
+	"with": ["moon-tasks", "depcruise"],
 	"exceptions": [],
 }

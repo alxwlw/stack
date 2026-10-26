@@ -1,17 +1,13 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { loadCanon } from '../packages/stack/src/canon.ts';
-import { planCatalogs } from '../packages/stack/src/catalogs.ts';
-import { readStackConfig } from '../packages/stack/src/config.ts';
 import { SEMVER_RE } from './semver.ts';
 
 const PACKAGES = ['stack', 'oxlint-config', 'tsconfig', 'repo-rules'];
 
 /**
  * Проставляет одну lockstep-версию четырём пакетам и её же — записям `@alxwlw/*`
- * в `canon/catalogs.json`. Не трогает фикстуры: см. `resyncFixtures`, вызываемую отдельно
- * из точки входа, чтобы unit-тест мог гонять `setVersion` на минимальной копии дерева.
+ * в `canon/catalogs.json`. Фикстуры не трогает: в них только семя, каталоги приносит sync в тестах.
  */
 export function setVersion(root: string, version: string): void {
 	if (!SEMVER_RE.test(version)) {
@@ -36,22 +32,7 @@ export function setVersion(root: string, version: string): void {
 	writeFileSync(catalogsPath, `${JSON.stringify(catalogs, null, '\t')}\n`);
 }
 
-/**
- * `setVersion` бампает `canon/catalogs.json`, а те же три записи `@alxwlw/*` лежат
- * закоммиченными в `fixtures/{node,contracts}/pnpm-workspace.yaml` (`infra` каталогов не несёт).
- * Без этого шага канарейка `bun test` (`закоммиченная фикстура уже синхронизирована`) красит
- * каждый релиз — см. docs/release.md.
- */
-export function resyncFixtures(root: string): void {
-	for (const profile of ['node', 'contracts', 'infra']) {
-		const dir = join(root, 'fixtures', profile);
-		if (!existsSync(join(dir, 'pnpm-workspace.yaml'))) continue;
-		for (const d of planCatalogs(dir, loadCanon(readStackConfig(dir)))) d.apply();
-	}
-}
-
 if (import.meta.main) {
 	const version = Bun.argv[2] ?? '';
 	setVersion(process.cwd(), version);
-	resyncFixtures(process.cwd());
 }
