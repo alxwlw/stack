@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { expect, test } from 'bun:test';
 import { parse as parseYaml } from 'yaml';
 
-import { canonDir, canonGroups, loadCanon } from './canon.ts';
+import { canonDir, canonGroups, loadCanon, loadManifest } from './canon.ts';
 import { planCatalogs } from './catalogs.ts';
 import { checkRepo, syncRepo, type SyncResult } from './check.ts';
 import { readStackConfig, type StackConfig } from './config.ts';
@@ -58,12 +58,23 @@ test('fixtures/ хранит только семя: ни один файл фи�
 	}
 });
 
-test('фикстуры вместе включают каждую не устаревшую группу канона', () => {
-	const g = canonGroups();
-	const used = new Set(
-		['node', 'contracts', 'infra'].flatMap((p) => readStackConfig(join(FIXTURES, p)).with),
+// Группа в `with` ещё не значит, что её файлы доходят до фикстуры: профиль может их отсекать, а
+// каталожной группе нужен pnpm-workspace.yaml. Поэтому смотрим на то, что loadCanon реально отдаёт.
+test('фикстуры вместе получают каждый файл файловой группы и включают каждую каталожную группу', () => {
+	const profiles = ['node', 'contracts', 'infra'] as const;
+	const cfgs = profiles.map((p) => ({ p, cfg: readStackConfig(join(FIXTURES, p)) }));
+	const received = new Set(cfgs.flatMap(({ cfg }) => loadCanon(cfg).files.map((f) => f.dest)));
+	expect(
+		loadManifest()
+			.filter((f) => f.group != null && !received.has(f.dest))
+			.map((f) => `${f.group}: ${f.dest}`),
+	).toEqual([]);
+	const withWorkspace = new Set(
+		cfgs
+			.filter(({ p }) => existsSync(join(FIXTURES, p, 'pnpm-workspace.yaml')))
+			.flatMap(({ cfg }) => cfg.with),
 	);
-	expect([...g.files, ...g.catalogs].filter((x) => !used.has(x))).toEqual([]);
+	expect(canonGroups().catalogs.filter((g) => !withWorkspace.has(g))).toEqual([]);
 });
 
 for (const profile of ['node', 'contracts', 'infra'] as const) {
