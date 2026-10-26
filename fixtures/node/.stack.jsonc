@@ -1,6 +1,6 @@
 {
 	"profile": "node",
-	"with": ["libs", "moon-tasks"],
+	"with": ["libs", "moon-tasks", "knip", "depcruise"],
 	"exceptions": [
 		{
 			"catalog": "dev",

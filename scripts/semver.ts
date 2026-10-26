@@ -1,7 +1,5 @@
 /**
- * Только regex, без импортов. `scripts/version.ts` тянет за собой `packages/stack/src/catalogs.ts`
- * (пакет `yaml`) и `config.ts` (`jsonc-parser`) — доступные локально, но не в job `rollout` (запускается
- * с `install: false`, см. docs/release.md), поэтому у `rollout.ts` должен быть отдельный от него,
- * ничего не тянущий источник этой регулярки.
+ * Только regex, без импортов: его берут `scripts/version.ts` и `scripts/rollout.ts`, а job `rollout`
+ * запускается с `install: false` (см. docs/release.md) — источник регулярки не тянет пакеты.
  */
 export const SEMVER_RE = /^\d+\.\d+\.\d+(-[\w.]+)?$/;

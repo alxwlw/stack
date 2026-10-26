@@ -308,7 +308,7 @@ test('свой renovate.json5: proto видит канон-prototools, jsonata �
 	).toBe(true);
 });
 
-test('свой renovate.json5: канон, корень и фикстуры — одна группа canon pins', () => {
+test('свой renovate.json5: канон и корень — одна группа canon pins', () => {
 	const group = (ownRenovate.packageRules ?? []).find((r) => r.groupName === 'canon pins');
 	for (const f of [
 		'packages/stack/canon/files/prototools',
@@ -316,11 +316,6 @@ test('свой renovate.json5: канон, корень и фикстуры — 
 		'.prototools',
 		'pnpm-workspace.yaml',
 		'package.json',
-		'fixtures/node/.prototools',
-		'fixtures/node/pnpm-workspace.yaml',
-		'fixtures/contracts/.prototools',
-		'fixtures/contracts/pnpm-workspace.yaml',
-		'fixtures/infra/.prototools',
 	]) {
 		expect(existsSync(join(ROOT, f))).toBe(true);
 		expect((group?.matchFileNames ?? []).some((g) => new Bun.Glob(g).match(f))).toBe(true);
@@ -331,8 +326,8 @@ test('свой renovate.json5: канон, корень и фикстуры — 
 	]);
 });
 
-test('свой renovate.json5: inline-версия фикстуры под исключением не трогается', () => {
-	expect(ownRenovate.ignorePaths ?? []).toContain('fixtures/node/packages/**');
+test('свой renovate.json5: фикстуры Renovate не трогает', () => {
+	expect(ownRenovate.ignorePaths ?? []).toContain('fixtures/**');
 	// ignorePaths заменяет, а не дополняет config:recommended — node_modules надо вернуть явно.
 	expect(ownRenovate.ignorePaths ?? []).toContain('**/node_modules/**');
 });
