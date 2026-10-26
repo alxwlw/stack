@@ -26,9 +26,8 @@ export function checkInlineVersions(repo: Repo, canon: Canon): Finding[] {
 }
 
 export function checkEnginesNode(repo: Repo, canon: Canon): Finding[] {
-	const range = (repo.packages.get('package.json')?.engines as { node?: unknown } | undefined)
-		?.node;
-	if (typeof range !== 'string' || !range) return [];
+	const range = (repo.packages.get('package.json')?.engines as { node?: string } | undefined)?.node;
+	if (!range) return [];
 	if (Bun.semver.satisfies(canon.pins.node, range)) return [];
 	return [
 		{

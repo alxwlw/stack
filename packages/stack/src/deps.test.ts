@@ -78,6 +78,19 @@ test('engines.node, не покрывающий пин, — находка', () 
 	expect(engines('{ "name": "r" }')).toEqual([]);
 });
 
+test('engines.node не строкой (число) — находка, как на base: сравнение идёт как есть', () => {
+	expect(
+		found({ 'package.json': '{ "name": "r", "engines": { "node": 20 } }' }, 'engines-node').map(
+			(f) => [f.code, f.message],
+		),
+	).toEqual([
+		[
+			'engines-node',
+			'"20" doesn\'t cover the canon pin 25.4.1 — proto will rewrite .prototools from engines',
+		],
+	]);
+});
+
 // Порядок обхода пакетов не гарантирован: находки ищем через .find по code, а не по позиции.
 test('битый package.json — находка unreadable-file, остальные пакеты проверяются дальше', () => {
 	const result = found(
