@@ -157,13 +157,26 @@ type Preset = {
 	rules?: Record<string, unknown>;
 	overrides?: { files: string[]; rules?: Record<string, unknown> }[];
 };
-const PRESETS = ['base', 'node', 'nest', 'library', 'react', 'next'] as const;
+// Пресеты — по `exports` пакета: новый `./*.jsonc` попадает под гвард сам.
+const PRESETS = Object.keys(
+	(
+		JSON.parse(readFileSync(join(PKG, 'package.json'), 'utf8')) as {
+			exports: Record<string, string>;
+		}
+	).exports,
+)
+	.filter((k) => k.endsWith('.jsonc'))
+	.map((k) => k.replace(/^\.\//, '').replace(/\.jsonc$/, ''));
 const preset = (name: string): Preset =>
 	Bun.JSONC.parse(readFileSync(join(PKG, `${name}.jsonc`), 'utf8')) as Preset;
-const isOff = (v: unknown): boolean => v === 'off' || (Array.isArray(v) && v[0] === 'off');
+// Все формы «выключено», что принимает oxlint: "off", "allow", 0 — и массив с ними первым.
+const OFF = new Set<unknown>(['off', 'allow', 0]);
+const isOff = (v: unknown): boolean => OFF.has(Array.isArray(v) ? v[0] : v);
 // Признак type-aware — у самого oxlint, не в комментариях пресета.
 function typeAwareRules(): Set<string> {
 	const res = spawnSync(OXLINT_BIN, ['--rules', '--format', 'json'], { encoding: 'utf8' });
+	// Как в run(): без кода выхода и вывода падение oxlint читается как голый SyntaxError.
+	expect(res.status, `status=${res.status} stdout:\n${res.stdout}\nstderr:\n${res.stderr}`).toBe(0);
 	const rules = JSON.parse(res.stdout) as { scope: string; value: string; type_aware: boolean }[];
 	return new Set(rules.filter((r) => r.type_aware).map((r) => `${r.scope}/${r.value}`));
 }
@@ -185,6 +198,7 @@ test('каждое type-aware правило, включённое в пресе
 				.map(([k]) => k),
 		),
 	);
+	expect(on.size).toBeGreaterThan(0);
 	// Включённое без парной строки в override.
 	expect([...on].filter((r) => !off.has(r)).sort()).toEqual([]);
 	// Мёртвая строка override: правило нигде не включено.
@@ -192,7 +206,9 @@ test('каждое type-aware правило, включённое в пресе
 });
 
 test('plugins пресета включают plugins того, от кого он наследует', () => {
-	// Эффективные plugins: свои, иначе унаследованные по цепочке extends.
+	// oxlint сам объединяет plugins по extends; тест держит конвенцию канона: пресет
+	// повторяет полный список, чтобы читаться как один файл, а не как дельта родителя.
+	// Эффективные plugins родителя: свои, иначе унаследованные по цепочке extends.
 	const effective = (name: string): string[] => {
 		const p = preset(name);
 		if (p.plugins) return p.plugins;
