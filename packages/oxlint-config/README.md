@@ -67,8 +67,9 @@ subtree (a nested config REPLACES the root one for that subtree, which is why
 - **Build `.d.ts` before type-aware lint** in project-reference monorepos
   (`tsc --build` first; the canon moon-tasks `lint` has no typecheck dependency, so this applies to project-reference repos): unresolved imports produce `error`-typed values that
   fire the `no-unsafe-*` rules as phantoms.
-- **Top-level `plugins` REPLACES the inherited set** — a consumer overriding
-  `plugins` must restate the full list (see `react.jsonc` for the pattern).
+- **`plugins` merge across `extends`** — a consumer that adds a plugin lists
+  only the new one. The presets restate their full list anyway, so each reads as
+  one file (see `react.jsonc`); `oxlint-config.test.ts` keeps them complete.
 - **Never run `--fix-suggestions` in automation**: tsgolint's `require-await`
   "suggestion" rewrites public signatures (`Promise<T>` → `T`). Plain `--fix`
   is safe; outside `nest` (which turns `consistent-type-imports` off), the

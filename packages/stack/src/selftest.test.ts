@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { expect, test } from 'bun:test';
 import { parse as parseYaml } from 'yaml';
 
-import { canonDir, canonGroups, loadCanon, loadManifest } from './canon.ts';
+import { canonDir, canonGroups, filesFor, loadCanon, loadManifest } from './canon.ts';
 import { checkRepo, planRepo, syncRepo, type SyncResult } from './check.ts';
 import { readStackConfig, type StackConfig } from './config.ts';
 
@@ -64,15 +64,16 @@ test('fixtures/ хранит только семя: ни один файл фи�
 });
 
 // Группа в `with` ещё не значит, что её файлы доходят до фикстуры: профиль может их отсекать, а
-// каталожной группе нужен pnpm-workspace.yaml. Поэтому смотрим на то, что loadCanon реально отдаёт.
+// каталожной группе нужен pnpm-workspace.yaml. Поэтому смотрим, какие записи отбирает filesFor — тот же
+// отбор, что у loadCanon. Запись узнаём по src: dest в манифесте не уникален.
 test('фикстуры вместе получают каждый файл файловой группы и включают каждую каталожную группу', () => {
 	const profiles = ['node', 'contracts', 'infra'] as const;
 	const cfgs = profiles.map((p) => ({ p, cfg: readStackConfig(join(FIXTURES, p)) }));
-	const received = new Set(cfgs.flatMap(({ cfg }) => loadCanon(cfg).files.map((f) => f.dest)));
+	const received = new Set(cfgs.flatMap(({ cfg }) => filesFor(cfg).map((f) => f.src)));
 	expect(
 		loadManifest()
-			.filter((f) => f.group != null && !received.has(f.dest))
-			.map((f) => `${f.group}: ${f.dest}`),
+			.filter((f) => f.group != null && !received.has(f.src))
+			.map((f) => `${f.group}: ${f.src}`),
 	).toEqual([]);
 	const withWorkspace = new Set(
 		cfgs
