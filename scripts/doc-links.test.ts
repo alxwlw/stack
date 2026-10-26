@@ -8,7 +8,7 @@ const ROOT = join(import.meta.dir, '..');
 const SELF = relative(ROOT, import.meta.path);
 
 // В тестах пакетов `docs/*.md` — данные фикстур модельного репозитория потребителя
-// (`docs/spec.md`, `docs/plans/x.md`), а не ссылки на документы этого репозитория.
+// (их спеки и планы), а не ссылки на документы этого репозитория.
 const FIXTURE_TESTS = /^packages\/.+\.test\.ts$/;
 
 function trackedFiles(): string[] {
