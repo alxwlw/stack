@@ -1,7 +1,7 @@
 import { createSign } from 'node:crypto';
 import { appendFileSync } from 'node:fs';
 
-import { SEMVER_RE } from './semver.ts';
+import { stripTagPrefix } from './release.ts';
 
 const DISPATCH_WORKFLOW = 'stack-sync.yml';
 const DISPATCH_REF = 'main';
@@ -19,20 +19,6 @@ export interface RolloutResult {
 export interface RolloutDeps {
 	getToken: (installationId: number) => Promise<string>;
 	dispatch: (repo: string, token: string, version: string) => Promise<void>;
-}
-
-/**
- * `github.event.workflow_run.head_branch` для пуша тега — это ИМЯ ТЕГА (`v1.2.3`), не голая
- * версия. `sync.yml` строит из неё `stack/v${VERSION}` — необрезанный префикс даёт `stack/vv1.2.3`
- * (см. docs/release.md, «VERSION приходит с префиксом»). Валидирует результат и падает громко на
- * мусоре, а не молча шлёт его по всем потребителям.
- */
-export function stripTagPrefix(tag: string): string {
-	const version = tag.startsWith('v') ? tag.slice(1) : tag;
-	if (!SEMVER_RE.test(version)) {
-		throw new Error(`not a version tag: "${tag}"`);
-	}
-	return version;
 }
 
 /** Установка App, чей `account.login` совпадает с владельцем `owner/repo`, — токеном одной

@@ -17,17 +17,8 @@ jobs:
       - run: pnpm exec oxlint --type-aware
       - run: pnpm exec oxfmt --check .
       - run: pnpm exec tsc --build
-      - name: версия тега совпадает с версией всех четырёх пакетов
-        run: |
-          tag="${GITHUB_REF_NAME#v}"
-          stack=$(node -p "require('./packages/stack/package.json').version")
-          oxlint_config=$(node -p "require('./packages/oxlint-config/package.json').version")
-          tsconfig=$(node -p "require('./packages/tsconfig/package.json').version")
-          repo_rules=$(node -p "require('./packages/repo-rules/package.json').version")
-          if [ "$tag" != "$stack" ] || [ "$stack" != "$oxlint_config" ] || [ "$stack" != "$tsconfig" ] || [ "$stack" != "$repo_rules" ]; then
-            echo "тег $tag; версии пакетов: stack=$stack oxlint-config=$oxlint_config tsconfig=$tsconfig repo-rules=$repo_rules"
-            exit 1
-          fi
+      - name: версия тега совпадает с версией каждого пакета
+        run: bun scripts/release.ts check-tag "$GITHUB_REF_NAME"
   publish:
     needs: selftest
     runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
