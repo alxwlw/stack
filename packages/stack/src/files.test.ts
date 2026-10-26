@@ -19,7 +19,7 @@ const canon: Canon = {
 	pnpmPin: '11.15.0',
 };
 
-// Применить план — то, что делает `stack sync`; возвращает план, чтобы пинить его строки fix.
+// Применить план — то, что делает `stack sync`; возвращает applied из syncRepo, чтобы пинить строки fix.
 function sync(repo: string) {
 	return syncRepo(repo, canon, []).applied;
 }

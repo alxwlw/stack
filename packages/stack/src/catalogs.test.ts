@@ -22,7 +22,7 @@ function repoFixture(ws: string): string {
 	return dir;
 }
 
-// Применить план — то, что делает `stack sync`; возвращает план, чтобы пинить его строки fix.
+// Применить план — то, что делает `stack sync`; возвращает applied из syncRepo, чтобы пинить строки fix.
 function sync(repo: string, c: Canon = canon) {
 	return syncRepo(repo, c, []).applied;
 }

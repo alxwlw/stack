@@ -1,8 +1,9 @@
+import * as fs from 'node:fs';
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 
-import { expect, test } from 'bun:test';
+import { expect, spyOn, test } from 'bun:test';
 
 import type { Canon } from './canon.ts';
 import { checkRepo, syncRepo } from './check.ts';
@@ -13,6 +14,8 @@ function withRenovate(repo: string): string {
 	writeFileSync(join(repo, 'renovate.json5'), `{ extends: ['${STACK_RENOVATE_PRESET}'] }\n`);
 	return repo;
 }
+
+const realWrite = fs.writeFileSync;
 
 const canon: Canon = {
 	files: [{ dest: '.editorconfig', content: 'root = true\n' }],
@@ -174,4 +177,26 @@ test('сломанный корневой package.json — одна находк
 			`workspace: ${withWorkspace}`,
 		).toEqual(['package.json']);
 	}
+});
+
+// DX-17: sync пишет каждый файл один раз, сколько бы находок в нём ни было.
+test('syncRepo: два дрейфа каталога, packageManager и файл — по одной записи на путь', () => {
+	const repo = withRenovate(mkdtempSync(join(tmpdir(), 'stack-repo-')));
+	writeFileSync(join(repo, 'pnpm-workspace.yaml'), 'packages:\n  - packages/*\n');
+	writeFileSync(join(repo, 'package.json'), '{ "packageManager": "pnpm@1.0.0" }\n');
+	const twoEntries: Canon = {
+		...canon,
+		catalogs: { dev: { oxlint: '1.83.0', typescript: '7.0.2' } },
+	};
+	const writes: string[] = [];
+	const spy = spyOn(fs, 'writeFileSync').mockImplementation(((path: string, data: string) => {
+		writes.push(relative(repo, path));
+		return realWrite(path, data);
+	}) as typeof fs.writeFileSync);
+	try {
+		expect(syncRepo(repo, twoEntries, []).applied).toHaveLength(4);
+	} finally {
+		spy.mockRestore();
+	}
+	expect(writes.toSorted()).toEqual(['.editorconfig', 'package.json', 'pnpm-workspace.yaml']);
 });

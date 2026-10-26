@@ -7,15 +7,16 @@ import { parseDocument } from 'yaml';
 import type { Change } from './findings.ts';
 
 function renderFile(file: string, current: string | undefined, changes: Change[]): string {
-	const first = changes[0];
-	if (first === undefined) return current ?? '';
+	// Список по файлу не бывает пустым: правки группирует renderChanges.
+	const first = changes[0] as Change;
 	if (changes.some((c) => c.kind !== first.kind)) {
 		throw new Error(`conflicting changes for ${file}`);
 	}
 	if (first.kind === 'write') {
 		// Несколько write в один файл: побеждает последний (дубликат dest ловит canon.test.ts).
-		const last = changes.at(-1);
-		return last?.kind === 'write' ? last.content : first.content;
+		let content = '';
+		for (const c of changes) if (c.kind === 'write') content = c.content;
+		return content;
 	}
 	if (first.kind === 'yaml-set') {
 		const doc = parseDocument(current ?? '');
