@@ -25,11 +25,11 @@ _Avoid_: feature, module, flag
 ### What the canon holds
 
 **Canon file**:
-A file the canon places at a path (`dest`) in a consumer, listed in `canon/manifest.json` and stored under `canon/files/`. Its strategy is either **verbatim** (the consumer's copy must equal the canon's byte for byte) or **seed** (`create-if-absent`: written once, then owned by the consumer, and only its absence is drift). A seed may name `satisfiedBy` paths, other legitimate names that already close the seeding. `CanonFile`, `SyncStrategy` in `packages/stack/src/canon.ts`; `planFiles` in `packages/stack/src/files.ts`.
+A file the canon places at a path (`dest`) in a consumer, listed in `canon/manifest.json` and stored under `canon/files/`. Its strategy is either **verbatim** (the consumer's copy must equal the canon's byte for byte) or **seed** (`create-if-absent`: written once, then owned by the consumer, and only its absence is drift; not the seed of a **Fixture**, which holds no canon file). A seed may name `satisfiedBy` paths, other legitimate names that already close the seeding. `CanonFile`, `SyncStrategy` in `packages/stack/src/canon.ts`; `planFiles` in `packages/stack/src/files.ts`.
 _Avoid_: template (for a verbatim file), config file
 
 **Catalog**:
-A set of pinned dependency versions that lands in a consumer's `pnpm-workspace.yaml#catalogs`, one catalog per catalog group. `CanonCatalogs` in `packages/stack/src/canon.ts`, `planCatalogs` in `packages/stack/src/catalogs.ts`.
+A set of pinned dependency versions that lands in a consumer's `pnpm-workspace.yaml#catalogs`, one catalog for `dev` (every consumer) and one per catalog group enabled in `with`. `CanonCatalogs` in `packages/stack/src/canon.ts`, `planCatalogs` in `packages/stack/src/catalogs.ts`.
 _Avoid_: version list, lockfile
 
 **Catalog entry**:
@@ -51,7 +51,7 @@ A finding that `stack sync` can close, because it carries the action to do so (`
 _Avoid_: diff, mismatch
 
 **Exception**:
-A recorded reason, in `.stack.jsonc`, why a consumer deliberately differs from the canon. It names an **address** (a `file`, or a `catalog` plus `name`) and covers the findings at that address; a covered finding is **held** (reported as suppressed, and left unapplied by `sync`). An exception that covers nothing any more is itself a `stale-exception` finding. `Exception`, `covers`, `applyExceptions` in `packages/stack/src/findings.ts`; `held` in `SyncResult`, `packages/stack/src/check.ts`.
+A recorded reason, in `.stack.jsonc`, why a consumer deliberately differs from the canon. It names an **address** (a `file`, or a `catalog` plus `name`) and covers the findings at that address; a covered finding is **held** (reported as suppressed, and left unapplied by `sync`). An exception that covers nothing any more is itself a `stale-exception` finding. An exception on a `catalog` plus `name` also holds the `inline-version` finding of the same package in any `package.json` (the knip case in `fixtures/node`). `Exception` in `packages/stack/src/config.ts`; `covers`, `applyExceptions` in `packages/stack/src/findings.ts`; `held` in `SyncResult`, `packages/stack/src/check.ts`.
 _Avoid_: ignore, override, waiver
 
 ### Commands
@@ -81,7 +81,7 @@ _Avoid_: deploy, propagation
 ### Tests of the canon
 
 **Fixture**:
-A minimal consumer under `fixtures/<profile>/` holding only its seed (typically `.stack.jsonc`, a `package.json` and a workspace file without catalogs). Tests copy it and run `syncRepo` to obtain what a real consumer would have (`syncedFixture` in `packages/stack/src/selftest.test.ts`).
+A minimal consumer under `fixtures/<profile>/` holding only its seed, which contains no canon file at all, seed-strategy ones included (typically `.stack.jsonc`, a `package.json` and a workspace file without catalogs). Tests copy it and run `syncRepo` to obtain what a real consumer would have (`syncedFixture` in `packages/stack/src/selftest.test.ts`).
 _Avoid_: snapshot, example repo
 
 **Dogfood test**:
