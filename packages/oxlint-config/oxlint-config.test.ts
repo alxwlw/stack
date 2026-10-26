@@ -151,6 +151,69 @@ test('type-aware правила молчат в конфигах инструм�
 	expect(floating(join('src', 'app.config.ts'))).toBe(1);
 });
 
+type Preset = {
+	extends?: string[];
+	plugins?: string[];
+	rules?: Record<string, unknown>;
+	overrides?: { files: string[]; rules?: Record<string, unknown> }[];
+};
+const PRESETS = ['base', 'node', 'nest', 'library', 'react', 'next'] as const;
+const preset = (name: string): Preset =>
+	Bun.JSONC.parse(readFileSync(join(PKG, `${name}.jsonc`), 'utf8')) as Preset;
+const isOff = (v: unknown): boolean => v === 'off' || (Array.isArray(v) && v[0] === 'off');
+// Признак type-aware — у самого oxlint, не в комментариях пресета.
+function typeAwareRules(): Set<string> {
+	const res = spawnSync(OXLINT_BIN, ['--rules', '--format', 'json'], { encoding: 'utf8' });
+	const rules = JSON.parse(res.stdout) as { scope: string; value: string; type_aware: boolean }[];
+	return new Set(rules.filter((r) => r.type_aware).map((r) => `${r.scope}/${r.value}`));
+}
+
+test('каждое type-aware правило, включённое в пресете, выключено в слое disableTypeChecked base — и только оно', () => {
+	const ta = typeAwareRules();
+	expect(ta.size).toBeGreaterThan(0);
+	const layer = preset('base').overrides?.find((o) => o.files.includes('**/*.test.ts'));
+	expect(layer).toBeDefined();
+	const off = new Set(
+		Object.entries(layer?.rules ?? {})
+			.filter(([k, v]) => isOff(v) && ta.has(k))
+			.map(([k]) => k),
+	);
+	const on = new Set(
+		PRESETS.flatMap((p) =>
+			Object.entries(preset(p).rules ?? {})
+				.filter(([k, v]) => !isOff(v) && ta.has(k))
+				.map(([k]) => k),
+		),
+	);
+	// Включённое без парной строки в override.
+	expect([...on].filter((r) => !off.has(r)).sort()).toEqual([]);
+	// Мёртвая строка override: правило нигде не включено.
+	expect([...off].filter((r) => !on.has(r)).sort()).toEqual([]);
+});
+
+test('plugins пресета включают plugins того, от кого он наследует', () => {
+	// Эффективные plugins: свои, иначе унаследованные по цепочке extends.
+	const effective = (name: string): string[] => {
+		const p = preset(name);
+		if (p.plugins) return p.plugins;
+		const parent = p.extends?.[0];
+		return parent ? effective(parent.replace(/^\.\//, '').replace(/\.jsonc$/, '')) : [];
+	};
+	let checked = 0;
+	for (const name of PRESETS) {
+		const p = preset(name);
+		if (!p.plugins || !p.extends?.length) continue;
+		for (const parent of p.extends) {
+			const parentName = parent.replace(/^\.\//, '').replace(/\.jsonc$/, '');
+			const missing = effective(parentName).filter((pl) => !p.plugins?.includes(pl));
+			expect(missing, `${name} теряет plugins ${parentName}`).toEqual([]);
+			checked += 1;
+		}
+	}
+	// Контроль непустоты: сейчас react ← base и next ← react.
+	expect(checked).toBeGreaterThan(0);
+});
+
 test('consumer-style extends from another directory resolves presets + jsPlugins', () => {
 	const hits = run(join('fixtures', 'consumer', '.oxlintrc.consumer.jsonc'), [
 		join(FIXTURES, 'nest-di.ts'),

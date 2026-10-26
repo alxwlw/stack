@@ -138,6 +138,7 @@
 				"**/*.mjs",
 				"**/*.cjs",
 			],
+			// Список сверяет тест «каждое type-aware правило … выключено в слое disableTypeChecked» (oxlint-config.test.ts).
 			"rules": {
 				// tseslint's disableTypeChecked also covered naming-convention (its
 				// selector engine is type-capable) — mirror that scope for the node/
