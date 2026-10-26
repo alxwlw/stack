@@ -240,6 +240,8 @@ the latest `v1.x.y` for consumers pinning a major:
 }
 ```
 
+Step by step: [docs/release.md](docs/release.md).
+
 ### Keeping the canon current
 
 Renovate runs on this repo too (`.github/workflows/renovate-self.yml`, Mondays 06:00 UTC, needs a

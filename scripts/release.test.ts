@@ -44,15 +44,27 @@ test('stripTagPrefix: плавающий major-тег и мусор — ошиб
 	expect(() => stripTagPrefix('main')).toThrow();
 });
 
+// Ожидание строится из того, что тест сам положил во временное дерево: новый пакет в
+// настоящем packages/ не должен красить эти тесты.
+function packagesTree(manifests: string[]): string {
+	const root = mkdtempSync(join(tmpdir(), 'stack-dirs-'));
+	for (const name of manifests) {
+		mkdirSync(join(root, 'packages', name), { recursive: true });
+		writeFileSync(join(root, 'packages', name, 'package.json'), '{}');
+	}
+	return root;
+}
+
 test('packageDirs: все каталоги packages/ с package.json, по алфавиту', () => {
-	expect(packageDirs(REPO_ROOT)).toEqual(['oxlint-config', 'repo-rules', 'stack', 'tsconfig']);
+	const root = packagesTree(['zeta', 'alpha', 'mid']);
+	expect(packageDirs(root)).toEqual(['alpha', 'mid', 'zeta']);
 });
 
-test('packageDirs: пропускает файлы и каталоги без package.json', () => {
-	const root = fixtureRoot();
+test('packageDirs: пропускает каталог без package.json и файл в packages/', () => {
+	const root = packagesTree(['alpha']);
 	mkdirSync(join(root, 'packages', 'no-manifest'));
 	writeFileSync(join(root, 'packages', 'stray-file'), '');
-	expect(packageDirs(root)).toEqual(['oxlint-config', 'repo-rules', 'stack', 'tsconfig']);
+	expect(packageDirs(root)).toEqual(['alpha']);
 });
 
 describe('setVersion', () => {
@@ -183,7 +195,7 @@ describe('связность релиза', () => {
 	});
 });
 
-// Job rollout идёт с install: false (docs/release.md, «Why the rollout job skips install»).
+// Job dispatch воркфлоу rollout идёт с install: false (docs/release.md, «Why the rollout job skips install»).
 test('rollout.ts тянет только node:* и release.ts, release.ts — только node:*', () => {
 	const imports = (f: string): string[] =>
 		new Bun.Transpiler({ loader: 'ts' })

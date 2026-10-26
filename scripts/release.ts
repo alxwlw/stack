@@ -1,5 +1,5 @@
 // Модуль релиза: форма версии, lockstep-версия пакетов и проверка тега. Импортирует только `node:*`:
-// job rollout идёт с `install: false` (docs/release.md, «Why the rollout job skips install»),
+// job dispatch воркфлоу rollout идёт с `install: false` (docs/release.md, «Why the rollout job skips install»),
 // а rollout.ts тянет отсюда stripTagPrefix.
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -9,7 +9,7 @@ export const SEMVER_RE = /^\d+\.\d+\.\d+(-[\w.]+)?$/;
 /**
  * `github.event.workflow_run.head_branch` для пуша тега — это ИМЯ ТЕГА (`v1.2.3`), не голая
  * версия. `sync.yml` строит из неё `stack/v${VERSION}` — необрезанный префикс даёт `stack/vv1.2.3`
- * (см. docs/release.md, «VERSION приходит с префиксом»). Валидирует результат и падает громко на
+ * (см. docs/release.md, «VERSION arrives with the tag prefix»). Валидирует результат и падает громко на
  * мусоре, а не молча шлёт его по всем потребителям.
  */
 export function stripTagPrefix(tag: string): string {
@@ -22,9 +22,9 @@ export function stripTagPrefix(tag: string): string {
 
 /** Каталоги `packages/*` с `package.json`, отсортированные: пакет, добавленный в `packages/`, входит в релиз сам. */
 export function packageDirs(root: string): string[] {
-	return readdirSync(join(root, 'packages'), { withFileTypes: true })
-		.filter((e) => e.isDirectory() && existsSync(join(root, 'packages', e.name, 'package.json')))
-		.map((e) => e.name)
+	// Файл в packages/ отсеивает сам existsSync: `<файл>/package.json` не существует.
+	return readdirSync(join(root, 'packages'))
+		.filter((name) => existsSync(join(root, 'packages', name, 'package.json')))
 		.sort();
 }
 
