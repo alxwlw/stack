@@ -5,8 +5,8 @@
 	// Intended usage: drop a nested `.oxlintrc.json` extending this preset into
 	// the browser-code root (oxlint auto-discovers nested configs per subtree),
 	// or extend it from the repo root when the whole repo is a frontend.
-	// NOTE top-level `plugins` REPLACES the inherited set — the full list is
-	// restated here on purpose.
+	// NOTE oxlint merges `plugins` across `extends`; the full list is restated here
+	// on purpose so the preset reads as one file (kept complete by oxlint-config.test.ts).
 	"extends": ["./base.jsonc"],
 	"plugins": ["typescript", "oxc", "unicorn", "import", "react", "jsx-a11y"],
 	"env": {
