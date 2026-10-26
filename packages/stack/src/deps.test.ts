@@ -1,13 +1,9 @@
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
-
 import { expect, test } from 'bun:test';
 
-import { canonDir } from './canon.ts';
 import { check } from './check.ts';
 import { STACK_RENOVATE_PRESET } from './deps.ts';
 import type { FindingCode } from './findings.ts';
-import { testCanon, testRepo } from './testkit.ts';
+import { canonFile, testCanon, testRepo } from './testkit.ts';
 
 // Пин node у testCanon нарочно не совпадает с реальным каноном (26.x): иначе тест engines-node
 // не отличит canon.pins.node от зашитой константы.
@@ -223,7 +219,7 @@ test('renovate-preset: битый JSON5 — одна unreadable-file, пресе
 });
 
 test('renovate-preset: засев канона проходит проверку', () => {
-	const seed = readFileSync(join(canonDir(), 'files', 'renovate.template.json5'), 'utf8');
+	const seed = canonFile('renovate.json5');
 	expect(renovate({ 'renovate.json5': seed })).toEqual([]);
 });
 

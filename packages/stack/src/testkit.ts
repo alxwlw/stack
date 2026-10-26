@@ -4,7 +4,8 @@ import { dirname, join } from 'node:path';
 
 import { stringify } from 'yaml';
 
-import type { Canon } from './canon.ts';
+import { type Canon, canonGroups, loadCanon } from './canon.ts';
+import type { Profile } from './config.ts';
 import { STACK_RENOVATE_PRESET } from './deps.ts';
 import { RENOVATE_CONFIGS, type Repo, repoFromFiles } from './repo.ts';
 
@@ -12,6 +13,16 @@ import { RENOVATE_CONFIGS, type Repo, repoFromFiles } from './repo.ts';
 // зашитая в правило, осталась бы незамеченной (engines-node в deps.ts, packageManager в package-manager.ts).
 export function testCanon(over: Partial<Canon> = {}): Canon {
 	return { files: [], catalogs: {}, pins: { node: '25.4.1', pnpm: '10.99.0' }, ...over };
+}
+
+// Содержимое канон-файла по его dest, как его видит loadCanon: все группы включены. Тесты, сверяющие
+// канон с корнем репозитория или с самим собой, берут файл здесь, а не по пути в canon/files.
+export function canonFile(dest: string, profile: Profile = 'node'): string {
+	const g = canonGroups();
+	const canon = loadCanon({ profile, with: [...g.files, ...g.catalogs], exceptions: [] });
+	const file = canon.files.find((f) => f.dest === dest);
+	if (!file) throw new Error(`no canon file ${dest} for profile ${profile}`);
+	return file.content;
 }
 
 // Репозиторий, согласованный с каноном: файлы канона, pnpm-workspace.yaml с его каталогами,

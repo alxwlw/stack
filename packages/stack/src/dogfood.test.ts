@@ -15,7 +15,8 @@ import { expect, test } from 'bun:test';
 import JSON5 from 'json5';
 import { parse as parseYaml } from 'yaml';
 
-import { canonDir, loadCanon, loadCatalogs } from './canon.ts';
+import { loadCanon, loadCatalogs } from './canon.ts';
+import { canonFile } from './testkit.ts';
 
 // Репозиторий канона сознательно не вызывает `stack sync` на себе (его каталог dev называет
 // версии @alxwlw/* как workspace:*, sync их сломает) — поэтому ничто не мешает корневым файлам
@@ -31,13 +32,13 @@ function pinLines(text: string): string[] {
 
 test('корневой .oxfmtrc.jsonc — байт-в-байт копия canon/files/oxfmtrc.jsonc', () => {
 	const root = readFileSync(join(ROOT, '.oxfmtrc.jsonc'), 'utf8');
-	const canon = readFileSync(join(canonDir(), 'files', 'oxfmtrc.jsonc'), 'utf8');
+	const canon = canonFile('.oxfmtrc.jsonc');
 	expect(root).toBe(canon);
 });
 
 test('корневой .prototools — строки-пины совпадают с canon/files/prototools', () => {
 	const root = pinLines(readFileSync(join(ROOT, '.prototools'), 'utf8'));
-	const canon = pinLines(readFileSync(join(canonDir(), 'files', 'prototools'), 'utf8'));
+	const canon = pinLines(canonFile('.prototools'));
 	expect(root).toEqual(canon);
 });
 
@@ -117,9 +118,7 @@ test('канон-файл workflow-renovate.yml зовёт корневой reus
 	const reusable = parseYaml(
 		readFileSync(join(ROOT, '.github', 'workflows', 'renovate.yml'), 'utf8'),
 	) as Workflow;
-	const consumer = parseYaml(
-		readFileSync(join(canonDir(), 'files', 'workflow-renovate.yml'), 'utf8'),
-	) as Workflow;
+	const consumer = parseYaml(canonFile('.github/workflows/renovate.yml')) as Workflow;
 	const job = consumer.jobs?.renovate;
 	expect(job?.uses).toBe('alxwlw/stack/.github/workflows/renovate.yml@v1');
 	const inputs = Object.keys(reusable.on?.workflow_call?.inputs ?? {});
@@ -146,9 +145,7 @@ test('канон-файл workflow-stack-sync.yml передаёт reusable sync
 	const reusable = parseYaml(
 		readFileSync(join(ROOT, '.github', 'workflows', 'sync.yml'), 'utf8'),
 	) as Workflow;
-	const consumer = parseYaml(
-		readFileSync(join(canonDir(), 'files', 'workflow-stack-sync.yml'), 'utf8'),
-	) as Workflow;
+	const consumer = parseYaml(canonFile('.github/workflows/stack-sync.yml')) as Workflow;
 	const job = consumer.jobs?.sync;
 	expect(job?.uses).toBe('alxwlw/stack/.github/workflows/sync.yml@v1');
 	const inputs = Object.keys(reusable.on?.workflow_call?.inputs ?? {});

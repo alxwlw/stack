@@ -13,7 +13,7 @@ import { join } from 'node:path';
 
 import { expect, test } from 'bun:test';
 
-import { canonDir } from './canon.ts';
+import { canonFile } from './testkit.ts';
 
 const ROOT = join(import.meta.dir, '..', '..', '..');
 const OXFMT_BIN = join(ROOT, 'node_modules', '.bin', 'oxfmt');
@@ -29,10 +29,7 @@ const SHUFFLED_PACKAGE_JSON = {
 
 function formatWithCanonConfig(pkg: Record<string, unknown>): string[] {
 	const dir = mkdtempSync(join(tmpdir(), 'stack-oxfmtrc-'));
-	writeFileSync(
-		join(dir, '.oxfmtrc.jsonc'),
-		readFileSync(join(canonDir(), 'files', 'oxfmtrc.jsonc')),
-	);
+	writeFileSync(join(dir, '.oxfmtrc.jsonc'), canonFile('.oxfmtrc.jsonc'));
 	const target = join(dir, 'package.json');
 	writeFileSync(target, `${JSON.stringify(pkg, null, '\t')}\n`);
 	const res = spawnSync(OXFMT_BIN, [target], { cwd: dir, encoding: 'utf8' });
