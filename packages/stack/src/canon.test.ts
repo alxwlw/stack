@@ -8,10 +8,9 @@ import { parse as parseJsonc } from 'jsonc-parser';
 import { canonGroups, filesFor, loadCanon, loadManifest, parsePins } from './canon.ts';
 import { PROFILES, type StackConfig, StackConfigError } from './config.ts';
 import { RENOVATE_CONFIGS } from './repo.ts';
-import { canonFile } from './testkit.ts';
+import { canonFile, SCHEMA_PATH } from './testkit.ts';
 
-// Не канон-файлы: схема конфигурации и README лежат рядом с пакетом, а не в canon/.
-const SCHEMA_PATH = join(import.meta.dir, '..', 'schema.json');
+// Не канон-файл: README лежит рядом с пакетом, а не в canon/.
 const README_PATH = join(import.meta.dir, '..', '..', '..', 'README.md');
 
 // Ruling 33: filesFor() только фильтрует список канон-файлов — оно не замечает, если два

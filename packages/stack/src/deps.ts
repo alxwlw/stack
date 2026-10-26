@@ -4,13 +4,18 @@ import { DEPENDABOT_CONFIGS, type Repo } from './repo.ts';
 
 // Только при pnpm-workspace.yaml: без него каталогов нет, и inline-версия — единственный способ.
 export function checkInlineVersions(repo: Repo, canon: Canon): Finding[] {
-	if (!repo.files.has('pnpm-workspace.yaml')) return [];
+	if (!repo.paths.has('pnpm-workspace.yaml')) return [];
 	const canonNames = new Set(Object.values(canon.catalogs).flatMap((e) => Object.keys(e)));
 	const findings: Finding[] = [];
 	for (const [file, pkg] of repo.packages) {
 		for (const section of ['dependencies', 'devDependencies'] as const) {
-			for (const [name, spec] of Object.entries((pkg[section] ?? {}) as Record<string, string>)) {
-				if (!canonNames.has(name) || spec.startsWith('catalog:') || spec.startsWith('workspace:')) {
+			for (const [name, spec] of Object.entries((pkg[section] ?? {}) as Record<string, unknown>)) {
+				if (
+					typeof spec !== 'string' ||
+					!canonNames.has(name) ||
+					spec.startsWith('catalog:') ||
+					spec.startsWith('workspace:')
+				) {
 					continue;
 				}
 				findings.push({
@@ -76,7 +81,7 @@ export function checkRenovatePreset(repo: Repo): Finding[] {
 // Renovate — единственный бот канона: второй бот открывал бы те же PR, а dependabot не умеет
 // выключить каталоги канона или .prototools.
 export function checkDependabot(repo: Repo): Finding[] {
-	return DEPENDABOT_CONFIGS.filter((p) => repo.files.has(p)).map((p) => ({
+	return DEPENDABOT_CONFIGS.filter((p) => repo.paths.has(p)).map((p) => ({
 		code: 'dependabot-config',
 		target: p,
 		message: `${p}: the canon's dependency bot is Renovate — move these rules into the Renovate config and delete the file`,

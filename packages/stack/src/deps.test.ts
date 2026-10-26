@@ -33,6 +33,15 @@ test('пакет канона, объявленный версией вмест�
 	]);
 });
 
+test('нестроковая версия зависимости — не падение и не находка (DP-036)', () => {
+	expect(() =>
+		found({ 'package.json': '{"devDependencies":{"oxlint":5,"react":null}}' }, 'inline-version'),
+	).not.toThrow();
+	expect(
+		found({ 'package.json': '{"devDependencies":{"oxlint":5,"react":null}}' }, 'inline-version'),
+	).toEqual([]);
+});
+
 test('catalog: нарушением не считается', () => {
 	expect(
 		found(

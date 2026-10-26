@@ -1,11 +1,11 @@
-import { chmodSync, symlinkSync } from 'node:fs';
+import { chmodSync, existsSync, readFileSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { expect, test } from 'bun:test';
 
-import { check } from './check.ts';
+import { check, checkRepo, plan, syncRepo } from './check.ts';
 import { loadRepo, repoFromFiles } from './repo.ts';
-import { repoDir, testCanon } from './testkit.ts';
+import { repoDir, testCanon, testRepo } from './testkit.ts';
 
 const byTarget = (r: { unreadable: { target: string }[] }) => r.unreadable.map((f) => f.target);
 
@@ -27,6 +27,7 @@ test('битый корневой package.json — одна unreadable-file, с 
 test('битый вложенный package.json — одна находка на файл, соседний разобран', () => {
 	const repo = repoFromFiles(
 		new Map([
+			['pnpm-workspace.yaml', 'packages: []'],
 			['package.json', '{"name":"root"}'],
 			['packages/a/package.json', '{"name":"a"}'],
 			['packages/b/package.json', '{'],
@@ -37,15 +38,21 @@ test('битый вложенный package.json — одна находка н�
 	expect(repo.packages.get('packages/a/package.json')).toEqual({ name: 'a' });
 });
 
-test('порядок unreadable: корневой, вложенные, Renovate', () => {
+test('порядок unreadable: корневой, pnpm-workspace.yaml, вложенные, Renovate', () => {
 	const repo = repoFromFiles(
 		new Map([
 			['renovate.json5', '{'],
 			['packages/a/package.json', '{'],
+			['pnpm-workspace.yaml', 'a: [\n'],
 			['package.json', '{'],
 		]),
 	);
-	expect(byTarget(repo)).toEqual(['package.json', 'packages/a/package.json', 'renovate.json5']);
+	expect(byTarget(repo)).toEqual([
+		'package.json',
+		'pnpm-workspace.yaml',
+		'packages/a/package.json',
+		'renovate.json5',
+	]);
 });
 
 test('битый renovate.json5 — одна unreadable-file, renovate есть, config нет', () => {
@@ -172,6 +179,7 @@ test('читает dest и satisfiedBy канон-файлов', () => {
 test('package.json не объект (null, массив) — разобран как пустой, не находка', () => {
 	const repo = repoFromFiles(
 		new Map([
+			['pnpm-workspace.yaml', 'packages: []'],
 			['package.json', 'null'],
 			['a/package.json', '[1]'],
 		]),
@@ -185,6 +193,7 @@ test('читаются только файлы: каталог по пути к�
 	const dir = repoDir({ 'seed.txt/inner.txt': 'x' });
 	const repo = loadRepo(dir, testCanon({ files: [{ dest: 'seed.txt', content: 'a' }] }));
 	expect(repo.files.has('seed.txt')).toBe(false);
+	expect(repo.paths.has('seed.txt')).toBe(true);
 	expect(repo.unreadable).toEqual([]);
 });
 
@@ -280,3 +289,161 @@ test('петля симлинков (ELOOP) вместо конфига Renovate
 	expect(repo.renovate).toEqual({ path: '.renovaterc.json', config: {} });
 	expect(repo.unreadable).toEqual([]);
 });
+
+test('paths: ключи files и существующие нечитаемые пути; несуществующий пути не даёт', () => {
+	expect(repoFromFiles(new Map([['a.txt', 'x']]), ['dir']).paths).toEqual(
+		new Set(['a.txt', 'dir']),
+	);
+	const repo = loadRepo(
+		repoDir({ 'package.json': '{}', '.editorconfig/inner.txt': 'x' }),
+		testCanon({
+			files: [
+				{ dest: '.editorconfig', content: 'a' },
+				{ dest: '.absent', content: 'b' },
+			],
+		}),
+	);
+	expect(repo.paths.has('package.json')).toBe(true);
+	expect(repo.paths.has('.editorconfig')).toBe(true);
+	expect(repo.paths.has('.absent')).toBe(false);
+	expect(repo.paths.has('pnpm-workspace.yaml')).toBe(false);
+});
+
+test('pnpm-workspace.yaml разобран в repo.workspace; без файла и при ошибках YAML документа нет', () => {
+	const ok = repoFromFiles(
+		new Map([['pnpm-workspace.yaml', 'catalogs:\n  dev:\n    oxlint: 1.0.0\n']]),
+	);
+	expect(ok.workspace?.getIn(['catalogs', 'dev', 'oxlint'])).toBe('1.0.0');
+	expect(ok.unreadable).toEqual([]);
+	expect(repoFromFiles(new Map()).workspace).toBeUndefined();
+	const broken = repoFromFiles(new Map([['pnpm-workspace.yaml', 'catalogs: [\n  dev: {\n']]));
+	expect(broken.workspace).toBeUndefined();
+	expect(broken.unreadable).toHaveLength(1);
+	expect(broken.unreadable[0]).toMatchObject({
+		code: 'unreadable-file',
+		target: 'pnpm-workspace.yaml',
+	});
+	expect(broken.unreadable[0]?.message).toStartWith('pnpm-workspace.yaml does not parse: ');
+});
+
+test('вложенные package.json без pnpm-workspace.yaml среди путей repoFromFiles не разбирает', () => {
+	const files = new Map([
+		['package.json', '{}'],
+		['packages/a/package.json', '{'],
+		['packages/b/package.json', '{}'],
+	]);
+	const bare = repoFromFiles(files);
+	expect([...bare.packages.keys()]).toEqual(['package.json']);
+	expect(bare.unreadable).toEqual([]);
+	// путь есть, но не прочитан (каталог): вложенные всё равно в области
+	expect(byTarget(repoFromFiles(files, ['pnpm-workspace.yaml']))).toEqual([
+		'packages/a/package.json',
+	]);
+});
+
+test('pnpm-workspace.yaml — каталог: одна находка, документа нет, вложенные package.json читаются', () => {
+	const dir = repoDir({
+		'pnpm-workspace.yaml/inner.txt': 'x',
+		'package.json': '{}',
+		'packages/a/package.json': '{',
+	});
+	const repo = loadRepo(dir, testCanon());
+	expect(byTarget(repo)).toEqual(['pnpm-workspace.yaml', 'packages/a/package.json']);
+	expect(repo.unreadable[0]?.message).toStartWith('pnpm-workspace.yaml does not parse: EISDIR');
+	expect(repo.workspace).toBeUndefined();
+	expect(repo.paths.has('pnpm-workspace.yaml')).toBe(true);
+	// check не молчит и не плодит каталожных находок: ровно эта одна
+	const canon = testCanon({ catalogs: { dev: { oxlint: '1.83.0' } } });
+	expect(
+		checkRepo(dir, canon, []).filter(
+			(f) => f.target.startsWith('pnpm-workspace') || f.code.startsWith('catalog'),
+		),
+	).toMatchObject([{ code: 'unreadable-file', target: 'pnpm-workspace.yaml' }]);
+});
+
+test.skipIf(process.getuid?.() === 0)(
+	'нечитаемый (EACCES) pnpm-workspace.yaml — одна находка',
+	() => {
+		const dir = repoDir({ 'pnpm-workspace.yaml': 'packages: []', 'package.json': '{}' });
+		chmodSync(join(dir, 'pnpm-workspace.yaml'), 0);
+		const repo = loadRepo(dir, testCanon());
+		expect(byTarget(repo)).toEqual(['pnpm-workspace.yaml']);
+		expect(repo.unreadable[0]?.message).toStartWith('pnpm-workspace.yaml does not parse: EACCES');
+	},
+);
+
+test('pnpm-workspace.yaml с ошибками YAML — одна находка вместо катушки catalog-missing, sync не падает', () => {
+	const canon = testCanon({ catalogs: { dev: { oxlint: '1.83.0', typescript: '7.0.2' } } });
+	const broken = 'catalogs: [\n  dev: {\n';
+	expect(check(testRepo(canon, { 'pnpm-workspace.yaml': broken }), canon, [])).toMatchObject([
+		{ code: 'unreadable-file', target: 'pnpm-workspace.yaml' },
+	]);
+	const dir = repoDir({ 'pnpm-workspace.yaml': broken, 'package.json': '{}' });
+	expect(syncRepo(dir, canon, []).applied.filter((d) => d.code.startsWith('catalog'))).toEqual([]);
+	expect(readFileSync(join(dir, 'pnpm-workspace.yaml'), 'utf8')).toBe(broken);
+});
+
+// existsSync-паритет: каталог на месте satisfiedBy — файл «есть», второй конфиг не засевается.
+test('каталог renovate.json при каноне renovate.json5 (satisfiedBy) — plan без file-missing', () => {
+	const canon = testCanon({
+		files: [
+			{
+				dest: 'renovate.json5',
+				content: '{}',
+				strategy: 'create-if-absent',
+				satisfiedBy: ['renovate.json', '.renovaterc'],
+			},
+		],
+	});
+	const dir = repoDir({ 'renovate.json/inner.txt': 'x' });
+	expect(plan(loadRepo(dir, canon), canon)).toEqual([]);
+	syncRepo(dir, canon, []);
+	expect(existsSync(join(dir, 'renovate.json5'))).toBe(false);
+});
+
+test('каталог на месте create-if-absent файла — не отсутствие, засева нет', () => {
+	const canon = testCanon({
+		files: [{ dest: 'seed.txt', content: 'a', strategy: 'create-if-absent' }],
+	});
+	expect(plan(loadRepo(repoDir({ 'seed.txt/inner.txt': 'x' }), canon), canon)).toEqual([]);
+});
+
+test('каталог на месте verbatim-файла остаётся file-missing — громко, как и было', () => {
+	const canon = testCanon({ files: [{ dest: 'seed.txt', content: 'a' }] });
+	expect(plan(loadRepo(repoDir({ 'seed.txt/inner.txt': 'x' }), canon), canon)).toMatchObject([
+		{ code: 'file-missing', target: 'seed.txt' },
+	]);
+});
+
+test('dependabot: каталог на месте конфига — существующий путь, dependabot-config как на main', () => {
+	const dir = repoDir({ '.github/dependabot.yml/inner.txt': 'x' });
+	expect(
+		checkRepo(dir, testCanon(), []).filter((f) => f.code === 'dependabot-config'),
+	).toMatchObject([{ target: '.github/dependabot.yml' }]);
+});
+
+test('inline-version при нечитаемом pnpm-workspace.yaml: гейт workspace — по существованию пути', () => {
+	const canon = testCanon({ catalogs: { dev: { oxlint: '1.83.0' } } });
+	const dir = repoDir({
+		'pnpm-workspace.yaml/inner.txt': 'x',
+		'package.json': '{"devDependencies":{"oxlint":"1.0.0"}}',
+	});
+	expect(checkRepo(dir, canon, []).map((f) => f.code)).toContain('inline-version');
+});
+
+// Нечитаемый вложенный package.json (читается позже разбора Renovate) всё равно идёт до конфига Renovate.
+test.skipIf(process.getuid?.() === 0)(
+	'нечитаемый вложенный package.json идёт до Renovate, который не разобрался',
+	() => {
+		const dir = repoDir({
+			'pnpm-workspace.yaml': 'packages: []',
+			'packages/a/package.json': '{}',
+			'renovate.json5': '{',
+		});
+		chmodSync(join(dir, 'packages/a/package.json'), 0);
+		expect(byTarget(loadRepo(dir, testCanon()))).toEqual([
+			'packages/a/package.json',
+			'renovate.json5',
+		]);
+	},
+);

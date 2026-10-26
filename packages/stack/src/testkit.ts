@@ -9,6 +9,9 @@ import type { Profile } from './config.ts';
 import { STACK_RENOVATE_PRESET } from './deps.ts';
 import { RENOVATE_CONFIGS, type Repo, repoFromFiles } from './repo.ts';
 
+// Не канон-файл: схема конфигурации лежит рядом с пакетом, а не в canon/.
+export const SCHEMA_PATH = join(import.meta.dir, '..', 'schema.json');
+
 // Канон для тестов правил. Пины нарочно не равны реальным пинам канона: иначе константа,
 // зашитая в правило, осталась бы незамеченной (engines-node в deps.ts, packageManager в package-manager.ts).
 export function testCanon(over: Partial<Canon> = {}): Canon {

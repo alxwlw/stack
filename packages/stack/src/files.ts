@@ -7,15 +7,19 @@ import type { Repo } from './repo.ts';
 export function planFiles(repo: Repo, canon: Canon): Drift[] {
 	const plan: Drift[] = [];
 	for (const f of canon.files) {
-		// Засев с альтернативами: репо уже держит тот же конфиг под другим законным именем.
-		if (f.strategy === 'create-if-absent' && f.satisfiedBy?.some((p) => repo.files.has(p))) {
+		// create-if-absent принадлежит репозиторию после первого засева: расхождением считается
+		// только отсутствие (как у existsSync: каталог и нечитаемый файл на месте — не отсутствие),
+		// содержимое не трогаем. Засев с альтернативами: репо уже держит тот же конфиг под другим
+		// законным именем.
+		if (
+			f.strategy === 'create-if-absent' &&
+			[f.dest, ...(f.satisfiedBy ?? [])].some((p) => repo.paths.has(p))
+		) {
 			continue;
 		}
 		const current = repo.files.get(f.dest);
 		const exists = current !== undefined;
-		// create-if-absent принадлежит репозиторию после первого засева: расхождением считается
-		// только отсутствие, содержимое не трогаем.
-		if (exists && (f.strategy === 'create-if-absent' || current === f.content)) continue;
+		if (current === f.content) continue;
 		plan.push({
 			code: exists ? 'file-drift' : 'file-missing',
 			target: f.dest,

@@ -1,5 +1,3 @@
-import { parseDocument } from 'yaml';
-
 import type { Canon } from './canon.ts';
 import type { Drift } from './findings.ts';
 import type { Repo } from './repo.ts';
@@ -18,9 +16,9 @@ function displayValue(v: unknown): string {
 
 // Один проход и один предикат для check и sync — см. planFiles.
 export function planCatalogs(repo: Repo, canon: Canon): Drift[] {
-	const text = repo.files.get(WORKSPACE_FILE);
-	if (text === undefined) return [];
-	const doc = parseDocument(text);
+	// Документа нет: файла нет или он не разобрался (находка — в repo.unreadable).
+	const doc = repo.workspace;
+	if (doc === undefined) return [];
 	const plan: Drift[] = [];
 	for (const [group, entries] of Object.entries(canon.catalogs)) {
 		for (const [name, version] of Object.entries(entries)) {
