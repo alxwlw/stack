@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { expect, test } from 'bun:test';
 import { parse as parseYaml } from 'yaml';
 
-import { canonGroups, loadCanon } from './canon.ts';
+import { canonDir, canonGroups, loadCanon } from './canon.ts';
 import { planCatalogs } from './catalogs.ts';
 import { checkRepo, syncRepo, type SyncResult } from './check.ts';
 import { readStackConfig, type StackConfig } from './config.ts';
@@ -31,16 +31,22 @@ function syncedFixture(profile: 'node' | 'contracts' | 'infra'): { dir: string; 
 	return { dir, cfg };
 }
 
-test('fixtures/ хранит только семя: ни одного файла, совпадающего с канон-файлом своего профиля', () => {
+// Все файлы каталога (с точечными), относительные пути.
+function listFiles(dir: string): string[] {
+	return [...new Bun.Glob('**').scanSync({ cwd: dir, dot: true, onlyFiles: true })];
+}
+
+test('fixtures/ хранит только семя: ни один файл фикстуры не совпадает ни с одним канон-файлом', () => {
+	// Без опоры на профиль, with и dest манифеста: ловится и копия под чужим именем.
+	const canonRoot = join(canonDir(), 'files');
+	const canonContents = new Set(
+		listFiles(canonRoot).map((f) => readFileSync(join(canonRoot, f), 'utf8')),
+	);
 	for (const profile of ['node', 'contracts', 'infra'] as const) {
 		const dir = join(FIXTURES, profile);
-		const cfg = readStackConfig(dir);
-		const copies = loadCanon(cfg)
-			.files.filter(
-				(f) =>
-					existsSync(join(dir, f.dest)) && readFileSync(join(dir, f.dest), 'utf8') === f.content,
-			)
-			.map((f) => `${profile}/${f.dest}`);
+		const copies = listFiles(dir)
+			.filter((f) => canonContents.has(readFileSync(join(dir, f), 'utf8')))
+			.map((f) => `${profile}/${f}`);
 		expect(copies).toEqual([]);
 		// Каталоги приносит sync: в семени их нет.
 		const ws = join(dir, 'pnpm-workspace.yaml');
