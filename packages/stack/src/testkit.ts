@@ -7,7 +7,7 @@ import { stringify } from 'yaml';
 import { type Canon, canonGroups, loadCanon } from './canon.ts';
 import type { Profile } from './config.ts';
 import { STACK_RENOVATE_PRESET } from './deps.ts';
-import { RENOVATE_CONFIGS, type Repo, repoFromFiles } from './repo.ts';
+import { type Read, RENOVATE_CONFIGS, type Repo, repoFromSnapshot } from './repo.ts';
 
 // Не канон-файл: схема конфигурации лежит рядом с пакетом, а не в canon/.
 export const SCHEMA_PATH = join(import.meta.dir, '..', 'schema.json');
@@ -49,14 +49,20 @@ export function canonRepoFiles(canon: Canon): Map<string, string> {
 	return files;
 }
 
-// canonRepoFiles + правки теста; null удаляет файл.
-export function testRepo(canon: Canon, over: Record<string, string | null> = {}): Repo {
-	const files = canonRepoFiles(canon);
-	for (const [path, content] of Object.entries(over)) {
-		if (content === null) files.delete(path);
-		else files.set(path, content);
+// Ошибка чтения, как её отдаёт fs: сообщение `<код>: <текст>`, поле code.
+export function ioError(code: string, message: string): Error {
+	return Object.assign(new Error(`${code}: ${message}`), { code });
+}
+
+// canonRepoFiles + правки теста: строка — текст файла, Read кладётся как есть, null удаляет файл.
+export function testRepo(canon: Canon, over: Record<string, string | Read | null> = {}): Repo {
+	const snapshot = new Map<string, Read>();
+	for (const [path, text] of canonRepoFiles(canon)) snapshot.set(path, { text });
+	for (const [path, value] of Object.entries(over)) {
+		if (value === null) snapshot.delete(path);
+		else snapshot.set(path, typeof value === 'string' ? { text: value } : value);
 	}
-	return repoFromFiles(files);
+	return repoFromSnapshot(snapshot);
 }
 
 // Единственный сборщик каталога на диске: ключ — путь от корня, вложенные каталоги создаются.

@@ -61,37 +61,42 @@ const rank = (f: Finding): number =>
 				? 2
 				: 3;
 
-// Чистая часть: разбирает package.json (по basename; вложенные — только при pnpm-workspace.yaml среди
-// путей), pnpm-workspace.yaml и первый из RENOVATE_CONFIGS. Пути — ключи files и extra (существующие
-// пути, которые не разбираются: не прочитанные или удержанные от разбора). Порядок unreadable: корневой package.json, pnpm-workspace.yaml, вложенные
-// package.json в порядке files, конфиг Renovate.
-export function repoFromFiles(
-	files: ReadonlyMap<string, string>,
-	extra: Iterable<string> = [],
-): Repo {
-	const paths = new Set([...files.keys(), ...extra]);
+// Прочитанное с диска по одному пути: текст, «файла нет» или ошибка чтения (файл есть, но не читается).
+export type Read = { text: string } | { missing: true } | { failed: Error };
+
+// Снимок диска: путь от корня → результат чтения. Порядок ключей — порядок чтения адаптера.
+export type Snapshot = ReadonlyMap<string, Read>;
+
+// Чистая часть: из снимка строит Repo. Здесь единственная классификация unreadable-file: сбой чтения и
+// сбой разбора одной роли — одна находка. Разбираемые роли: package.json (корневой всегда; вложенные —
+// только при pnpm-workspace.yaml среди путей), pnpm-workspace.yaml и первый из RENOVATE_CONFIGS среди
+// путей (нечитаемый заслоняет остальные). Остальные пути — только в paths, находки не дают.
+// Порядок unreadable: по rank, равные — в порядке снимка.
+export function repoFromSnapshot(snapshot: Snapshot): Repo {
+	const files = new Map<string, string>();
+	const paths = new Set<string>();
+	for (const [path, read] of snapshot) {
+		if ('missing' in read) continue;
+		paths.add(path);
+		if ('text' in read) files.set(path, read.text);
+	}
 	const packages = new Map<string, Record<string, unknown>>();
 	const unreadable: Finding[] = [];
-	const manifests = [...files.keys()].filter(
+	const bad = (target: string, message: string) =>
+		unreadable.push({ code: 'unreadable-file', target, message });
+
+	const manifests = [...paths].filter(
 		(p) => basename(p) === 'package.json' && (p === 'package.json' || paths.has(WORKSPACE_FILE)),
 	);
 	manifests.sort((a, b) => Number(b === 'package.json') - Number(a === 'package.json'));
-	let workspace: Document | undefined;
-	const workspaceText = files.get(WORKSPACE_FILE);
-	if (workspaceText !== undefined) {
-		const doc = parseDocument(workspaceText);
-		if (doc.errors.length === 0) workspace = doc;
-		else {
-			unreadable.push({
-				code: 'unreadable-file',
-				target: WORKSPACE_FILE,
-				message: `${WORKSPACE_FILE} does not parse: ${(doc.errors[0] as Error).message.split('\n')[0]}`,
-			});
-		}
-	}
 	for (const file of manifests) {
+		const read = snapshot.get(file) as Read;
+		if ('failed' in read) {
+			bad(file, `${file} does not parse: ${read.failed.message}`);
+			continue;
+		}
 		try {
-			const doc: unknown = JSON.parse(files.get(file) as string);
+			const doc: unknown = JSON.parse((read as { text: string }).text);
 			packages.set(
 				file,
 				doc !== null && typeof doc === 'object' && !Array.isArray(doc)
@@ -99,25 +104,35 @@ export function repoFromFiles(
 					: {},
 			);
 		} catch (err) {
-			unreadable.push({
-				code: 'unreadable-file',
-				target: file,
-				message: `${file} does not parse: ${err instanceof Error ? err.message : String(err)}`,
-			});
+			bad(file, `${file} does not parse: ${err instanceof Error ? err.message : String(err)}`);
 		}
 	}
-	const path = RENOVATE_CONFIGS.find((p) => files.has(p));
+
+	let workspace: Document | undefined;
+	const workspaceRead = snapshot.get(WORKSPACE_FILE);
+	if (workspaceRead !== undefined && 'failed' in workspaceRead) {
+		bad(WORKSPACE_FILE, `${WORKSPACE_FILE} does not parse: ${workspaceRead.failed.message}`);
+	} else if (workspaceRead !== undefined && 'text' in workspaceRead) {
+		const doc = parseDocument(workspaceRead.text);
+		if (doc.errors.length === 0) workspace = doc;
+		else {
+			bad(
+				WORKSPACE_FILE,
+				`${WORKSPACE_FILE} does not parse: ${(doc.errors[0] as Error).message.split('\n')[0]}`,
+			);
+		}
+	}
+
+	const renovatePath = RENOVATE_CONFIGS.find((p) => paths.has(p));
 	let renovate: Repo['renovate'];
-	if (path !== undefined) {
+	if (renovatePath !== undefined) {
+		const read = snapshot.get(renovatePath) as Read;
 		try {
-			renovate = { path, config: JSON5.parse(files.get(path) as string) };
+			if ('failed' in read) throw read.failed;
+			renovate = { path: renovatePath, config: JSON5.parse((read as { text: string }).text) };
 		} catch {
-			renovate = { path };
-			unreadable.push({
-				code: 'unreadable-file',
-				target: path,
-				message: `${path} does not parse as JSON5`,
-			});
+			renovate = { path: renovatePath };
+			bad(renovatePath, `${renovatePath} does not parse as JSON5`);
 		}
 	}
 	unreadable.sort((a, b) => rank(a) - rank(b));
@@ -130,8 +145,6 @@ export function repoFromFiles(
 		...(renovate && { renovate }),
 	};
 }
-
-type Read = { text: string } | { missing: true } | { failed: Error };
 
 // Нет файла — так же, как его видит existsSync: ENOENT, ENOTDIR (путь под обычным файлом, например
 // `.github` — файл) и ELOOP. Любая другая ошибка (EACCES, EISDIR) — файл есть, но не читается.
@@ -147,60 +160,30 @@ function readFile(root: string, path: string): Read {
 	}
 }
 
-// Диск: dest и satisfiedBy канон-файлов, конфиги Renovate и dependabot, pnpm-workspace.yaml,
-// корневой package.json; при pnpm-workspace.yaml — ещё вложенные package.json без SKIP.
-// Ровно одна unreadable-file приходится на package.json (корневой и вложенные), pnpm-workspace.yaml и
-// конфиг Renovate. Verbatim канон-файл сравнивается по содержимому, поэтому нечитаемый (например,
-// каталог) для правила отсутствует: file-missing, затем sync падает с EISDIR — громко, намеренно.
-// Create-if-absent dest/satisfiedBy и конфиги dependabot нужны правилам только как существующие пути.
-export function loadRepo(root: string, canon: Canon): Repo {
+// Адаптер диска, без классификации: dest и satisfiedBy канон-файлов, конфиги Renovate и dependabot,
+// pnpm-workspace.yaml, корневой package.json; если pnpm-workspace.yaml есть (текст или сбой чтения) —
+// ещё вложенные package.json без SKIP.
+export function readSnapshot(root: string, canon: Canon): Snapshot {
 	const candidates = new Set<string>(['package.json', WORKSPACE_FILE]);
 	for (const f of canon.files) {
 		candidates.add(f.dest);
 		for (const p of f.satisfiedBy ?? []) candidates.add(p);
 	}
 	for (const p of [...RENOVATE_CONFIGS, ...DEPENDABOT_CONFIGS]) candidates.add(p);
-	const files = new Map<string, string>();
-	const unreadableExisting = new Set<string>();
-	const failedManifests: Finding[] = [];
-	const failedRenovate = new Set<string>();
-	const add = (path: string) => {
-		const r = readFile(root, path);
-		if ('text' in r) files.set(path, r.text);
-		else if ('failed' in r) {
-			unreadableExisting.add(path);
-			if (basename(path) === 'package.json' || path === WORKSPACE_FILE) {
-				failedManifests.push({
-					code: 'unreadable-file',
-					target: path,
-					message: `${path} does not parse: ${r.failed.message}`,
-				});
-			} else if (RENOVATE_CONFIGS.includes(path)) failedRenovate.add(path);
-		}
-	};
-	for (const p of candidates) add(p);
-	if (files.has(WORKSPACE_FILE) || unreadableExisting.has(WORKSPACE_FILE)) {
+	const snapshot = new Map<string, Read>();
+	for (const p of candidates) snapshot.set(p, readFile(root, p));
+	const workspace = snapshot.get(WORKSPACE_FILE) as Read;
+	if (!('missing' in workspace)) {
 		for (const file of new Glob('**/package.json').scanSync({ cwd: root })) {
-			if (!SKIP.test(file) && !candidates.has(file)) add(file);
+			if (!SKIP.test(file) && !candidates.has(file)) snapshot.set(file, readFile(root, file));
 		}
 	}
-	// Первый найденный конфиг Renovate, в том числе нечитаемый, заслоняет остальные.
-	const first = RENOVATE_CONFIGS.find((p) => files.has(p) || failedRenovate.has(p));
-	const failedFirst = first !== undefined && failedRenovate.has(first) ? first : undefined;
-	const forParse = new Map(files);
-	if (failedFirst !== undefined) for (const p of RENOVATE_CONFIGS) forParse.delete(p);
-	const repo = { ...repoFromFiles(forParse, [...files.keys(), ...unreadableExisting]), files };
-	if (failedManifests.length === 0 && failedFirst === undefined) return repo;
-	const unreadable = [...repo.unreadable, ...failedManifests];
-	if (failedFirst !== undefined) {
-		unreadable.push({
-			code: 'unreadable-file',
-			target: failedFirst,
-			message: `${failedFirst} does not parse as JSON5`,
-		});
-	}
-	unreadable.sort((a, b) => rank(a) - rank(b));
-	return failedFirst === undefined
-		? { ...repo, unreadable }
-		: { ...repo, renovate: { path: failedFirst }, unreadable };
+	return snapshot;
+}
+
+// Verbatim канон-файл сравнивается по содержимому, поэтому нечитаемый (например, каталог) для правила
+// отсутствует: file-missing, затем sync падает с EISDIR — громко, намеренно. Create-if-absent
+// dest/satisfiedBy и конфиги dependabot нужны правилам только как существующие пути.
+export function loadRepo(root: string, canon: Canon): Repo {
+	return repoFromSnapshot(readSnapshot(root, canon));
 }

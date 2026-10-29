@@ -4,8 +4,13 @@ import { join } from 'node:path';
 import { expect, test } from 'bun:test';
 
 import { check, checkRepo, plan, syncRepo } from './check.ts';
-import { loadRepo, repoFromFiles } from './repo.ts';
-import { repoDir, testCanon, testRepo } from './testkit.ts';
+import { loadRepo, type Read, repoFromSnapshot } from './repo.ts';
+import { ioError, repoDir, testCanon, testRepo } from './testkit.ts';
+
+// Снимок, в котором все файлы прочитаны.
+const texts = (files: Map<string, string>) =>
+	new Map<string, Read>([...files].map(([path, text]) => [path, { text }]));
+const fromTexts = (files: Map<string, string>) => repoFromSnapshot(texts(files));
 
 const byTarget = (r: { unreadable: { target: string }[] }) => r.unreadable.map((f) => f.target);
 
@@ -17,7 +22,7 @@ test('битый корневой package.json — одна unreadable-file, с 
 			['pnpm-workspace.yaml', 'packages: []'],
 		]),
 	]) {
-		const repo = repoFromFiles(files);
+		const repo = fromTexts(files);
 		expect(byTarget(repo)).toEqual(['package.json']);
 		expect(repo.unreadable[0]?.code).toBe('unreadable-file');
 		expect(repo.packages.size).toBe(0);
@@ -25,7 +30,7 @@ test('битый корневой package.json — одна unreadable-file, с 
 });
 
 test('битый вложенный package.json — одна находка на файл, соседний разобран', () => {
-	const repo = repoFromFiles(
+	const repo = fromTexts(
 		new Map([
 			['pnpm-workspace.yaml', 'packages: []'],
 			['package.json', '{"name":"root"}'],
@@ -39,7 +44,7 @@ test('битый вложенный package.json — одна находка н�
 });
 
 test('порядок unreadable: корневой, pnpm-workspace.yaml, вложенные, Renovate', () => {
-	const repo = repoFromFiles(
+	const repo = fromTexts(
 		new Map([
 			['renovate.json5', '{'],
 			['packages/a/package.json', '{'],
@@ -56,7 +61,7 @@ test('порядок unreadable: корневой, pnpm-workspace.yaml, влож
 });
 
 test('битый renovate.json5 — одна unreadable-file, renovate есть, config нет', () => {
-	const repo = repoFromFiles(new Map([['renovate.json5', '{']]));
+	const repo = fromTexts(new Map([['renovate.json5', '{']]));
 	expect(repo.unreadable).toEqual([
 		{
 			code: 'unreadable-file',
@@ -69,7 +74,7 @@ test('битый renovate.json5 — одна unreadable-file, renovate есть,
 });
 
 test('Renovate: берётся первый существующий в порядке RENOVATE_CONFIGS, комментарии JSON5 читаются', () => {
-	const repo = repoFromFiles(
+	const repo = fromTexts(
 		new Map([
 			['.github/renovate.json5', '{extends: ["b"]}'],
 			['renovate.json', '// c\n{"extends": ["a"]}'],
@@ -77,6 +82,95 @@ test('Renovate: берётся первый существующий в поря
 	);
 	expect(repo.renovate).toEqual({ path: 'renovate.json', config: { extends: ['a'] } });
 	expect(repo.unreadable).toEqual([]);
+});
+
+const failed = (code: string, what: string): Read => ({
+	failed: ioError(code, `${what}, open 'x'`),
+});
+const triple = (r: { unreadable: { code: string; target: string; message: string }[] }) =>
+	r.unreadable.map((f) => [f.code, f.target, f.message]);
+
+test('значения: нечитаемый корневой package.json — одна unreadable-file, в packages его нет, путь есть', () => {
+	const repo = testRepo(testCanon(), {
+		'package.json': { failed: ioError('EACCES', "permission denied, open 'package.json'") },
+	});
+	expect(triple(repo)).toEqual([
+		[
+			'unreadable-file',
+			'package.json',
+			"package.json does not parse: EACCES: permission denied, open 'package.json'",
+		],
+	]);
+	expect(repo.packages.has('package.json')).toBe(false);
+	expect(repo.paths.has('package.json')).toBe(true);
+});
+
+test('значения: сбой чтения и сбой разбора сортируются по rank одним списком', () => {
+	const repo = testRepo(testCanon(), {
+		'packages/a/package.json': '{',
+		'pnpm-workspace.yaml': failed('EACCES', 'permission denied'),
+		'renovate.json': failed('EISDIR', 'illegal operation on a directory'),
+		'package.json': failed('EACCES', 'permission denied'),
+	});
+	expect(byTarget(repo)).toEqual([
+		'package.json',
+		'pnpm-workspace.yaml',
+		'packages/a/package.json',
+		'renovate.json',
+	]);
+});
+
+test('значения: первый конфиг Renovate не читается — заслоняет следующий, тот не разбирается', () => {
+	const repo = testRepo(testCanon(), {
+		'renovate.json5': null,
+		'renovate.json': failed('EISDIR', 'illegal operation on a directory'),
+		'.github/renovate.json5': '{',
+	});
+	expect(triple(repo)).toEqual([
+		['unreadable-file', 'renovate.json', 'renovate.json does not parse as JSON5'],
+	]);
+	expect(repo.renovate).toEqual({ path: 'renovate.json' });
+	expect(repo.files.get('.github/renovate.json5')).toBe('{');
+});
+
+test('значения: нечитаемый pnpm-workspace.yaml — находка, workspace нет, вложенные package.json загружены', () => {
+	const repo = testRepo(testCanon(), {
+		'pnpm-workspace.yaml': { failed: ioError('EACCES', 'permission denied') },
+		'packages/a/package.json': '{"name":"a"}',
+	});
+	expect(triple(repo)).toEqual([
+		[
+			'unreadable-file',
+			'pnpm-workspace.yaml',
+			'pnpm-workspace.yaml does not parse: EACCES: permission denied',
+		],
+	]);
+	expect(repo.workspace).toBeUndefined();
+	expect(repo.packages.get('packages/a/package.json')).toEqual({ name: 'a' });
+});
+
+test('значения: нечитаемый путь, который никто не разбирает, — только в paths', () => {
+	const repo = testRepo(testCanon(), {
+		'.editorconfig': failed('EISDIR', 'illegal operation on a directory'),
+	});
+	expect(repo.paths.has('.editorconfig')).toBe(true);
+	expect(repo.files.has('.editorconfig')).toBe(false);
+	expect(repo.unreadable).toEqual([]);
+});
+
+test('значения: missing в снимке — пути нет', () => {
+	const repo = testRepo(testCanon(), { '.editorconfig': { missing: true } });
+	expect(repo.paths.has('.editorconfig')).toBe(false);
+});
+
+test('значения: вложенный package.json без pnpm-workspace.yaml в снимке не разбирается', () => {
+	const repo = testRepo(testCanon(), {
+		'pnpm-workspace.yaml': null,
+		'packages/a/package.json': '{',
+		'packages/b/package.json': failed('EACCES', 'permission denied'),
+	});
+	expect(repo.unreadable).toEqual([]);
+	expect([...repo.packages.keys()]).toEqual(['package.json']);
 });
 
 // Единственный источник unreadable-file — repo.unreadable: правила о нечитаемом файле молчат, поэтому
@@ -177,7 +271,7 @@ test('читает dest и satisfiedBy канон-файлов', () => {
 });
 
 test('package.json не объект (null, массив) — разобран как пустой, не находка', () => {
-	const repo = repoFromFiles(
+	const repo = fromTexts(
 		new Map([
 			['pnpm-workspace.yaml', 'packages: []'],
 			['package.json', 'null'],
@@ -265,7 +359,7 @@ test('нечитаемый renovate.json не отнимает у paths суще
 });
 
 test('битый pnpm-workspace.yaml — в находке только первая строка ошибки yaml', () => {
-	const repo = repoFromFiles(new Map([['pnpm-workspace.yaml', 'a: [\n']]));
+	const repo = fromTexts(new Map([['pnpm-workspace.yaml', 'a: [\n']]));
 	expect(repo.unreadable).toHaveLength(1);
 	const message = repo.unreadable[0]?.message ?? '';
 	expect(message).toBe(
@@ -309,9 +403,15 @@ test('петля симлинков (ELOOP) вместо конфига Renovate
 });
 
 test('paths: ключи files и существующие нечитаемые пути; несуществующий пути не даёт', () => {
-	expect(repoFromFiles(new Map([['a.txt', 'x']]), ['dir']).paths).toEqual(
-		new Set(['a.txt', 'dir']),
-	);
+	expect(
+		repoFromSnapshot(
+			new Map<string, Read>([
+				['a.txt', { text: 'x' }],
+				['dir', { failed: ioError('EISDIR', "illegal operation on a directory, read 'dir'") }],
+				['gone', { missing: true }],
+			]),
+		).paths,
+	).toEqual(new Set(['a.txt', 'dir']));
 	const repo = loadRepo(
 		repoDir({ 'package.json': '{}', '.editorconfig/inner.txt': 'x' }),
 		testCanon({
@@ -328,13 +428,13 @@ test('paths: ключи files и существующие нечитаемые �
 });
 
 test('pnpm-workspace.yaml разобран в repo.workspace; без файла и при ошибках YAML документа нет', () => {
-	const ok = repoFromFiles(
+	const ok = fromTexts(
 		new Map([['pnpm-workspace.yaml', 'catalogs:\n  dev:\n    oxlint: 1.0.0\n']]),
 	);
 	expect(ok.workspace?.getIn(['catalogs', 'dev', 'oxlint'])).toBe('1.0.0');
 	expect(ok.unreadable).toEqual([]);
-	expect(repoFromFiles(new Map()).workspace).toBeUndefined();
-	const broken = repoFromFiles(new Map([['pnpm-workspace.yaml', 'catalogs: [\n  dev: {\n']]));
+	expect(fromTexts(new Map()).workspace).toBeUndefined();
+	const broken = fromTexts(new Map([['pnpm-workspace.yaml', 'catalogs: [\n  dev: {\n']]));
 	expect(broken.workspace).toBeUndefined();
 	expect(broken.unreadable).toHaveLength(1);
 	expect(broken.unreadable[0]).toMatchObject({
@@ -344,19 +444,23 @@ test('pnpm-workspace.yaml разобран в repo.workspace; без файла 
 	expect(broken.unreadable[0]?.message).toStartWith('pnpm-workspace.yaml does not parse: ');
 });
 
-test('вложенные package.json без pnpm-workspace.yaml среди путей repoFromFiles не разбирает', () => {
+test('вложенные package.json без pnpm-workspace.yaml среди путей repoFromSnapshot не разбирает', () => {
 	const files = new Map([
 		['package.json', '{}'],
 		['packages/a/package.json', '{'],
 		['packages/b/package.json', '{}'],
 	]);
-	const bare = repoFromFiles(files);
+	const bare = fromTexts(files);
 	expect([...bare.packages.keys()]).toEqual(['package.json']);
 	expect(bare.unreadable).toEqual([]);
 	// путь есть, но не прочитан (каталог): вложенные всё равно в области
-	expect(byTarget(repoFromFiles(files, ['pnpm-workspace.yaml']))).toEqual([
-		'packages/a/package.json',
-	]);
+	const unreadableWorkspace = repoFromSnapshot(
+		new Map<string, Read>([
+			...texts(files),
+			['pnpm-workspace.yaml', { failed: ioError('EISDIR', 'illegal operation on a directory') }],
+		]),
+	);
+	expect(byTarget(unreadableWorkspace)).toEqual(['pnpm-workspace.yaml', 'packages/a/package.json']);
 });
 
 test('pnpm-workspace.yaml — каталог: одна находка, документа нет, вложенные package.json читаются', () => {
