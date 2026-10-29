@@ -10,18 +10,16 @@
  * auto-correct fails the suite before it can reach the registry.
  */
 import { spawnSync } from 'node:child_process';
-import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { expect, test } from 'bun:test';
 
+import { releasePackages } from '../../../scripts/release.ts';
+
 const ROOT = join(import.meta.dir, '..', '..', '..');
 
 // Derived, not listed (DP-027): a package directory under packages/ joins this gate on its own.
-const packages = readdirSync(join(ROOT, 'packages'), { withFileTypes: true })
-	.filter((d) => d.isDirectory() && existsSync(join(ROOT, 'packages', d.name, 'package.json')))
-	.map((d) => d.name)
-	.sort();
+const packages = releasePackages(ROOT).map((p) => p.dir);
 
 test('the manifest gate finds the workspace packages', () => {
 	expect(packages.length).toBeGreaterThan(0);

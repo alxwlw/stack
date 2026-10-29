@@ -1,13 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import {
-	chmodSync,
-	existsSync,
-	mkdtempSync,
-	readdirSync,
-	readFileSync,
-	rmSync,
-	writeFileSync,
-} from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -15,6 +7,7 @@ import { expect, test } from 'bun:test';
 import JSON5 from 'json5';
 import { parse as parseYaml } from 'yaml';
 
+import { releasePackages } from '../../../scripts/release.ts';
 import { loadCanon, loadCatalogs } from './canon.ts';
 import { canonFile } from './testkit.ts';
 
@@ -167,10 +160,9 @@ const syncSteps = (
 const waitIdx = syncSteps?.findIndex((s) => s.name === 'дождаться версии в npm') ?? -1;
 const waitStep = syncSteps?.[waitIdx];
 
-const PUBLISHED = readdirSync(join(ROOT, 'packages')).filter((p) => {
-	const manifest = join(ROOT, 'packages', p, 'package.json');
-	return existsSync(manifest) && JSON.parse(readFileSync(manifest, 'utf8')).private !== true;
-});
+const PUBLISHED = releasePackages(ROOT)
+	.filter((p) => p.published)
+	.map((p) => p.dir);
 
 /** `bodies` — тело ответа реестра по имени пакета без скоупа; пакета нет в карте — curl падает. */
 function runWait(
