@@ -113,7 +113,14 @@
 		{
 			"src": "files/moon-tasks/stack.yml",
 			"dest": ".moon/tasks/stack.yml",
-			"appliesTo": ["node", "contracts", "infra"],
+			"appliesTo": ["node", "contracts"],
+			"strategy": "create-if-absent",
+			"group": "moon-tasks"
+		},
+		{
+			"src": "files/moon-tasks/stack-infra.yml",
+			"dest": ".moon/tasks/stack.yml",
+			"appliesTo": ["infra"],
 			"strategy": "create-if-absent",
 			"group": "moon-tasks"
 		},
