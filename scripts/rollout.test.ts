@@ -7,6 +7,10 @@ import { expect, test } from 'bun:test';
 
 import {
 	consoleOutput,
+	dispatchSync,
+	getInstallations,
+	getInstallationToken,
+	githubApi,
 	type GitHubApi,
 	type Installation,
 	pickInstallation,
@@ -55,6 +59,7 @@ interface Harness {
 	github: GitHubApi;
 	out: RolloutOutput;
 	dispatched: { repo: string; version: string }[];
+	args: string[];
 }
 
 // Фейковый порт: каждый вызов пишется в журнал, сеть не трогается.
@@ -64,17 +69,20 @@ function harness(dispatchSync?: (repo: string) => Promise<void>): Harness {
 		logs: [],
 		summaries: [],
 		dispatched: [],
+		args: [],
 		github: {
-			signAppJwt: () => {
+			signAppJwt: (appId, key) => {
 				h.calls.push('signAppJwt');
+				h.args.push(`sign:${appId}:${key}`);
 				return 'jwt';
 			},
 			getInstallations: async () => {
 				h.calls.push('getInstallations');
 				return [{ id: 1, login: 'acme' }];
 			},
-			getInstallationToken: async () => {
+			getInstallationToken: async (id, jwt) => {
 				h.calls.push('getInstallationToken');
+				h.args.push(`token:${id}:${jwt}`);
 				return 'tok';
 			},
 			dispatchSync: async (repo, _token, version) => {
@@ -152,6 +160,66 @@ test('consoleOutput: summary дописывает строку в файл GITHU
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}
+});
+
+test('runRollout: JWT подписывается ключами из env и доходит до обмена токена', async () => {
+	const h = harness();
+	await runRollout(
+		{
+			VERSION: '1.2.3',
+			CONSUMERS: 'acme/app',
+			STACK_BOT_APP_ID: '77',
+			STACK_BOT_PRIVATE_KEY: 'pem-x',
+		},
+		h.github,
+		h.out,
+	);
+	expect(h.args).toEqual(['sign:77:pem-x', 'token:1:jwt']);
+});
+
+test('runRollout: не хватает одного из секретов — ошибка до вызова GitHub', async () => {
+	for (const env of [{ STACK_BOT_APP_ID: '1' }, { STACK_BOT_PRIVATE_KEY: 'pem' }]) {
+		const h = harness();
+		await expect(
+			runRollout({ VERSION: '1.2.3', CONSUMERS: 'acme/app', ...env }, h.github, h.out),
+		).rejects.toThrow('are not set');
+		expect(h.calls).toEqual([]);
+	}
+});
+
+test('runRollout: CONSUMERS не задан — потребителей нет, а не TypeError', async () => {
+	const h = harness();
+	expect(await runRollout({ VERSION: '1.2.3' }, h.github, h.out)).toBeNull();
+	expect(h.calls).toEqual([]);
+});
+
+test('runRollout: VERSION не задан — ошибка о теге, а не TypeError, до вызова GitHub', async () => {
+	const h = harness();
+	await expect(runRollout({ CONSUMERS: 'acme/app', ...SECRETS }, h.github, h.out)).rejects.toThrow(
+		'not a version tag',
+	);
+	expect(h.calls).toEqual([]);
+});
+
+test('githubApi: прод-adapter — те самые четыре функции', () => {
+	expect(githubApi.signAppJwt).toBe(signAppJwt);
+	expect(githubApi.getInstallations).toBe(getInstallations);
+	expect(githubApi.getInstallationToken).toBe(getInstallationToken);
+	expect(githubApi.dispatchSync).toBe(dispatchSync);
+});
+
+test('consoleOutput: log печатает строку в console.log', () => {
+	const lines: string[] = [];
+	const original = console.log;
+	console.log = (...args: unknown[]) => {
+		lines.push(args.map(String).join(' '));
+	};
+	try {
+		consoleOutput(undefined).log('hello');
+	} finally {
+		console.log = original;
+	}
+	expect(lines).toEqual(['hello']);
 });
 
 test('consoleOutput: без пути summary ничего не пишет и не падает', () => {
