@@ -7,7 +7,7 @@ import { parse as parseJsonc } from 'jsonc-parser';
 import { parse as parseYaml } from 'yaml';
 
 import { canonGroups, filesFor, loadCanon, loadManifest, parsePins } from './canon.ts';
-import { PROFILES, type Profile, type StackConfig, StackConfigError } from './config.ts';
+import { type Profile, PROFILES, type StackConfig, StackConfigError } from './config.ts';
 import { RENOVATE_CONFIGS } from './repo.ts';
 import { canonFile, SCHEMA_PATH } from './testkit.ts';
 
