@@ -79,7 +79,15 @@ export function npmRegistry(npm: string, root: string, timeoutMs = 30_000): Regi
 			}
 			if (res.status === 404) return false;
 			if (!res.ok) throw new Error(`${name}: реестр ответил ${res.status}`);
-			const doc = (await res.json()) as { versions?: Record<string, unknown> };
+			let doc: { versions?: Record<string, unknown> };
+			try {
+				doc = (await res.json()) as { versions?: Record<string, unknown> };
+			} catch (e) {
+				// Не-JSON 200 или тело, оборванное abort'ом: без имени пакета лог не скажет, что чинить.
+				throw new Error(
+					`${name}: нечитаемый ответ реестра: ${e instanceof Error ? e.message : String(e)}`,
+				);
+			}
 			return doc.versions?.[version] !== undefined;
 		},
 		publish(dir) {
@@ -112,6 +120,9 @@ export async function publishAll(
 	}
 	return { published, skipped };
 }
+
+/** Бюджет ожидания реестра после публикации; docs/release.md («60 attempts, 10 s apart») сверяется тестом. */
+export const WAIT_BUDGET = { attempts: 60, intervalMs: 10_000 };
 
 /** Ждёт, пока все `published`-пакеты появятся в реестре с версией; видимые повторно не опрашивает. */
 export async function waitVisible(
@@ -204,7 +215,7 @@ if (import.meta.main) {
 			const version = lockstepVersion(pkgs);
 			const registry = npmRegistry(npm, process.cwd());
 			await publishAll(pkgs, registry);
-			await waitVisible(pkgs, version, registry, { attempts: 60, intervalMs: 10_000 });
+			await waitVisible(pkgs, version, registry, WAIT_BUDGET);
 		} catch (e) {
 			console.error(e instanceof Error ? e.message : String(e));
 			process.exit(1);

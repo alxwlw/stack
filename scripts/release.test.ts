@@ -1,4 +1,5 @@
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -13,6 +14,7 @@ import {
 	releasePackages,
 	setVersion,
 	stripTagPrefix,
+	WAIT_BUDGET,
 	waitVisible,
 } from './release.ts';
 
@@ -201,6 +203,24 @@ describe('waitVisible', () => {
 	});
 });
 
+describe('waitVisible: боевое ожидание', () => {
+	test('без подставного sleep: версия видна на 2-м опросе — разрешается', async () => {
+		const { registry, calls } = fakeRegistry({ present: [], visibleAfter: { '@x/a': 2 } });
+		await waitVisible([pkg('a')], '1.0.0', registry, { attempts: 3, intervalMs: 1 });
+		expect(calls).toEqual(['has @x/a@1.0.0', 'has @x/a@1.0.0']);
+	});
+
+	test('бюджет CLI совпадает с docs/release.md', () => {
+		const docs = readFileSync(join(REPO_ROOT, 'docs/release.md'), 'utf8');
+		const m = /waits \((\d+) attempts, (\d+) s apart\)/.exec(docs);
+		expect(m).not.toBeNull();
+		expect(WAIT_BUDGET).toEqual({
+			attempts: Number(m?.[1]),
+			intervalMs: Number(m?.[2]) * 1000,
+		});
+	});
+});
+
 describe('waitVisible: сбои реестра', () => {
 	const noSleep = (): Promise<void> => Promise.resolve();
 
@@ -267,14 +287,26 @@ describe('npmRegistry.has', () => {
 	});
 
 	test('зависший запрос обрывается по таймауту — throw с именем пакета', async () => {
-		// Фейковый fetch не отвечает никогда, но уважает signal — как настоящий.
+		// Фейковый fetch не отвечает никогда, но уважает signal — как настоящий. Страховка: без
+		// signal он сам отклоняется через 2 с, и тест краснеет по содержимому, а не виснет.
 		globalThis.fetch = ((_: unknown, init?: RequestInit) =>
 			new Promise((_resolve, reject) => {
 				init?.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+				setTimeout(() => reject(new Error('сигнал не сработал')), 2000);
 			})) as typeof fetch;
-		await expect(
-			npmRegistry('/nowhere/npm-cli.js', REPO_ROOT, 20).has('@alxwlw/stack', '1.2.3'),
-		).rejects.toThrow('@alxwlw/stack');
+		const e = await npmRegistry('/nowhere/npm-cli.js', REPO_ROOT, 20)
+			.has('@alxwlw/stack', '1.2.3')
+			.then(
+				() => undefined,
+				(x: unknown) => x,
+			);
+		expect(String(e)).toContain('aborted');
+		expect(String(e)).toContain('@alxwlw/stack');
+	});
+
+	test('200 не-JSON — throw с именем пакета, а не голый JSON Parse error', async () => {
+		stub(new Response('<html>', { status: 200 }));
+		await expect(reg.has('@alxwlw/stack', '1.2.3')).rejects.toThrow('@alxwlw/stack');
 	});
 
 	test('сбой сети — throw с именем пакета', async () => {
@@ -498,9 +530,17 @@ describe('связность релиза', () => {
 	});
 
 	test('publish.yml публикует через release.ts publish и не перечисляет пакеты', () => {
-		const job = /\n {2}publish:\n([\s\S]*)$/.exec(publish)?.[1] ?? '';
+		// yaml — зависимость packages/stack (как в dogfood.test.ts); из корня scripts/ он не виден.
+		const { parse } = createRequire(join(REPO_ROOT, 'packages/stack/package.json'))('yaml') as {
+			parse(text: string): { jobs: Record<string, { steps?: { run?: string }[] }> };
+		};
+		const runs = (parse(publish).jobs.publish?.steps ?? []).map((st) => st.run ?? '');
 		// NPM в run-блоке — shell-переменная без export: без префикса CLI выйдет с кодом 2.
-		expect(job).toContain('NPM="$NPM" bun scripts/release.ts publish');
+		const calls = runs
+			.flatMap((r) => r.split('\n'))
+			.filter((l) => l.trim().startsWith('NPM="$NPM" bun scripts/release.ts publish'));
+		expect(calls).toHaveLength(1);
+		const job = runs.join('\n');
 		expect(job).not.toContain('for p in');
 		expect(job).not.toContain('npm view');
 		expect(job).not.toContain('"$NPM" view');
