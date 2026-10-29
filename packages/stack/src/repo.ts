@@ -31,6 +31,8 @@ export const RENOVATE_CONFIGS = [
 
 export const WORKSPACE_FILE = 'pnpm-workspace.yaml';
 
+export const MOON_TOOLCHAINS = '.moon/toolchains.yml';
+
 export const DEPENDABOT_CONFIGS = ['.github/dependabot.yml', '.github/dependabot.yaml'];
 
 // Репозиторий потребителя как значение: правила получают его и не читают диск сами.
@@ -45,7 +47,9 @@ export interface Repo {
 	packages: ReadonlyMap<string, Record<string, unknown>>;
 	/** Первый конфиг Renovate в порядке поиска самого Renovate; config нет — файл не разобрался. */
 	renovate?: { path: string; config?: unknown };
-	/** Ровно одна находка unreadable-file на каждый неразобранный package.json, pnpm-workspace.yaml и первый конфиг Renovate. */
+	/** Разобранный .moon/toolchains.yml (верхний уровень); нет поля — файла нет или он не разобрался. */
+	moonToolchains?: Record<string, unknown>;
+	/** Ровно одна находка unreadable-file на каждый неразобранный package.json, pnpm-workspace.yaml, первый конфиг Renovate и .moon/toolchains.yml. */
 	unreadable: Finding[];
 }
 
@@ -70,7 +74,7 @@ export type Snapshot = ReadonlyMap<string, Read>;
 // Чистая часть: из снимка строит Repo. Здесь единственная классификация unreadable-file: сбой чтения и
 // сбой разбора одной роли — одна находка. Разбираемые роли: package.json (корневой всегда; вложенные —
 // только при pnpm-workspace.yaml среди путей), pnpm-workspace.yaml и первый из RENOVATE_CONFIGS среди
-// путей (нечитаемый заслоняет остальные). Остальные пути — только в paths, находки не дают.
+// путей (нечитаемый заслоняет остальные) и .moon/toolchains.yml. Остальные пути — только в paths, находки не дают.
 // Порядок unreadable: по rank, равные — в порядке снимка.
 export function repoFromSnapshot(snapshot: Snapshot): Repo {
 	const files = new Map<string, string>();
@@ -135,6 +139,25 @@ export function repoFromSnapshot(snapshot: Snapshot): Repo {
 			bad(renovatePath, `${renovatePath} does not parse as JSON5`);
 		}
 	}
+	let moonToolchains: Record<string, unknown> | undefined;
+	const moonRead = snapshot.get(MOON_TOOLCHAINS);
+	if (moonRead !== undefined && 'failed' in moonRead) {
+		bad(MOON_TOOLCHAINS, `${MOON_TOOLCHAINS} does not parse: ${moonRead.failed.message}`);
+	} else if (moonRead !== undefined && 'text' in moonRead) {
+		const doc = parseDocument(moonRead.text);
+		if (doc.errors.length > 0) {
+			bad(
+				MOON_TOOLCHAINS,
+				`${MOON_TOOLCHAINS} does not parse: ${(doc.errors[0] as Error).message.split('\n')[0]}`,
+			);
+		} else {
+			const top: unknown = doc.toJS();
+			moonToolchains =
+				top !== null && typeof top === 'object' && !Array.isArray(top)
+					? (top as Record<string, unknown>)
+					: {};
+		}
+	}
 	unreadable.sort((a, b) => rank(a) - rank(b));
 	return {
 		files,
@@ -143,6 +166,7 @@ export function repoFromSnapshot(snapshot: Snapshot): Repo {
 		unreadable,
 		...(workspace && { workspace }),
 		...(renovate && { renovate }),
+		...(moonToolchains && { moonToolchains }),
 	};
 }
 
@@ -161,7 +185,7 @@ function readFile(root: string, path: string): Read {
 }
 
 // Адаптер диска, без классификации: dest и satisfiedBy канон-файлов, конфиги Renovate и dependabot,
-// pnpm-workspace.yaml, корневой package.json; если pnpm-workspace.yaml есть (текст или сбой чтения) —
+// .moon/toolchains.yml, pnpm-workspace.yaml, корневой package.json; если pnpm-workspace.yaml есть (текст или сбой чтения) —
 // ещё вложенные package.json без SKIP.
 export function readSnapshot(root: string, canon: Canon): Snapshot {
 	const candidates = new Set<string>(['package.json', WORKSPACE_FILE]);
@@ -169,7 +193,7 @@ export function readSnapshot(root: string, canon: Canon): Snapshot {
 		candidates.add(f.dest);
 		for (const p of f.satisfiedBy ?? []) candidates.add(p);
 	}
-	for (const p of [...RENOVATE_CONFIGS, ...DEPENDABOT_CONFIGS]) candidates.add(p);
+	for (const p of [...RENOVATE_CONFIGS, ...DEPENDABOT_CONFIGS, MOON_TOOLCHAINS]) candidates.add(p);
 	const snapshot = new Map<string, Read>();
 	for (const p of candidates) snapshot.set(p, readFile(root, p));
 	const workspace = snapshot.get(WORKSPACE_FILE) as Read;

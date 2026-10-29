@@ -7,6 +7,7 @@ import { check, plan, syncRepo } from './check.ts';
 import {
 	DEPENDABOT_CONFIGS,
 	loadRepo,
+	MOON_TOOLCHAINS,
 	type Read,
 	readSnapshot,
 	RENOVATE_CONFIGS,
@@ -486,7 +487,7 @@ test('readSnapshot: вложенные package.json читаются тольк�
 	expect(nested(readSnapshot(repoDir(tree), testCanon()))).toEqual(['package.json']);
 });
 
-test('readSnapshot: кандидаты — package.json, pnpm-workspace.yaml, dest и satisfiedBy канона, Renovate и dependabot', () => {
+test('readSnapshot: кандидаты — package.json, pnpm-workspace.yaml, dest и satisfiedBy канона, Renovate, dependabot и .moon/toolchains.yml', () => {
 	const dir = repoDir({
 		'.github/renovate.json5': '{}',
 		'.github/dependabot.yml': 'version: 2',
@@ -524,6 +525,7 @@ test('readSnapshot: кандидаты — package.json, pnpm-workspace.yaml, de
 			'alt/seed.txt',
 			...RENOVATE_CONFIGS,
 			...DEPENDABOT_CONFIGS,
+			MOON_TOOLCHAINS,
 		]
 			.filter((p, i, all) => all.indexOf(p) === i)
 			.sort(),

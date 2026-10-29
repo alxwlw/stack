@@ -148,6 +148,10 @@ the `v1` tag, and until then `#v1` and `@v1` still point at the previous release
 doesn't extend the preset with exactly the `#v1` tag — no tag or `#main` would pull an unreleased
 canon — and when `.github/dependabot.yml` (or `.yaml`) exists. Neither can be held back by an exception.
 
+`stack check` also reports a `version` set in `.moon/toolchains.yml` for any tool the canon pins (`node: { version: … }`),
+even when it equals the `.prototools` pin: `.prototools` owns the version, so leave it unset (`node: {}`). `stack sync` does
+not fix it; an exception `{ file: '.moon/toolchains.yml', reason }` holds it.
+
 Upgrading an existing consumer: on the first `stack/v<version>` PR after the move to Renovate, `check` goes red
 on `renovate-preset` if the repo already has its own Renovate config without the preset (add
 `github>alxwlw/stack//renovate/canon.json5#v1` to its `extends`), and on `dependabot-config` if
