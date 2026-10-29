@@ -19,7 +19,7 @@ The kind of repository a consumer declares, `node`, `contracts` or `infra`; it d
 _Avoid_: preset, flavour, template
 
 **Group**:
-A named opt-in slice of the canon, switched on through `with` in `.stack.jsonc`. There are three kinds: a **file group** (the `group` field of a manifest entry), a **catalog group** (a key of `canon/catalogs.json` other than `dev`, which every consumer gets) and a **deprecated group** (accepted for old configs, enables nothing). Names come from `canonGroups` and `DEPRECATED_GROUPS` in `packages/stack/src/canon.ts`.
+A named opt-in slice of the canon, switched on through `with` in `.stack.jsonc`. There are three kinds: a **file group** (the `group` field of a manifest entry), a **catalog group** (a key of `canon/catalogs.json` other than `dev`, which every consumer gets) and a **deprecated group** (accepted for old configs, enables nothing). Names come from `readCanonSource().groups` in `packages/stack/src/canon.ts`.
 _Avoid_: feature, module, flag
 
 ### What the canon holds

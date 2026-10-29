@@ -230,3 +230,16 @@ test('init с опечаткой во второй --with — код 2, файл
 	expect(r.err).toContain('unknown group "moon-task"');
 	expect(existsSync(join(dir, '.stack.jsonc'))).toBe(false);
 });
+
+test('init и check отвергают опечатку в with одной и той же строкой', async () => {
+	const initDir = repoDir(BARE);
+	const init = await run(['init', '--profile', 'node', '--with', 'typo'], initDir);
+	const checkDir = repoDir(BARE);
+	writeFileSync(join(checkDir, '.stack.jsonc'), '{ "profile": "node", "with": ["typo"] }');
+	const check = await run(['check'], checkDir);
+	expect(init.code).toBe(2);
+	expect(check.code).toBe(2);
+	const line = (err: string) => err.split('\n').find((l) => l.includes('unknown group'));
+	expect(line(init.err)).toContain('unknown group "typo" in "with", expected one of: ');
+	expect(line(init.err)).toBe(line(check.err));
+});

@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path';
 
 import { stringify } from 'yaml';
 
-import { type Canon, canonGroups, loadCanon } from './canon.ts';
+import { type Canon, canonFor, readCanonSource } from './canon.ts';
 import type { Profile } from './config.ts';
 import { STACK_RENOVATE_PRESET } from './deps.ts';
 import { type Read, RENOVATE_CONFIGS, type Repo, repoFromSnapshot } from './repo.ts';
@@ -21,8 +21,9 @@ export function testCanon(over: Partial<Canon> = {}): Canon {
 // Содержимое канон-файла по его dest, как его видит loadCanon: все группы включены. Тесты, сверяющие
 // канон с корнем репозитория или с самим собой, берут файл здесь, а не по пути в canon/files.
 export function canonFile(dest: string, profile: Profile = 'node'): string {
-	const g = canonGroups();
-	const canon = loadCanon({ profile, with: [...g.files, ...g.catalogs], exceptions: [] });
+	const source = readCanonSource();
+	const g = source.groups;
+	const canon = canonFor(source, { profile, with: [...g.files, ...g.catalogs], exceptions: [] });
 	const file = canon.files.find((f) => f.dest === dest);
 	if (!file) throw new Error(`no canon file ${dest} for profile ${profile}`);
 	return file.content;

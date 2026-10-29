@@ -1,12 +1,13 @@
+import * as fs from 'node:fs';
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { expect, test } from 'bun:test';
+import { expect, spyOn, test } from 'bun:test';
 import { parse as parseJsonc } from 'jsonc-parser';
 import { parse as parseYaml } from 'yaml';
 
-import { canonGroups, filesFor, loadCanon, loadManifest, parsePins } from './canon.ts';
+import { canonFor, type CanonSource, loadCanon, readCanonSource } from './canon.ts';
 import { type Profile, PROFILES, type StackConfig, StackConfigError } from './config.ts';
 import { RENOVATE_CONFIGS } from './repo.ts';
 import { canonFile, SCHEMA_PATH } from './testkit.ts';
@@ -14,16 +15,18 @@ import { canonFile, SCHEMA_PATH } from './testkit.ts';
 // Не канон-файл: README лежит рядом с пакетом, а не в canon/.
 const README_PATH = join(import.meta.dir, '..', '..', '..', 'README.md');
 
-// Ruling 33: filesFor() только фильтрует список канон-файлов — оно не замечает, если два
+// Ruling 33: выбор записей только фильтрует список канон-файлов — оно не замечает, если два
 // файла манифеста целят в один и тот же dest внутри одного профиля. planFiles() в этом случае
 // планирует оба, applyChanges пишет файл один раз — с последней записью, и следующий план вечно
 // видит дрейф по проигравшей записи. Гвард включает все with-группы разом, чтобы поймать дубликат,
 // который проявляется только при определённой комбинации опциональных групп.
 test('canon manifest: ни один профиль не получает два файла с одинаковым dest', () => {
-	const manifest = loadManifest();
-	const allGroups = [...new Set(manifest.map((f) => f.group).filter((g) => g != null))];
+	const source = readCanonSource();
+	const allGroups = source.groups.files;
 	for (const profile of PROFILES) {
-		const dests = filesFor({ profile, with: allGroups, exceptions: [] }).map((f) => f.dest);
+		const dests = canonFor(source, { profile, with: allGroups, exceptions: [] }).files.map(
+			(f) => f.dest,
+		);
 		const duplicates = dests.filter((dest, i) => dests.indexOf(dest) !== i);
 		expect(duplicates).toEqual([]);
 	}
@@ -144,10 +147,20 @@ test('loadCanon: прочие строковые пины верхнего ур�
 	expect(loadCanon(cfg(), dir).pins).toEqual({ node: '26.8.1', pnpm: '11.15.0', bun: '1.0.0' });
 });
 
-test('parsePins: таблицы и нестроковые значения — не пины', () => {
-	expect(parsePins('node = "1.2.3"\nretries = 3\n\n[plugins]\nx = "file://x.toml"\n')).toEqual({
-		node: '1.2.3',
-	});
+test('canonFor: таблицы и нестроковые значения .prototools — не пины', () => {
+	const source: CanonSource = {
+		entries: [
+			{
+				src: 'prototools',
+				dest: '.prototools',
+				appliesTo: ['node'],
+				content: 'node = "1.2.3"\npnpm = "4.5.6"\nretries = 3\n\n[plugins]\nx = "file://x.toml"\n',
+			},
+		],
+		catalogs: {},
+		groups: { files: [], catalogs: [], deprecated: [] },
+	};
+	expect(canonFor(source, cfg()).pins).toEqual({ node: '1.2.3', pnpm: '4.5.6' });
 });
 
 test('loadCanon: в каноне .prototools нет пина pnpm — ошибка', () => {
@@ -225,30 +238,35 @@ test('канон markdownlint: опция gitignore указывает на .mar
 // Шов репо-локальных игноров: cli2 читает .markdownlintignore через опцию gitignore, файл
 // засевается один раз (create-if-absent) и дальше принадлежит репо.
 test('канон засевает .markdownlintignore как create-if-absent в каждом профиле', () => {
-	const manifest = loadManifest();
-	const allGroups = [...new Set(manifest.map((f) => f.group).filter((g) => g != null))];
+	const source = readCanonSource();
 	for (const profile of PROFILES) {
-		const entry = filesFor({ profile, with: allGroups, exceptions: [] }).find(
-			(f) => f.dest === '.markdownlintignore',
-		);
+		const entry = canonFor(source, {
+			profile,
+			with: source.groups.files,
+			exceptions: [],
+		}).files.find((f) => f.dest === '.markdownlintignore');
 		expect(entry?.strategy).toBe('create-if-absent');
 	}
 });
 
 // Renovate — единственный бот канона: dependabot.yml не засевается никому, а группа renovate
 // осталась допустимым значением для старых .stack.jsonc и ничего не меняет.
-test('filesFor: dependabot.yml не засевается; with renovate не меняет набор файлов', () => {
+test('canonFor: dependabot.yml не засевается; with renovate не меняет набор файлов', () => {
+	const source = readCanonSource();
 	for (const profile of PROFILES) {
-		const plain = filesFor({ profile, with: [], exceptions: [] }).map((f) => f.dest);
+		const plain = canonFor(source, { profile, with: [], exceptions: [] }).files.map((f) => f.dest);
 		expect(plain).not.toContain('.github/dependabot.yml');
-		const renovate = filesFor({ profile, with: ['renovate'], exceptions: [] }).map((f) => f.dest);
+		const renovate = canonFor(source, { profile, with: ['renovate'], exceptions: [] }).files.map(
+			(f) => f.dest,
+		);
 		expect(renovate).toEqual(plain);
 	}
 });
 
 test('канон Renovate: workflow и засев конфига — в каждом профиле', () => {
+	const source = readCanonSource();
 	for (const profile of PROFILES) {
-		const files = filesFor({ profile, with: [], exceptions: [] });
+		const files = canonFor(source, { profile, with: [], exceptions: [] }).files;
 		const wf = files.find((f) => f.dest === '.github/workflows/renovate.yml');
 		// Файл обязан быть в наборе профиля и быть verbatim (strategy не задан).
 		expect(wf).toBeDefined();
@@ -270,7 +288,7 @@ test('канон Renovate: засев конфига подключает пре
 // `init` пишет `$schema` в .stack.jsonc, редактор валидирует против него: enum групп в schema.json
 // должен покрывать все group из манифеста, каталоги кроме dev и устаревшие группы.
 test('schema.json: enum групп with = группы манифеста ∪ каталоги (кроме dev) ∪ устаревшие', () => {
-	const g = canonGroups();
+	const g = readCanonSource().groups;
 	const expectedGroups = [...g.files, ...g.catalogs, ...g.deprecated].sort();
 
 	const schema = JSON.parse(readFileSync(SCHEMA_PATH, 'utf8')) as {
@@ -297,7 +315,7 @@ function readmeGroupRows(): Map<string, string> {
 }
 
 test('README: таблица групп перечисляет ровно группы канона', () => {
-	const g = canonGroups();
+	const g = readCanonSource().groups;
 	expect([...readmeGroupRows().keys()].sort()).toEqual(
 		[...g.files, ...g.catalogs, ...g.deprecated].sort(),
 	);
@@ -305,7 +323,7 @@ test('README: таблица групп перечисляет ровно гру
 
 // «Seeds» в README обещает засев: файл принадлежит репозиторию, sync его не перезаписывает.
 test('README: группа «Seeds …» засевает все свои файлы, группа «Syncs …» синхронизирует хотя бы один дословно', () => {
-	const manifest = loadManifest();
+	const manifest = readCanonSource().entries;
 	const broken: string[] = [];
 	for (const [group, adds] of readmeGroupRows()) {
 		const strategies = manifest
@@ -324,7 +342,7 @@ test('README: группа «Seeds …» засевает все свои фай
 const MOON_TASKS = ['typescript', 'oxlint', 'oxfmt', 'bun-test'];
 
 test('moon-tasks: четыре файла задач синхронизируются дословно, stack.yml — засев', () => {
-	const group = loadManifest().filter((f) => f.group === 'moon-tasks');
+	const group = readCanonSource().entries.filter((f) => f.group === 'moon-tasks');
 	for (const name of MOON_TASKS) {
 		const entry = group.find((f) => f.dest === `.moon/tasks/${name}.yml`);
 		expect(entry?.strategy ?? 'verbatim').toBe('verbatim');
@@ -384,4 +402,41 @@ test('moon-tasks: stack.yml запускается из корня ворксп�
 		]);
 		expect(content).toContain('(seeded once via --with=moon-tasks; repo-owned afterwards)');
 	}
+});
+
+test('readCanonSource читает manifest.json и catalogs.json по одному разу', () => {
+	const spy = spyOn(fs, 'readFileSync');
+	try {
+		loadCanon({ profile: 'node', with: ['libs', 'knip'], exceptions: [] });
+		const paths = spy.mock.calls.map((c) => String(c[0]));
+		expect(paths.filter((p) => p.endsWith('manifest.json'))).toHaveLength(1);
+		expect(paths.filter((p) => p.endsWith('catalogs.json'))).toHaveLength(1);
+	} finally {
+		spy.mockRestore();
+	}
+});
+
+test('canonFor на значении: профиль и with выбирают записи, dev-каталог всегда', () => {
+	const source: CanonSource = {
+		entries: [
+			{ src: 'a', dest: 'always', appliesTo: ['node', 'infra'], content: 'A' },
+			{
+				src: 'p',
+				dest: '.prototools',
+				appliesTo: ['node', 'infra'],
+				content: 'node = "1"\npnpm = "2"\n',
+			},
+			{ src: 'g', dest: 'grouped', appliesTo: ['node', 'infra'], group: 'extra', content: 'G' },
+			{ src: 'c', dest: 'node-skips', appliesTo: ['contracts'], content: 'C' },
+		],
+		catalogs: { dev: { x: '1' }, libs: { y: '2' } },
+		groups: { files: ['extra'], catalogs: ['libs'], deprecated: [] },
+	};
+	const plain = canonFor(source, cfg({ profile: 'node', with: [] }));
+	expect(plain.files.map((f) => f.dest)).toEqual(['always', '.prototools']);
+	expect(plain.catalogs).toEqual({ dev: { x: '1' } });
+	const full = canonFor(source, cfg({ profile: 'node', with: ['extra', 'libs'] }));
+	expect(full.files.map((f) => f.dest)).toEqual(['always', '.prototools', 'grouped']);
+	expect(full.files[0]?.content).toBe('A');
+	expect(full.catalogs).toEqual({ dev: { x: '1' }, libs: { y: '2' } });
 });

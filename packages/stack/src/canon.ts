@@ -38,25 +38,8 @@ export function canonDir(): string {
 	return join(dirname(fileURLToPath(import.meta.url)), '..', 'canon');
 }
 
-export function loadManifest(dir: string = canonDir()): CanonFile[] {
-	const raw = JSON.parse(readFileSync(join(dir, 'manifest.json'), 'utf8')) as {
-		files: CanonFile[];
-	};
-	return raw.files;
-}
-
-export function filesFor(cfg: StackConfig, dir: string = canonDir()): CanonFile[] {
-	return loadManifest(dir).filter(
-		(f) => f.appliesTo.includes(cfg.profile) && (f.group == null || cfg.with.includes(f.group)),
-	);
-}
-
-export function loadCatalogs(dir: string = canonDir()): CanonCatalogs {
-	return JSON.parse(readFileSync(join(dir, 'catalogs.json'), 'utf8')) as CanonCatalogs;
-}
-
 // Устаревшие группы принимаются ради старых .stack.jsonc и ничего не включают.
-export const DEPRECATED_GROUPS: readonly string[] = ['renovate'];
+const DEPRECATED_GROUPS: readonly string[] = ['renovate'];
 
 export interface CanonGroups {
 	files: string[];
@@ -64,15 +47,35 @@ export interface CanonGroups {
 	deprecated: readonly string[];
 }
 
-// Единственный источник имён групп: файловые — поле group манифеста, каталожные — ключи catalogs.json.
-export function canonGroups(dir: string = canonDir()): CanonGroups {
-	const files = [...new Set(loadManifest(dir).flatMap((f) => (f.group == null ? [] : [f.group])))];
-	const catalogs = Object.keys(loadCatalogs(dir)).filter((g) => g !== 'dev');
-	return { files, catalogs, deprecated: DEPRECATED_GROUPS };
+// canon/ как значение: все записи манифеста с содержимым, каталоги и имена групп. Читается один раз;
+// выбор под профиль и with — чистый шаг canonFor.
+export interface CanonSource {
+	entries: readonly (CanonFile & { content: string })[];
+	catalogs: CanonCatalogs;
+	groups: CanonGroups;
 }
 
-export function assertKnownGroups(groups: readonly string[], dir: string = canonDir()): void {
-	const g = canonGroups(dir);
+// Единственное место, где canon/ читается с диска: manifest.json и catalogs.json по разу, каждый src по разу.
+// Имена групп: файловые — поле group манифеста, каталожные — ключи catalogs.json кроме dev.
+export function readCanonSource(dir: string = canonDir()): CanonSource {
+	const manifest = JSON.parse(readFileSync(join(dir, 'manifest.json'), 'utf8')) as {
+		files: CanonFile[];
+	};
+	const catalogs = JSON.parse(readFileSync(join(dir, 'catalogs.json'), 'utf8')) as CanonCatalogs;
+	const entries = manifest.files.map((f) => ({
+		...f,
+		content: readFileSync(join(dir, f.src), 'utf8'),
+	}));
+	const groups: CanonGroups = {
+		files: [...new Set(entries.flatMap((f) => (f.group == null ? [] : [f.group])))],
+		catalogs: Object.keys(catalogs).filter((g) => g !== 'dev'),
+		deprecated: DEPRECATED_GROUPS,
+	};
+	return { entries, catalogs, groups };
+}
+
+export function assertKnownGroups(groups: readonly string[], source: CanonSource): void {
+	const g = source.groups;
 	const known = [...g.files, ...g.catalogs, ...g.deprecated].sort();
 	for (const name of groups) {
 		if (!known.includes(name)) {
@@ -83,15 +86,20 @@ export function assertKnownGroups(groups: readonly string[], dir: string = canon
 	}
 }
 
-export function loadCanon(cfg: StackConfig, dir: string = canonDir()): Canon {
-	assertKnownGroups(cfg.with, dir);
-	const files = filesFor(cfg, dir).map((f) => ({
-		dest: f.dest,
-		content: readFileSync(join(dir, f.src), 'utf8'),
-		strategy: f.strategy,
-		satisfiedBy: f.satisfiedBy,
-	}));
-	const all = loadCatalogs(dir);
+// Чистый шаг от источника к Canon: проверка групп, выбор записей, каталоги, пины. Диск не трогает.
+export function canonFor(source: CanonSource, cfg: StackConfig): Canon {
+	assertKnownGroups(cfg.with, source);
+	const files = source.entries
+		.filter(
+			(f) => f.appliesTo.includes(cfg.profile) && (f.group == null || cfg.with.includes(f.group)),
+		)
+		.map((f) => ({
+			dest: f.dest,
+			content: f.content,
+			strategy: f.strategy,
+			satisfiedBy: f.satisfiedBy,
+		}));
+	const all = source.catalogs;
 	const groups = ['dev', ...cfg.with];
 	const catalogs = Object.fromEntries(
 		groups.filter((g) => g in all).map((g) => [g, all[g] as Record<string, string>]),
@@ -109,8 +117,12 @@ export function loadCanon(cfg: StackConfig, dir: string = canonDir()): Canon {
 	return { files, catalogs, pins: { ...rest, node, pnpm } };
 }
 
+export function loadCanon(cfg: StackConfig, dir: string = canonDir()): Canon {
+	return canonFor(readCanonSource(dir), cfg);
+}
+
 // Строковые значения верхнего уровня .prototools; таблица [plugins] и нестроковые значения — не пины.
-export function parsePins(prototools: string): Record<string, string> {
+function parsePins(prototools: string): Record<string, string> {
 	const parsed = Bun.TOML.parse(prototools) as Record<string, unknown>;
 	return Object.fromEntries(
 		Object.entries(parsed).filter((e): e is [string, string] => typeof e[1] === 'string'),
