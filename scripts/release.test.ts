@@ -1,4 +1,4 @@
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -201,6 +201,39 @@ describe('waitVisible', () => {
 	});
 });
 
+describe('waitVisible: сбои реестра', () => {
+	const noSleep = (): Promise<void> => Promise.resolve();
+
+	test('has бросает на первой попытке и отдаёт true на второй — ожидание завершается', async () => {
+		let n = 0;
+		const registry: Registry = {
+			has: () => (++n === 1 ? Promise.reject(new Error('500')) : Promise.resolve(true)),
+			publish: () => Promise.resolve(),
+		};
+		await waitVisible([pkg('a')], '1.0.0', registry, {
+			attempts: 3,
+			intervalMs: 1,
+			sleep: noSleep,
+		});
+		expect(n).toBe(2);
+	});
+
+	test('has бросает всегда — после попыток ошибка перечисляет пакет', async () => {
+		let n = 0;
+		const registry: Registry = {
+			has: () => {
+				n++;
+				return Promise.reject(new Error('500'));
+			},
+			publish: () => Promise.resolve(),
+		};
+		await expect(
+			waitVisible([pkg('a')], '1.0.0', registry, { attempts: 3, intervalMs: 1, sleep: noSleep }),
+		).rejects.toThrow('за 3 попыток в реестре не появилась версия 1.0.0: @x/a');
+		expect(n).toBe(3);
+	});
+});
+
 describe('npmRegistry.has', () => {
 	const realFetch = globalThis.fetch;
 	afterEach(() => {
@@ -231,6 +264,17 @@ describe('npmRegistry.has', () => {
 		expect(await reg.has('@alxwlw/stack', '1.2.3')).toBe(false);
 		stub(new Response('boom', { status: 500 }));
 		await expect(reg.has('@alxwlw/stack', '1.2.3')).rejects.toThrow('@alxwlw/stack');
+	});
+
+	test('зависший запрос обрывается по таймауту — throw с именем пакета', async () => {
+		// Фейковый fetch не отвечает никогда, но уважает signal — как настоящий.
+		globalThis.fetch = ((_: unknown, init?: RequestInit) =>
+			new Promise((_resolve, reject) => {
+				init?.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+			})) as typeof fetch;
+		await expect(
+			npmRegistry('/nowhere/npm-cli.js', REPO_ROOT, 20).has('@alxwlw/stack', '1.2.3'),
+		).rejects.toThrow('@alxwlw/stack');
 	});
 
 	test('сбой сети — throw с именем пакета', async () => {
@@ -367,6 +411,73 @@ describe('CLI', () => {
 		});
 		expect(r.exitCode).toBe(1);
 		expect(r.stderr.toString()).toContain('версии пакетов расходятся: a=1.0.0, b=1.0.1');
+	});
+
+	// publish целиком: фейковый npm пишет argv и cwd в журнал, preload подменяет fetch фейковым реестром.
+	function publishRun(npmExit: number): {
+		code: number | null;
+		calls: { argv: string[]; cwd: string }[];
+	} {
+		const root = packagesTree(['a', 'b', 'c', 'd']);
+		const man = (dir: string, version: string, extra = ''): void =>
+			writeFileSync(
+				join(root, 'packages', dir, 'package.json'),
+				`{"name":"@x/${dir}","version":"${version}"${extra}}`,
+			);
+		man('a', '1.0.0');
+		man('b', '1.0.0');
+		man('c', '9.9.9', ',"private":true');
+		man('d', '1.0.0');
+		const log = join(root, 'calls.jsonl');
+		writeFileSync(
+			join(root, 'fake-npm.js'),
+			`require('node:fs').appendFileSync(${JSON.stringify(log)}, JSON.stringify({ argv: process.argv.slice(2), cwd: process.cwd() }) + '\\n');\nprocess.exit(${npmExit});\n`,
+		);
+		// b уже в реестре; остальные видны после того, как фейковый npm был вызван в их каталоге.
+		writeFileSync(
+			join(root, 'preload.js'),
+			`const fs = require('node:fs');
+globalThis.fetch = async (url) => {
+	const dir = decodeURIComponent(String(url).split('/').pop()).replace('@x/', '');
+	const calls = fs.existsSync(${JSON.stringify(log)}) ? fs.readFileSync(${JSON.stringify(log)}, 'utf8') : '';
+	const seen = dir === 'b' || calls.split('\\n').some((l) => l && JSON.parse(l).cwd.endsWith('/packages/' + dir));
+	return new Response(JSON.stringify({ versions: seen ? { '1.0.0': {} } : {} }), { status: 200 });
+};
+`,
+		);
+		const r = Bun.spawnSync(
+			[
+				'bun',
+				'--preload',
+				join(root, 'preload.js'),
+				join(REPO_ROOT, 'scripts/release.ts'),
+				'publish',
+			],
+			{ cwd: root, env: { ...noNpmEnv(), NPM: join(root, 'fake-npm.js') } },
+		);
+		const text = existsSync(log) ? readFileSync(log, 'utf8') : '';
+		const calls = text
+			.split('\n')
+			.filter(Boolean)
+			.map((l) => JSON.parse(l) as { argv: string[]; cwd: string });
+		return { code: r.exitCode, calls };
+	}
+
+	test('publish: зовёт npm publish с флагами по порядку, пропускает выложенные и private, код 0', () => {
+		const { code, calls } = publishRun(0);
+		expect(code).toBe(0);
+		expect(calls.map((c) => c.argv)).toEqual([
+			['publish', '--provenance', '--access', 'public'],
+			['publish', '--provenance', '--access', 'public'],
+		]);
+		expect(calls.map((c) => c.cwd.split('/').slice(-2).join('/'))).toEqual([
+			'packages/a',
+			'packages/d',
+		]);
+	});
+
+	test('publish: npm вышел с ненулевым кодом — код 1', () => {
+		expect(publishRun(3).code).toBe(1);
 	});
 
 	test('check-tag с текущей версией — код 0', () => {

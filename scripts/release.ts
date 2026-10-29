@@ -62,13 +62,15 @@ export interface Registry {
 // Abbreviated-документ: те же заголовки, что у шага ожидания в sync.yml.
 const ACCEPT = 'application/vnd.npm.install-v1+json; q=1.0, application/json; q=0.8, */*';
 
-export function npmRegistry(npm: string, root: string): Registry {
+export function npmRegistry(npm: string, root: string, timeoutMs = 30_000): Registry {
 	return {
 		async has(name, version) {
 			let res: Response;
 			try {
 				res = await fetch(`https://registry.npmjs.org/${name.replace('/', '%2f')}`, {
 					headers: { Accept: ACCEPT },
+					// Зависшее соединение иначе держит job релиза вечно.
+					signal: AbortSignal.timeout(timeoutMs),
 				});
 			} catch (e) {
 				throw new Error(
@@ -123,8 +125,9 @@ export async function waitVisible(
 	for (let i = 1; i <= opts.attempts; i++) {
 		const left: ReleasePackage[] = [];
 		for (const pkg of pending) {
-			if (await registry.has(pkg.name, version))
-				console.log(`${pkg.name}@${version} есть в реестре`);
+			// Сбой реестра (5xx, сеть) — «ещё не видно» на этой попытке, как в старом шаге sync.yml.
+			const visible = await registry.has(pkg.name, version).catch(() => false);
+			if (visible) console.log(`${pkg.name}@${version} есть в реестре`);
 			else left.push(pkg);
 		}
 		pending = left;
