@@ -42,16 +42,17 @@ jobs:
       - uses: alxwlw/stack/.github/actions/setup@v1
         with:
           install: false
-      # rollout зовёт sync сразу после publish, а реестр отдаёт новую версию не сразу: в 1.6.0
-      # все sync упали в bunx на «No version matching». Ждём все lockstep-пакеты, не только
-      # stack: sync поднимает @alxwlw/* в каталоге, и в 1.7.0 pnpm install упал на tsconfig,
-      # которую publish выложил позже stack. Опрашиваем ту же abbreviated-запись (URL и Accept),
-      # которую следом запросят bunx и pnpm.
+      # Основное ожидание — в job publish: он зелёный, только когда все версии видны в реестре, и
+      # rollout зовёт sync после этого. Здесь короткая страховка от отставания CDN у раннера
+      # потребителя (в 1.6.0 все sync упали в bunx на «No version matching»). Ждём то, что нужно
+      # sync: stack (bunx) и @alxwlw/*-записи catalogs.json (в 1.7.0 pnpm install упал на tsconfig).
+      # Список — литерал: sync.yml исполняется без checkout стека; его сверяет dogfood.test.ts.
+      # Опрашиваем ту же abbreviated-запись (URL и Accept), которую следом запросят bunx и pnpm.
       - name: дождаться версии в npm
         env:
           VERSION: ${{ inputs.version }}
-          PACKAGES: stack oxlint-config tsconfig repo-rules
-          ATTEMPTS: '60'
+          PACKAGES: oxlint-config stack tsconfig
+          ATTEMPTS: '12'
           INTERVAL: '10'
         run: |
           accept='application/vnd.npm.install-v1+json; q=1.0, application/json; q=0.8, */*'

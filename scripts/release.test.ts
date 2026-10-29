@@ -497,6 +497,14 @@ describe('связность релиза', () => {
 		expect(new Set(versions).size).toBe(1);
 	});
 
+	test('publish.yml публикует через release.ts publish и не перечисляет пакеты', () => {
+		const job = /\n {2}publish:\n([\s\S]*)$/.exec(publish)?.[1] ?? '';
+		expect(job).toContain('bun scripts/release.ts publish');
+		expect(job).not.toContain('for p in');
+		expect(job).not.toContain('npm view');
+		expect(job).not.toContain('"$NPM" view');
+	});
+
 	test('job selftest в publish.yml проверяет тег через release.ts', () => {
 		const selftest = /\n {2}selftest:\n([\s\S]*?)\n {2}publish:/.exec(publish)?.[1] ?? '';
 		expect(selftest).toContain('run: bun scripts/release.ts check-tag "$GITHUB_REF_NAME"');
