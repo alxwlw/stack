@@ -110,7 +110,7 @@ describe('focused-skipped-tests', () => {
 	test('.only after a closed block comment is found', () => {
 		expect(t('/* a */ test.only("x", () => {})')).toEqual([1]);
 	});
-	test('CRLF lines give the same findings as LF', () => {
+	test('CRLF smoke: findings survive a trailing CR (the strip itself is pinned in source)', () => {
 		expect(t('test.only("x", () => {})\r')).toEqual([1]);
 		expect(t('test.skip(\r', '"x", () => {})\r')).toEqual([1]);
 	});
@@ -163,6 +163,8 @@ describe('number-or-default', () => {
 	});
 	test('a comment opener inside a literal is not a comment', () => {
 		expect(n(`const n = '/* x */' + Number(y) || 5;`)).toEqual([1]);
+		expect(n(`const n = '// ' + Number(y) || 5;`)).toEqual([1]);
+		expect(n('const n = `// ${a}` + Number(y) || 5;')).toEqual([1]);
 	});
 	test('call forms and literal kinds', () => {
 		expect(n('const p = Number.parseInt(x, 10) || 5;')).toEqual([1]);
