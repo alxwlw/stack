@@ -148,7 +148,7 @@ the `v1` tag, and until then `#v1` and `@v1` still point at the previous release
 doesn't extend the preset with exactly the `#v1` tag — no tag or `#main` would pull an unreleased
 canon — and when `.github/dependabot.yml` (or `.yaml`) exists. Neither can be held back by an exception.
 
-`stack check` also reports a `version` set in moon's toolchains.yml (in the `.moon` directory) for any tool the canon pins (`node: { version: … }`),
+`stack check` also reports a `version` set in moon's toolchain config (in the `.moon` directory) for any tool the canon pins (`node: { version: … }`),
 even when it equals the `.prototools` pin: `.prototools` owns the version, so leave it unset (`node: {}`). `stack sync` does
 not fix it; an exception whose `file` is that moon file (with a `reason`) holds it.
 
