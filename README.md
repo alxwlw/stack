@@ -150,7 +150,7 @@ canon — and when `.github/dependabot.yml` (or `.yaml`) exists. Neither can be 
 
 `stack check` also reports a `version` set in moon's toolchain config (in the `.moon` directory) for any tool the canon pins (`node: { version: … }`),
 even when it equals the `.prototools` pin: `.prototools` owns the version, so leave it unset (`node: {}`). `stack sync` does
-not fix it; an exception whose `file` is that moon file (with a `reason`) holds it.
+not fix it; an exception whose `file` is the path before the colon in the finding's target (with a `reason`) holds it.
 
 Upgrading an existing consumer: on the first `stack/v<version>` PR after the move to Renovate, `check` goes red
 on `renovate-preset` if the repo already has its own Renovate config without the preset (add
