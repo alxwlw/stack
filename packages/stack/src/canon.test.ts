@@ -1,13 +1,19 @@
 import * as fs from 'node:fs';
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { expect, spyOn, test } from 'bun:test';
 import { parse as parseJsonc } from 'jsonc-parser';
 import { parse as parseYaml } from 'yaml';
 
-import { canonFor, type CanonSource, loadCanon, readCanonSource } from './canon.ts';
+import {
+	canonDir,
+	canonFor,
+	type CanonSource,
+	loadCanon,
+	readCanonSource,
+	selectEntries,
+} from './canon.ts';
 import { type Profile, PROFILES, type StackConfig, StackConfigError } from './config.ts';
 import { RENOVATE_CONFIGS } from './repo.ts';
 import { canonFile, SCHEMA_PATH } from './testkit.ts';
@@ -24,62 +30,13 @@ test('canon manifest: ни один профиль не получает два 
 	const source = readCanonSource();
 	const allGroups = source.groups.files;
 	for (const profile of PROFILES) {
-		const dests = canonFor(source, { profile, with: allGroups, exceptions: [] }).files.map(
+		const dests = selectEntries(source, { profile, with: allGroups, exceptions: [] }).map(
 			(f) => f.dest,
 		);
 		const duplicates = dests.filter((dest, i) => dests.indexOf(dest) !== i);
 		expect(duplicates).toEqual([]);
 	}
 });
-
-// Единственная канон-фикстура на диске: loadCanon — граница с файловой системой, остальные
-// тесты получают Canon значением.
-function canonFixture(): string {
-	const dir = mkdtempSync(join(tmpdir(), 'stack-canon-'));
-	mkdirSync(join(dir, 'files'), { recursive: true });
-	writeFileSync(join(dir, 'files', 'editorconfig'), 'root = true\n');
-	writeFileSync(join(dir, 'files', 'gitleaks-local.toml'), '[extend]\n');
-	writeFileSync(
-		join(dir, 'files', 'prototools'),
-		'node = "26.8.1"\npnpm = "11.15.0"\n\n[plugins]\nx = "file://x.toml"\n',
-	);
-	writeFileSync(
-		join(dir, 'files', 'contracts.prototools'),
-		'node = "0.0.0-fixture"\npnpm = "0.0.0-fixture"\n',
-	);
-	writeFileSync(join(dir, 'files', 'moon-task.yml'), 'tasks: {}\n');
-	writeFileSync(
-		join(dir, 'manifest.json'),
-		JSON.stringify({
-			files: [
-				{
-					src: 'files/editorconfig',
-					dest: '.editorconfig',
-					appliesTo: ['node', 'contracts', 'infra'],
-				},
-				{
-					src: 'files/gitleaks-local.toml',
-					dest: '.gitleaks.toml',
-					appliesTo: ['node', 'contracts', 'infra'],
-					strategy: 'create-if-absent',
-				},
-				{ src: 'files/prototools', dest: '.prototools', appliesTo: ['node', 'infra'] },
-				{ src: 'files/contracts.prototools', dest: '.prototools', appliesTo: ['contracts'] },
-				{
-					src: 'files/moon-task.yml',
-					dest: '.moon/tasks/stack.yml',
-					appliesTo: ['node'],
-					group: 'moon-tasks',
-				},
-			],
-		}),
-	);
-	writeFileSync(
-		join(dir, 'catalogs.json'),
-		JSON.stringify({ dev: { oxlint: '1.83.0', typescript: '7.0.2' }, libs: { react: '19.2.7' } }),
-	);
-	return dir;
-}
 
 const cfg = (over: Partial<StackConfig> = {}): StackConfig => ({
 	profile: 'node',
@@ -88,108 +45,160 @@ const cfg = (over: Partial<StackConfig> = {}): StackConfig => ({
 	...over,
 });
 
-test('loadCanon: файлы профиля с содержимым и стратегией; чужой профиль и чужая группа не приезжают', () => {
-	expect(loadCanon(cfg(), canonFixture()).files).toEqual([
+const PROTOTOOLS = 'node = "26.8.1"\npnpm = "11.15.0"\n\n[plugins]\nx = "file://x.toml"\n';
+
+// Источник-литерал: loadCanon не нужен, canonFor получает канон значением.
+function fixtureSource(): CanonSource {
+	return {
+		entries: [
+			{
+				src: 'files/editorconfig',
+				dest: '.editorconfig',
+				appliesTo: ['node', 'contracts', 'infra'],
+				content: 'root = true\n',
+			},
+			{
+				src: 'files/gitleaks-local.toml',
+				dest: '.gitleaks.toml',
+				appliesTo: ['node', 'contracts', 'infra'],
+				strategy: 'create-if-absent',
+				content: '[extend]\n',
+			},
+			{
+				src: 'files/prototools',
+				dest: '.prototools',
+				appliesTo: ['node', 'infra'],
+				content: PROTOTOOLS,
+			},
+			{
+				src: 'files/contracts.prototools',
+				dest: '.prototools',
+				appliesTo: ['contracts'],
+				content: 'node = "0.0.0-fixture"\npnpm = "0.0.0-fixture"\n',
+			},
+			{
+				src: 'files/moon-task.yml',
+				dest: '.moon/tasks/stack.yml',
+				appliesTo: ['node'],
+				group: 'moon-tasks',
+				content: 'tasks: {}\n',
+			},
+		],
+		catalogs: { dev: { oxlint: '1.83.0', typescript: '7.0.2' }, libs: { react: '19.2.7' } },
+		groups: { files: ['moon-tasks'], catalogs: ['libs'], deprecated: ['renovate'] },
+	};
+}
+
+// Источник с подменённым содержимым записи files/prototools.
+function withPrototools(content: string): CanonSource {
+	const source = fixtureSource();
+	return {
+		...source,
+		entries: source.entries.map((e) => (e.src === 'files/prototools' ? { ...e, content } : e)),
+	};
+}
+
+test('canonFor: файлы профиля с содержимым и стратегией; чужой профиль и чужая группа не приезжают', () => {
+	expect(canonFor(fixtureSource(), cfg()).files).toEqual([
 		{ dest: '.editorconfig', content: 'root = true\n' },
 		{ dest: '.gitleaks.toml', content: '[extend]\n', strategy: 'create-if-absent' },
-		{
-			dest: '.prototools',
-			content: 'node = "26.8.1"\npnpm = "11.15.0"\n\n[plugins]\nx = "file://x.toml"\n',
-		},
+		{ dest: '.prototools', content: PROTOTOOLS },
 	]);
 });
 
-test('loadCanon: файл группы приезжает только при with', () => {
-	const dir = canonFixture();
-	const dests = (c: StackConfig) => loadCanon(c, dir).files.map((f) => f.dest);
+test('canonFor: файл группы приезжает только при with', () => {
+	const source = fixtureSource();
+	const dests = (c: StackConfig) => canonFor(source, c).files.map((f) => f.dest);
 	expect(dests(cfg())).not.toContain('.moon/tasks/stack.yml');
 	expect(dests(cfg({ with: ['moon-tasks'] }))).toContain('.moon/tasks/stack.yml');
 });
 
-test('loadCanon: каталоги — dev всегда, группа только при with', () => {
-	const dir = canonFixture();
+test('canonFor: каталоги — dev всегда, группа только при with', () => {
+	const source = fixtureSource();
 	const dev = { oxlint: '1.83.0', typescript: '7.0.2' };
-	expect(loadCanon(cfg(), dir).catalogs).toEqual({ dev });
-	const withGroups = loadCanon(cfg({ with: ['libs'] }), dir).catalogs;
+	expect(canonFor(source, cfg()).catalogs).toEqual({ dev });
+	const withGroups = canonFor(source, cfg({ with: ['libs'] })).catalogs;
 	expect(Object.keys(withGroups)).toEqual(['dev', 'libs']);
 	expect(withGroups).toEqual({ dev, libs: { react: '19.2.7' } });
 });
 
-test('loadCanon: неизвестная группа в with — StackConfigError с её именем и списком допустимых', () => {
-	const dir = canonFixture();
-	expect(() => loadCanon(cfg({ with: ['moon-task'] }), dir)).toThrow(StackConfigError);
-	expect(() => loadCanon(cfg({ with: ['moon-task'] }), dir)).toThrow(
+test('canonFor: неизвестная группа в with — StackConfigError с её именем и списком допустимых', () => {
+	const source = fixtureSource();
+	expect(() => canonFor(source, cfg({ with: ['moon-task'] }))).toThrow(StackConfigError);
+	expect(() => canonFor(source, cfg({ with: ['moon-task'] }))).toThrow(
 		'unknown group "moon-task" in "with", expected one of: libs, moon-tasks, renovate',
 	);
 	// Опечатка не в первой позиции тоже ловится.
-	expect(() => loadCanon(cfg({ with: ['libs', 'moon-task'] }), dir)).toThrow(
+	expect(() => canonFor(source, cfg({ with: ['libs', 'moon-task'] }))).toThrow(
 		'unknown group "moon-task" in "with", expected one of: libs, moon-tasks, renovate',
 	);
 	// Устаревшая группа принимается и ничего не включает.
-	expect(loadCanon(cfg({ with: ['renovate'] }), dir).files).toEqual(loadCanon(cfg(), dir).files);
+	expect(canonFor(source, cfg({ with: ['renovate'] })).files).toEqual(
+		canonFor(source, cfg()).files,
+	);
 });
 
-test('loadCanon: пины — строковые значения верхнего уровня канон-.prototools своего профиля', () => {
-	const dir = canonFixture();
-	expect(loadCanon(cfg(), dir).pins).toEqual({ node: '26.8.1', pnpm: '11.15.0' });
-	expect(loadCanon(cfg({ profile: 'contracts' }), dir).pins).toEqual({
+test('canonFor: группа каталога без файлов в манифесте остаётся известной', () => {
+	const source = fixtureSource();
+	expect(source.entries.some((e) => e.group === 'libs')).toBe(false);
+	expect(() => canonFor(source, cfg({ with: ['libs'] }))).not.toThrow();
+});
+
+test('canonFor: пины — строковые значения верхнего уровня канон-.prototools своего профиля', () => {
+	const source = fixtureSource();
+	expect(canonFor(source, cfg()).pins).toEqual({ node: '26.8.1', pnpm: '11.15.0' });
+	expect(canonFor(source, cfg({ profile: 'contracts' })).pins).toEqual({
 		node: '0.0.0-fixture',
 		pnpm: '0.0.0-fixture',
 	});
 });
 
-test('loadCanon: прочие строковые пины верхнего уровня канон-.prototools попадают в pins', () => {
-	const dir = canonFixture();
-	writeFileSync(
-		join(dir, 'files', 'prototools'),
-		'node = "26.8.1"\npnpm = "11.15.0"\nbun = "1.0.0"\n',
-	);
-	expect(loadCanon(cfg(), dir).pins).toEqual({ node: '26.8.1', pnpm: '11.15.0', bun: '1.0.0' });
+test('canonFor: прочие строковые пины верхнего уровня канон-.prototools попадают в pins', () => {
+	const source = withPrototools('node = "26.8.1"\npnpm = "11.15.0"\nbun = "1.0.0"\n');
+	expect(canonFor(source, cfg()).pins).toEqual({ node: '26.8.1', pnpm: '11.15.0', bun: '1.0.0' });
 });
 
 test('canonFor: таблицы и нестроковые значения .prototools — не пины', () => {
-	const source: CanonSource = {
-		entries: [
-			{
-				src: 'prototools',
-				dest: '.prototools',
-				appliesTo: ['node'],
-				content: 'node = "1.2.3"\npnpm = "4.5.6"\nretries = 3\n\n[plugins]\nx = "file://x.toml"\n',
-			},
-		],
-		catalogs: {},
-		groups: { files: [], catalogs: [], deprecated: [] },
-	};
+	const source = withPrototools(
+		'node = "1.2.3"\npnpm = "4.5.6"\nretries = 3\n\n[plugins]\nx = "file://x.toml"\n',
+	);
 	expect(canonFor(source, cfg()).pins).toEqual({ node: '1.2.3', pnpm: '4.5.6' });
 });
 
-test('loadCanon: в каноне .prototools нет пина pnpm — ошибка', () => {
-	const dir = canonFixture();
-	writeFileSync(join(dir, 'files', 'prototools'), 'node = "26.8.1"\n');
-	expect(() => loadCanon(cfg(), dir)).toThrow('canon .prototools has no pnpm pin');
+test('canonFor: в каноне .prototools нет пина pnpm — ошибка', () => {
+	expect(() => canonFor(withPrototools('node = "26.8.1"\n'), cfg())).toThrow(
+		'canon .prototools has no pnpm pin',
+	);
 });
 
-test('loadCanon: в манифесте нет .prototools для профиля — ошибка', () => {
-	const dir = mkdtempSync(join(tmpdir(), 'stack-canon-'));
-	writeFileSync(join(dir, 'manifest.json'), JSON.stringify({ files: [] }));
-	writeFileSync(join(dir, 'catalogs.json'), '{}');
-	expect(() => loadCanon(cfg(), dir)).toThrow(
+test('canonFor: в манифесте нет .prototools для профиля — ошибка', () => {
+	const source = fixtureSource();
+	const noPrototools = {
+		...source,
+		entries: source.entries.filter((e) => e.dest !== '.prototools'),
+	};
+	expect(() => canonFor(noPrototools, cfg())).toThrow(
 		'canon manifest has no .prototools entry for profile node',
 	);
 });
 
-test('loadCanon: в каноне .prototools нет пина node — ошибка', () => {
-	const dir = mkdtempSync(join(tmpdir(), 'stack-canon-'));
-	mkdirSync(join(dir, 'files'), { recursive: true });
-	writeFileSync(join(dir, 'files', 'prototools'), 'pnpm = "11.15.0"\n');
-	writeFileSync(
-		join(dir, 'manifest.json'),
-		JSON.stringify({
-			files: [{ src: 'files/prototools', dest: '.prototools', appliesTo: ['node'] }],
-		}),
+test('canonFor: в каноне .prototools нет пина node — ошибка', () => {
+	expect(() => canonFor(withPrototools('pnpm = "11.15.0"\n'), cfg())).toThrow(
+		'canon .prototools has no node pin',
 	);
-	writeFileSync(join(dir, 'catalogs.json'), '{}');
-	expect(() => loadCanon(cfg(), dir)).toThrow('canon .prototools has no node pin');
+});
+
+// Единственный тест чтения с диска: readCanonSource — граница с файловой системой.
+test('readCanonSource на настоящем canon/: все записи манифеста с содержимым файла', () => {
+	const manifest = JSON.parse(readFileSync(join(canonDir(), 'manifest.json'), 'utf8')) as {
+		files: { src: string }[];
+	};
+	const { entries } = readCanonSource();
+	expect(entries).toHaveLength(manifest.files.length);
+	expect(entries.map((e) => e.src)).toEqual(manifest.files.map((f) => f.src));
+	expect(entries.find((e) => e.src === 'files/prototools')?.content).toBe(
+		readFileSync(join(canonDir(), 'files', 'prototools'), 'utf8'),
+	);
 });
 
 // canonFile — вход тестов в канон: файла нет в профиле (или вообще нет) — ошибка с dest и профилем, а не пустая строка.

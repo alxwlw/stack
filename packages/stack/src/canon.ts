@@ -86,19 +86,23 @@ export function assertKnownGroups(groups: readonly string[], source: CanonSource
 	}
 }
 
+// Единственный предикат выбора: запись приходит в канон профиля, если профиль в appliesTo, а группа
+// (если есть) включена через with. Им же пользуются гварды тестов, у которых нет права на свою копию.
+export function selectEntries(source: CanonSource, cfg: StackConfig): CanonSource['entries'] {
+	return source.entries.filter(
+		(f) => f.appliesTo.includes(cfg.profile) && (f.group == null || cfg.with.includes(f.group)),
+	);
+}
+
 // Чистый шаг от источника к Canon: проверка групп, выбор записей, каталоги, пины. Диск не трогает.
 export function canonFor(source: CanonSource, cfg: StackConfig): Canon {
 	assertKnownGroups(cfg.with, source);
-	const files = source.entries
-		.filter(
-			(f) => f.appliesTo.includes(cfg.profile) && (f.group == null || cfg.with.includes(f.group)),
-		)
-		.map((f) => ({
-			dest: f.dest,
-			content: f.content,
-			strategy: f.strategy,
-			satisfiedBy: f.satisfiedBy,
-		}));
+	const files = selectEntries(source, cfg).map((f) => ({
+		dest: f.dest,
+		content: f.content,
+		strategy: f.strategy,
+		satisfiedBy: f.satisfiedBy,
+	}));
 	const all = source.catalogs;
 	const groups = ['dev', ...cfg.with];
 	const catalogs = Object.fromEntries(
