@@ -2,6 +2,7 @@ import { createVerify, generateKeyPairSync } from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { expect, test } from 'bun:test';
 
@@ -249,4 +250,27 @@ test('signAppJwt: валидная RS256-подпись, iss/iat/exp выста�
 	expect(payload.exp).toBe(now + 600);
 	const verifier = createVerify('RSA-SHA256').update(`${headerB64}.${payloadB64}`);
 	expect(verifier.verify(publicKey, Buffer.from(sigB64 as string, 'base64url'))).toBe(true);
+});
+
+// Строка `import.meta.main` исполняется только при запуске файла как скрипта — гоняем его
+// подпроцессом. Env собран явно: секреты и GITHUB_STEP_SUMMARY раннера не протекают.
+function runScript(env: Record<string, string>) {
+	const script = fileURLToPath(new URL('./rollout.ts', import.meta.url));
+	return Bun.spawnSync([process.execPath, script], {
+		env: { PATH: process.env.PATH ?? '', ...env },
+		stdout: 'pipe',
+		stderr: 'pipe',
+	});
+}
+
+test('rollout.ts как скрипт: пустой CONSUMERS — вход вызван, лог о пустом списке, код 0', () => {
+	const res = runScript({ VERSION: 'v1.2.3', CONSUMERS: '' });
+	expect(res.stdout.toString()).toContain('no consumers configured');
+	expect(res.exitCode).toBe(0);
+});
+
+test('rollout.ts как скрипт: CONSUMERS без секретов — ненулевой код выхода', () => {
+	const res = runScript({ VERSION: 'v1.2.3', CONSUMERS: 'acme/app' });
+	expect(res.stderr.toString()).toContain('are not set');
+	expect(res.exitCode).not.toBe(0);
 });
