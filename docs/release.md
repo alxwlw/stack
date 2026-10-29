@@ -22,12 +22,12 @@ package and nothing is published; and `rollout.yml` would dispatch any successfu
 1. Branch from a fresh `main`.
 2. Run `bun scripts/release.ts version X.Y.Z`. It writes `version` into every `packages/*/package.json`
    and the same version into each `@alxwlw/*` entry of `canon/catalogs.json`. `release.ts` finds every
-   `packages/*` directory with a `package.json` by itself, but two lists name packages explicitly: the
-   publish loop in `.github/workflows/publish.yml` and the package list of the wait step in
-   `.github/workflows/sync.yml`. A new package is added to both in the same PR. Until it is, the tests
-   `scripts/release.test.ts` (publish.yml publishes every package from packageDirs) and
-   `packages/stack/src/dogfood.test.ts` (the wait step waits for every published package in `packages/`)
-   fail.
+   `packages/*` directory with a `package.json` by itself, and the `publish` job publishes whatever it
+   finds, so a new package needs no workflow edit. One list stays explicit: the `PACKAGES` of the wait
+   step in `.github/workflows/sync.yml`. It is a literal because `sync.yml` runs in a consumer without a
+   checkout of this repository, and it holds `stack` plus every package whose `@alxwlw/*` name is an entry
+   of `canon/catalogs.json`. When a new package lands in `catalogs.json`, add its directory name there;
+   until it is, `packages/stack/src/dogfood.test.ts` fails.
 3. Run the repository gates: `bun test`, `pnpm exec oxlint --type-aware`, `pnpm exec oxfmt --check .`,
    `pnpm exec tsc --build`, `proto run actionlint -- -color`.
 4. Open a PR titled `chore(release): X.Y.Z` and merge it.
@@ -46,15 +46,17 @@ package and nothing is published; and `rollout.yml` would dispatch any successfu
 3. Job `selftest` runs the test, lint, format and typecheck gates, then
    `bun scripts/release.ts check-tag "$GITHUB_REF_NAME"`, which fails when the version of any package
    differs from the tag.
-4. Job `publish` publishes each package named in its loop, from its own directory, with `--provenance`,
-   through npm trusted publishing (OIDC, no npm token). It does not publish every directory under
-   `packages/`: a new package is included only after it is added to that loop (see step 2 of
-   «Cut a release»). A version that is already in the registry is skipped, so a re-run
-   after a partial publish finishes the rest.
+4. Job `publish` runs `bun scripts/release.ts publish`. It publishes every non-private package under
+   `packages/` from its own directory, with `--provenance`, through npm trusted publishing (OIDC, no
+   npm token). A version that is already in the registry is skipped, so a re-run after a partial publish
+   finishes the rest. When the registry answers a 5xx or the network fails during that «already
+   published» check, the script does not publish blindly: the job fails naming the package, and a re-run
+   is safe for the same reason. After publishing, the job waits (60 attempts, 10 s apart) until every
+   published version is visible in the registry, and goes green only then.
 
 ## Rollout
 
-When `publish` succeeds, `rollout.yml` runs `bun scripts/rollout.ts`. It signs a JWT for the GitHub App,
+When `publish` succeeds, which means every version is already visible in the registry, `rollout.yml` runs `bun scripts/rollout.ts`. It signs a JWT for the GitHub App,
 takes the App's installation token for each consumer's owner, and dispatches the `stack-sync` workflow on the
 consumer's `main` with the version as input. The consumers are the lines of the `STACK_CONSUMERS`
 secret (`owner/repo`, one per line); the App credentials are `STACK_BOT_APP_ID` and
@@ -63,8 +65,8 @@ secret (`owner/repo`, one per line); the App credentials are `STACK_BOT_APP_ID` 
 This repository is public, so the log carries counters only: `dispatched: N, failed: M`. A failed
 dispatch is counted and its message is dropped, because it can name the consumer.
 
-On the consumer side the reusable `sync.yml` waits until every package named in its wait step is visible in the
-npm registry, and only then runs `bunx @alxwlw/stack@X.Y.Z sync` and opens the PR.
+On the consumer side the reusable `sync.yml` keeps a short safety wait (12 attempts) for the packages it
+needs, in case the consumer's runner sees the registry later than the publisher did, and only then runs `bunx @alxwlw/stack@X.Y.Z sync` and opens the PR.
 
 ### VERSION arrives with the tag prefix
 

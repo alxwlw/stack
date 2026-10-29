@@ -1,13 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import {
-	chmodSync,
-	existsSync,
-	mkdtempSync,
-	readdirSync,
-	readFileSync,
-	rmSync,
-	writeFileSync,
-} from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -15,6 +7,7 @@ import { expect, test } from 'bun:test';
 import JSON5 from 'json5';
 import { parse as parseYaml } from 'yaml';
 
+import { releasePackages } from '../../../scripts/release.ts';
 import { loadCanon, loadCatalogs } from './canon.ts';
 import { canonFile } from './testkit.ts';
 
@@ -167,10 +160,21 @@ const syncSteps = (
 const waitIdx = syncSteps?.findIndex((s) => s.name === 'дождаться версии в npm') ?? -1;
 const waitStep = syncSteps?.[waitIdx];
 
-const PUBLISHED = readdirSync(join(ROOT, 'packages')).filter((p) => {
-	const manifest = join(ROOT, 'packages', p, 'package.json');
-	return existsSync(manifest) && JSON.parse(readFileSync(manifest, 'utf8')).private !== true;
-});
+// Пакеты, без которых sync не обойдётся: stack (bunx) и @alxwlw/*-записи каталога (pnpm install).
+// Остальные опубликованные (repo-rules) sync не тянет; их ожидание живёт в job publish.
+const catalogNames = new Set(
+	Object.values(loadCatalogs()).flatMap((group) =>
+		Object.keys(group).filter((n) => n.startsWith('@alxwlw/')),
+	),
+);
+const NEEDED = [
+	...new Set([
+		'stack',
+		...releasePackages(ROOT)
+			.filter((p) => catalogNames.has(p.name))
+			.map((p) => p.dir),
+	]),
+].toSorted();
 
 /** `bodies` — тело ответа реестра по имени пакета без скоупа; пакета нет в карте — curl падает. */
 function runWait(
@@ -204,7 +208,7 @@ function runWait(
 const has = '{"versions":{"1.2.2":{},"1.2.3":{}}}';
 // dist-tags с той же строкой не должны сойти за версию.
 const lacks = '{"dist-tags":{"latest":"1.2.3"},"versions":{"1.2.2":{}}}';
-const all = (body: string) => Object.fromEntries(PUBLISHED.map((p) => [p, body]));
+const all = (body: string) => Object.fromEntries(NEEDED.map((p) => [p, body]));
 
 test('sync.yml ждёт версию в npm до bunx и с тем же VERSION', () => {
 	expect(waitIdx).toBeGreaterThanOrEqual(0);
@@ -215,15 +219,20 @@ test('sync.yml ждёт версию в npm до bunx и с тем же VERSION'
 	expect(waitStep?.env?.VERSION).toBe('${{ inputs.version }}');
 });
 
-test('шаг ожидания ждёт каждый публикуемый пакет из packages/', () => {
-	expect(PUBLISHED.length).toBeGreaterThan(1);
-	expect((waitStep?.env?.PACKAGES ?? '').split(' ').toSorted()).toEqual(PUBLISHED.toSorted());
+test('шаг ожидания ждёт stack и пакеты каталога, а не все опубликованные', () => {
+	expect(NEEDED.length).toBeGreaterThan(1);
+	expect((waitStep?.env?.PACKAGES ?? '').split(' ').toSorted()).toEqual(NEEDED);
+	expect(NEEDED).not.toContain('repo-rules');
+});
+
+test('шаг ожидания — короткая страховка: ATTEMPTS 12', () => {
+	expect(waitStep?.env?.ATTEMPTS).toBe('12');
 });
 
 test('шаг ожидания выходит на первой попытке, когда все версии уже в реестре', () => {
 	const r = runWait(all(has), '3');
 	expect(r.status).toBe(0);
-	expect(r.calls.toSorted()).toEqual(PUBLISHED.toSorted());
+	expect(r.calls.toSorted()).toEqual(NEEDED);
 });
 
 test('шаг ожидания падает после ATTEMPTS попыток и называет пакет, которого нет', () => {
@@ -231,16 +240,16 @@ test('шаг ожидания падает после ATTEMPTS попыток и
 	expect(r.status).toBe(1);
 	// Найденные пакеты не опрашиваются повторно: первый круг — все, дальше — только tsconfig.
 	expect(r.calls.filter((p) => p === 'tsconfig')).toHaveLength(3);
-	expect(r.calls).toHaveLength(PUBLISHED.length + 2);
+	expect(r.calls).toHaveLength(NEEDED.length + 2);
 	expect(r.out).toContain('tsconfig');
 });
 
 test('шаг ожидания не принимает упавший запрос к реестру за наличие версии', () => {
-	// Тела для repo-rules нет — заглушка curl выходит с ошибкой, как curl -f на 404/5xx.
-	const { 'repo-rules': _, ...rest } = all(has);
+	// Тела для oxlint-config нет — заглушка curl выходит с ошибкой, как curl -f на 404/5xx.
+	const { 'oxlint-config': _, ...rest } = all(has);
 	const r = runWait(rest, '2');
 	expect(r.status).toBe(1);
-	expect(r.out).toContain('repo-rules');
+	expect(r.out).toContain('oxlint-config');
 });
 
 // Renovate самого стека двигает пины канона. Пресет канона он подключать не должен: тот выключает

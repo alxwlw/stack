@@ -81,7 +81,12 @@ export function signAppJwt(
 	return `${signingInput}.${base64url(signature)}`;
 }
 
-async function githubApi(path: string, jwtOrToken: string, method: 'GET' | 'POST', body?: unknown) {
+async function githubRequest(
+	path: string,
+	jwtOrToken: string,
+	method: 'GET' | 'POST',
+	body?: unknown,
+) {
 	const res = await fetch(`https://api.github.com${path}`, {
 		method,
 		headers: {
@@ -96,19 +101,23 @@ async function githubApi(path: string, jwtOrToken: string, method: 'GET' | 'POST
 }
 
 export async function getInstallations(jwt: string): Promise<Installation[]> {
-	const res = await githubApi('/app/installations', jwt, 'GET');
+	const res = await githubRequest('/app/installations', jwt, 'GET');
 	const body = (await res.json()) as { id: number; account: { login: string } }[];
 	return body.map((i) => ({ id: i.id, login: i.account.login }));
 }
 
 export async function getInstallationToken(installationId: number, jwt: string): Promise<string> {
-	const res = await githubApi(`/app/installations/${installationId}/access_tokens`, jwt, 'POST');
+	const res = await githubRequest(
+		`/app/installations/${installationId}/access_tokens`,
+		jwt,
+		'POST',
+	);
 	const body = (await res.json()) as { token: string };
 	return body.token;
 }
 
 export async function dispatchSync(repo: string, token: string, version: string): Promise<void> {
-	await githubApi(
+	await githubRequest(
 		`/repos/${repo}/actions/workflows/${DISPATCH_WORKFLOW}/dispatches`,
 		token,
 		'POST',
@@ -119,9 +128,55 @@ export async function dispatchSync(repo: string, token: string, version: string)
 	);
 }
 
-if (import.meta.main) {
-	const version = stripTagPrefix(process.env.VERSION ?? '');
-	const consumers = (process.env.CONSUMERS ?? '')
+export interface RolloutEnv {
+	VERSION?: string;
+	CONSUMERS?: string;
+	STACK_BOT_APP_ID?: string;
+	STACK_BOT_PRIVATE_KEY?: string;
+	// Индексная сигнатура: `process.env` (ProcessEnv) иначе не проходит проверку слабого типа.
+	[key: string]: string | undefined;
+}
+
+/** Порт GitHub: тесты подставляют фейк, прод — `githubApi`. */
+export interface GitHubApi {
+	signAppJwt(appId: string, key: string): string;
+	getInstallations(jwt: string): Promise<Installation[]>;
+	getInstallationToken(id: number, jwt: string): Promise<string>;
+	dispatchSync(repo: string, token: string, version: string): Promise<void>;
+}
+
+/** Вывод рассылки: `log` — лог раннера, `summary` — Job Summary. */
+export interface RolloutOutput {
+	log(line: string): void;
+	summary(line: string): void;
+}
+
+export const githubApi: GitHubApi = {
+	signAppJwt,
+	getInstallations,
+	getInstallationToken,
+	dispatchSync,
+};
+
+export function consoleOutput(summaryPath: string | undefined): RolloutOutput {
+	return {
+		log: (line) => console.log(line),
+		summary: (line) => {
+			if (summaryPath) appendFileSync(summaryPath, `${line}\n`);
+		},
+	};
+}
+
+/** Вход рассылки. `null` — потребителей нет, GitHub не вызывался. Ошибки `getInstallations` и
+ * подписи JWT пробрасываются как есть (имени потребителя в них нет); сбои отдельных
+ * потребителей гасит `rollout()` в `failed`. */
+export async function runRollout(
+	env: RolloutEnv,
+	github: GitHubApi,
+	out: RolloutOutput,
+): Promise<RolloutResult | null> {
+	const version = stripTagPrefix(env.VERSION ?? '');
+	const consumers = (env.CONSUMERS ?? '')
 		.split('\n')
 		.map((line) => line.trim())
 		.filter(Boolean);
@@ -131,24 +186,28 @@ if (import.meta.main) {
 	// до первого потребителя даёт красный прогон рассылки. Если потребители есть, а секретов
 	// нет — это настоящая ошибка, и она по-прежнему громкая.
 	if (consumers.length === 0) {
-		console.log('no consumers configured — nothing to roll out');
-	} else {
-		const appId = process.env.STACK_BOT_APP_ID;
-		const privateKey = process.env.STACK_BOT_PRIVATE_KEY;
-		if (!appId || !privateKey) {
-			throw new Error('STACK_BOT_APP_ID/STACK_BOT_PRIVATE_KEY are not set');
-		}
-
-		const jwt = signAppJwt(appId, privateKey);
-		const installations = await getInstallations(jwt);
-		const result = await rollout(consumers, installations, version, {
-			getToken: (id) => getInstallationToken(id, jwt),
-			dispatch: (repo, token, v) => dispatchSync(repo, token, v),
-		});
-
-		const summary = `dispatched: ${result.dispatched}, failed: ${result.failed}`;
-		console.log(summary);
-		if (process.env.GITHUB_STEP_SUMMARY)
-			appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${summary}\n`);
+		out.log('no consumers configured — nothing to roll out');
+		return null;
 	}
+	const appId = env.STACK_BOT_APP_ID;
+	const privateKey = env.STACK_BOT_PRIVATE_KEY;
+	if (!appId || !privateKey) {
+		throw new Error('STACK_BOT_APP_ID/STACK_BOT_PRIVATE_KEY are not set');
+	}
+
+	const jwt = github.signAppJwt(appId, privateKey);
+	const installations = await github.getInstallations(jwt);
+	const result = await rollout(consumers, installations, version, {
+		getToken: (id) => github.getInstallationToken(id, jwt),
+		dispatch: (repo, token, v) => github.dispatchSync(repo, token, v),
+	});
+
+	const line = `dispatched: ${result.dispatched}, failed: ${result.failed}`;
+	out.log(line);
+	out.summary(line);
+	return result;
+}
+
+if (import.meta.main) {
+	await runRollout(process.env, githubApi, consoleOutput(process.env.GITHUB_STEP_SUMMARY));
 }
