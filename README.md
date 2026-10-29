@@ -123,6 +123,11 @@ profile needs.
 npx stack init --profile node --with libs --with moon-tasks
 ```
 
+The `stack.yml` seed defines one `stack-check` task that every moon project inherits. It runs from the
+workspace root, where `.stack.jsonc` lives: `pnpm exec stack check`, or `bunx @alxwlw/stack check` on `infra`
+(no `package.json` there). `moon run <project>:stack-check` checks the repo once; `moon run :stack-check`
+repeats the same check for every project.
+
 ## Dependency updates
 
 Renovate is the canon's only dependency bot; Dependabot is no longer seeded. `stack sync` brings two
@@ -147,6 +152,10 @@ the `v1` tag, and until then `#v1` and `@v1` still point at the previous release
 `stack check` fails when the Renovate config (the first one found, in Renovate's own lookup order)
 doesn't extend the preset with exactly the `#v1` tag — no tag or `#main` would pull an unreleased
 canon — and when `.github/dependabot.yml` (or `.yaml`) exists. Neither can be held back by an exception.
+
+`stack check` also reports a `version` set in moon's toolchain config (in the `.moon` directory) for any tool the canon pins (`node: { version: … }`),
+even when it equals the `.prototools` pin: `.prototools` owns the version, so leave it unset (`node: {}`). `stack sync` does
+not fix it; an exception whose `file` is the path before the colon in the finding's target (with a `reason`) holds it.
 
 Upgrading an existing consumer: on the first `stack/v<version>` PR after the move to Renovate, `check` goes red
 on `renovate-preset` if the repo already has its own Renovate config without the preset (add

@@ -4,9 +4,10 @@ import { join } from 'node:path';
 
 import { expect, test } from 'bun:test';
 import { parse as parseJsonc } from 'jsonc-parser';
+import { parse as parseYaml } from 'yaml';
 
 import { canonGroups, filesFor, loadCanon, loadManifest, parsePins } from './canon.ts';
-import { PROFILES, type StackConfig, StackConfigError } from './config.ts';
+import { type Profile, PROFILES, type StackConfig, StackConfigError } from './config.ts';
 import { RENOVATE_CONFIGS } from './repo.ts';
 import { canonFile, SCHEMA_PATH } from './testkit.ts';
 
@@ -329,7 +330,10 @@ test('moon-tasks: четыре файла задач синхронизирую�
 		expect(entry?.strategy ?? 'verbatim').toBe('verbatim');
 		expect(entry?.appliesTo).toEqual(['node', 'contracts']);
 	}
-	expect(group.find((f) => f.dest === '.moon/tasks/stack.yml')?.strategy).toBe('create-if-absent');
+	// stack.yml — два входа манифеста с одним dest (команда у infra своя): засев оба, вместе — все профили.
+	const seeds = group.filter((f) => f.dest === '.moon/tasks/stack.yml');
+	expect(seeds.map((f) => f.strategy)).toEqual(['create-if-absent', 'create-if-absent']);
+	expect(seeds.flatMap((f) => f.appliesTo).sort()).toEqual(['contracts', 'infra', 'node']);
 });
 
 test('moon-tasks: форма потребителей — Bun, tsc --noEmit от корня, lint с отчётом о лишних disable', () => {
@@ -345,5 +349,39 @@ test('moon-tasks: форма потребителей — Bun, tsc --noEmit от
 	for (const name of MOON_TASKS) {
 		expect(read(name)).toContain('sync-managed');
 		expect(read(name)).not.toContain('create-if-absent');
+	}
+});
+
+// Задачу из .moon/tasks/ наследует каждый проект воркспейса, а .stack.jsonc лежит в корне: засев
+// запускает stack check из корня, входы — от корня. Команда — как в check.yml: pnpm exec в
+// pnpm-воркспейсе, bunx у infra (там нет package.json и node_modules).
+const STACK_CHECK: Record<Profile, { command: string; inputs: string[] }> = {
+	node: {
+		command: 'pnpm exec stack check',
+		inputs: ['/.stack.jsonc', '/.prototools', '/pnpm-workspace.yaml'],
+	},
+	contracts: {
+		command: 'pnpm exec stack check',
+		inputs: ['/.stack.jsonc', '/.prototools', '/pnpm-workspace.yaml'],
+	},
+	infra: { command: 'bunx @alxwlw/stack check', inputs: ['/.stack.jsonc', '/.prototools'] },
+};
+
+test('moon-tasks: stack.yml запускается из корня воркспейса', () => {
+	for (const profile of PROFILES) {
+		const content = canonFile('.moon/tasks/stack.yml', profile);
+		const task = (parseYaml(content) as { tasks: Record<string, Record<string, unknown>> }).tasks[
+			'stack-check'
+		];
+		expect([profile, task?.command, task?.inputs]).toEqual([
+			profile,
+			STACK_CHECK[profile].command,
+			STACK_CHECK[profile].inputs,
+		]);
+		expect([profile, task?.options]).toEqual([
+			profile,
+			{ cache: false, runFromWorkspaceRoot: true },
+		]);
+		expect(content).toContain('(seeded once via --with=moon-tasks; repo-owned afterwards)');
 	}
 });

@@ -10,6 +10,7 @@ import {
 import { type Exception, type Held, isHeld, resolve } from './exceptions.ts';
 import { planFiles } from './files.ts';
 import type { Drift, Finding } from './findings.ts';
+import { checkMoonToolchains } from './moon-toolchains.ts';
 import { planPackageManager } from './package-manager.ts';
 import { loadRepo, type Repo } from './repo.ts';
 
@@ -33,6 +34,7 @@ export function check(repo: Repo, canon: Canon, exceptions: Exception[]): Findin
 			...checkEnginesNode(repo, canon),
 			...checkRenovatePreset(repo),
 			...checkDependabot(repo),
+			...checkMoonToolchains(repo, canon),
 		],
 		exceptions,
 	);
