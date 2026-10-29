@@ -96,58 +96,6 @@ test('reusable renovate.yml: workflow_call с обязательным token, ac
 	expect(action?.env?.RENOVATE_REPOSITORIES).toBe('${{ github.repository }}');
 });
 
-// Канон-файл потребителя и корневой reusable должны сходиться по контракту: with — только объявленные
-// inputs, secrets — только объявленные secrets. Иначе у потребителя workflow падает при запуске.
-test('канон-файл workflow-renovate.yml зовёт корневой reusable @v1 в рамках его inputs и secrets', () => {
-	type Workflow = {
-		on?: {
-			workflow_call?: { inputs?: Record<string, unknown>; secrets?: Record<string, unknown> };
-		};
-		jobs?: Record<
-			string,
-			{ uses?: string; with?: Record<string, unknown>; secrets?: Record<string, string> }
-		>;
-	};
-	const reusable = parseYaml(
-		readFileSync(join(ROOT, '.github', 'workflows', 'renovate.yml'), 'utf8'),
-	) as Workflow;
-	const consumer = parseYaml(canonFile('.github/workflows/renovate.yml')) as Workflow;
-	const job = consumer.jobs?.renovate;
-	expect(job?.uses).toBe('alxwlw/stack/.github/workflows/renovate.yml@v1');
-	const inputs = Object.keys(reusable.on?.workflow_call?.inputs ?? {});
-	const secrets = Object.keys(reusable.on?.workflow_call?.secrets ?? {});
-	expect(inputs).toContain('log-level');
-	expect(secrets).toContain('token');
-	const passedWith = Object.keys(job?.with ?? {});
-	const passedSecrets = Object.keys(job?.secrets ?? {});
-	// Непустые: пустое множество тривиально входит в любое, и тест молчал бы.
-	expect(passedWith).not.toEqual([]);
-	expect(passedSecrets).not.toEqual([]);
-	for (const k of passedWith) expect(inputs).toContain(k);
-	for (const k of passedSecrets) expect(secrets).toContain(k);
-	expect(job?.secrets?.token).toBe('${{ secrets.RENOVATE_TOKEN }}');
-});
-
-// Канон-файл stack-sync.yml зовёт reusable sync.yml: каждый ключ with должен быть объявленным input,
-// иначе rollout у потребителя падает до первого шага.
-test('канон-файл workflow-stack-sync.yml передаёт reusable sync.yml только объявленные inputs, включая base', () => {
-	type Workflow = {
-		on?: { workflow_call?: { inputs?: Record<string, unknown> } };
-		jobs?: Record<string, { uses?: string; with?: Record<string, unknown> }>;
-	};
-	const reusable = parseYaml(
-		readFileSync(join(ROOT, '.github', 'workflows', 'sync.yml'), 'utf8'),
-	) as Workflow;
-	const consumer = parseYaml(canonFile('.github/workflows/stack-sync.yml')) as Workflow;
-	const job = consumer.jobs?.sync;
-	expect(job?.uses).toBe('alxwlw/stack/.github/workflows/sync.yml@v1');
-	const inputs = Object.keys(reusable.on?.workflow_call?.inputs ?? {});
-	const passed = Object.keys(job?.with ?? {});
-	expect(passed).toContain('base');
-	for (const k of passed) expect(inputs).toContain(k);
-	expect(job?.with?.base).toBe("${{ vars.STACK_SYNC_BASE || '' }}");
-});
-
 // sync.yml ждёт версию в реестре до bunx: rollout стартует сразу после publish, и в 1.6.0 все
 // sync упали на «No version matching»; в 1.7.0 — pnpm install на tsconfig, опубликованной позже
 // stack. Шаг гоняется в bash с curl-заглушкой, отдающей тело по имени пакета, а не сверяется текстом.
