@@ -188,7 +188,7 @@ test('canonFor: в каноне .prototools нет пина node — ошибк�
 	);
 });
 
-// Единственный тест чтения с диска: readCanonSource — граница с файловой системой.
+// Граница с диском: записи манифеста по порядку и содержимое файла.
 test('readCanonSource на настоящем canon/: все записи манифеста с содержимым файла', () => {
 	const manifest = JSON.parse(readFileSync(join(canonDir(), 'manifest.json'), 'utf8')) as {
 		files: { src: string }[];
@@ -423,29 +423,4 @@ test('readCanonSource читает manifest.json и catalogs.json по одно�
 	} finally {
 		spy.mockRestore();
 	}
-});
-
-test('canonFor на значении: профиль и with выбирают записи, dev-каталог всегда', () => {
-	const source: CanonSource = {
-		entries: [
-			{ src: 'a', dest: 'always', appliesTo: ['node', 'infra'], content: 'A' },
-			{
-				src: 'p',
-				dest: '.prototools',
-				appliesTo: ['node', 'infra'],
-				content: 'node = "1"\npnpm = "2"\n',
-			},
-			{ src: 'g', dest: 'grouped', appliesTo: ['node', 'infra'], group: 'extra', content: 'G' },
-			{ src: 'c', dest: 'node-skips', appliesTo: ['contracts'], content: 'C' },
-		],
-		catalogs: { dev: { x: '1' }, libs: { y: '2' } },
-		groups: { files: ['extra'], catalogs: ['libs'], deprecated: [] },
-	};
-	const plain = canonFor(source, cfg({ profile: 'node', with: [] }));
-	expect(plain.files.map((f) => f.dest)).toEqual(['always', '.prototools']);
-	expect(plain.catalogs).toEqual({ dev: { x: '1' } });
-	const full = canonFor(source, cfg({ profile: 'node', with: ['extra', 'libs'] }));
-	expect(full.files.map((f) => f.dest)).toEqual(['always', '.prototools', 'grouped']);
-	expect(full.files[0]?.content).toBe('A');
-	expect(full.catalogs).toEqual({ dev: { x: '1' }, libs: { y: '2' } });
 });

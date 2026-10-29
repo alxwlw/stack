@@ -2,7 +2,7 @@
 import { existsSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 
-import { assertKnownGroups, canonFor, readCanonSource } from './canon.ts';
+import { assertKnownGroups, loadCanon, readCanonSource } from './canon.ts';
 import { checkRepo, syncRepo } from './check.ts';
 import { type Profile, PROFILES, readStackConfig, StackConfigError } from './config.ts';
 import { allowedLine, isHeld } from './exceptions.ts';
@@ -60,7 +60,7 @@ try {
 		console.log(`created ${path}`);
 	} else if (command === 'sync') {
 		const cfg = readStackConfig(repoRoot);
-		const { applied, held } = syncRepo(repoRoot, canonFor(readCanonSource(), cfg), cfg.exceptions);
+		const { applied, held } = syncRepo(repoRoot, loadCanon(cfg), cfg.exceptions);
 		for (const f of held) {
 			console.warn(allowedLine(f));
 		}
@@ -68,7 +68,7 @@ try {
 		console.log(`canon ${applied.length === 0 ? 'already up to date' : 'applied'}`);
 	} else if (command === 'check') {
 		const cfg = readStackConfig(repoRoot);
-		const findings = checkRepo(repoRoot, canonFor(readCanonSource(), cfg), cfg.exceptions);
+		const findings = checkRepo(repoRoot, loadCanon(cfg), cfg.exceptions);
 		const blocking = findings.filter((f) => !isHeld(f));
 		for (const f of findings.filter(isHeld)) console.warn(allowedLine(f));
 		for (const f of blocking) console.error(`${f.code}: ${f.target} — ${f.message}`);
