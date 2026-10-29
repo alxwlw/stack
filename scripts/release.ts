@@ -85,8 +85,9 @@ export function npmRegistry(npm: string, root: string): Registry {
 				cwd: join(root, 'packages', dir),
 				stdio: 'inherit',
 			});
-			if (r.status !== 0)
-				throw new Error(`npm publish ${dir} завершился кодом ${String(r.status)}`);
+			return r.status === 0
+				? Promise.resolve()
+				: Promise.reject(new Error(`npm publish ${dir} завершился кодом ${String(r.status)}`));
 		},
 	};
 }
