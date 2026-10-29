@@ -47,9 +47,9 @@ export interface Repo {
 	packages: ReadonlyMap<string, Record<string, unknown>>;
 	/** Первый конфиг Renovate в порядке поиска самого Renovate; config нет — файл не разобрался. */
 	renovate?: { path: string; config?: unknown };
-	/** Разобранный .moon/toolchains.yml (верхний уровень); нет поля — файла нет или он не разобрался. */
+	/** Разобранный moon toolchains (MOON_TOOLCHAINS) (верхний уровень); нет поля — файла нет или он не разобрался. */
 	moonToolchains?: Record<string, unknown>;
-	/** Ровно одна находка unreadable-file на каждый неразобранный package.json, pnpm-workspace.yaml, первый конфиг Renovate и .moon/toolchains.yml. */
+	/** Ровно одна находка unreadable-file на каждый неразобранный package.json, pnpm-workspace.yaml, первый конфиг Renovate и MOON_TOOLCHAINS. */
 	unreadable: Finding[];
 }
 
@@ -74,7 +74,7 @@ export type Snapshot = ReadonlyMap<string, Read>;
 // Чистая часть: из снимка строит Repo. Здесь единственная классификация unreadable-file: сбой чтения и
 // сбой разбора одной роли — одна находка. Разбираемые роли: package.json (корневой всегда; вложенные —
 // только при pnpm-workspace.yaml среди путей), pnpm-workspace.yaml и первый из RENOVATE_CONFIGS среди
-// путей (нечитаемый заслоняет остальные) и .moon/toolchains.yml. Остальные пути — только в paths, находки не дают.
+// путей (нечитаемый заслоняет остальные) и MOON_TOOLCHAINS. Остальные пути — только в paths, находки не дают.
 // Порядок unreadable: по rank, равные — в порядке снимка.
 export function repoFromSnapshot(snapshot: Snapshot): Repo {
 	const files = new Map<string, string>();
@@ -185,7 +185,7 @@ function readFile(root: string, path: string): Read {
 }
 
 // Адаптер диска, без классификации: dest и satisfiedBy канон-файлов, конфиги Renovate и dependabot,
-// .moon/toolchains.yml, pnpm-workspace.yaml, корневой package.json; если pnpm-workspace.yaml есть (текст или сбой чтения) —
+// MOON_TOOLCHAINS, pnpm-workspace.yaml, корневой package.json; если pnpm-workspace.yaml есть (текст или сбой чтения) —
 // ещё вложенные package.json без SKIP.
 export function readSnapshot(root: string, canon: Canon): Snapshot {
 	const candidates = new Set<string>(['package.json', WORKSPACE_FILE]);

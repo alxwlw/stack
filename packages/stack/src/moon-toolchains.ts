@@ -2,7 +2,7 @@ import type { Canon } from './canon.ts';
 import type { Finding } from './findings.ts';
 import { MOON_TOOLCHAINS, type Repo } from './repo.ts';
 
-// Версию инструмента задаёт .prototools: `version` в .moon/toolchains.yml — второй пин, и после подъёма
+// Версию инструмента задаёт .prototools: `version` в moon toolchains — второй пин, и после подъёма
 // канона moon разойдётся с ним. Находка при любой заданной версии, даже равной пину; только отчёт.
 export function checkMoonToolchains(repo: Repo, canon: Canon): Finding[] {
 	const findings: Finding[] = [];

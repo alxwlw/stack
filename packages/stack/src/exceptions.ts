@@ -51,7 +51,7 @@ const ADDRESS: { [C in FindingCode]: ((f: FindingOf<C>) => Address) | 'unsuppres
 	'engines-node': 'unsuppressible',
 	'renovate-preset': 'unsuppressible',
 	'dependabot-config': 'unsuppressible',
-	// Версия в .moon/toolchains.yml — второй пин поверх .prototools; исключение держит её по файлу.
+	// Версия в moon toolchains — второй пин поверх .prototools; исключение держит её по файлу.
 	'moon-toolchain-version': () => ({ file: '.moon/toolchains.yml' }),
 	'unreadable-file': 'unsuppressible',
 	'stale-exception': 'unsuppressible',
