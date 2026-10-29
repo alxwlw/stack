@@ -1,8 +1,20 @@
 import { createVerify, generateKeyPairSync } from 'node:crypto';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import { expect, test } from 'bun:test';
 
-import { type Installation, pickInstallation, rollout, signAppJwt } from './rollout.ts';
+import {
+	consoleOutput,
+	type GitHubApi,
+	type Installation,
+	pickInstallation,
+	rollout,
+	type RolloutOutput,
+	runRollout,
+	signAppJwt,
+} from './rollout.ts';
 
 test('pickInstallation: находит установку по владельцу репозитория', () => {
 	const installations: Installation[] = [
@@ -36,29 +48,114 @@ test('rollout: dispatched/failed считаются по подобранном�
 	expect(dispatchedRepos).toEqual(['acme/app']);
 });
 
+interface Harness {
+	calls: string[];
+	logs: string[];
+	summaries: string[];
+	github: GitHubApi;
+	out: RolloutOutput;
+	dispatched: { repo: string; version: string }[];
+}
+
+// Фейковый порт: каждый вызов пишется в журнал, сеть не трогается.
+function harness(dispatchSync?: (repo: string) => Promise<void>): Harness {
+	const h: Harness = {
+		calls: [],
+		logs: [],
+		summaries: [],
+		dispatched: [],
+		github: {
+			signAppJwt: () => {
+				h.calls.push('signAppJwt');
+				return 'jwt';
+			},
+			getInstallations: async () => {
+				h.calls.push('getInstallations');
+				return [{ id: 1, login: 'acme' }];
+			},
+			getInstallationToken: async () => {
+				h.calls.push('getInstallationToken');
+				return 'tok';
+			},
+			dispatchSync: async (repo, _token, version) => {
+				h.calls.push('dispatchSync');
+				await dispatchSync?.(repo);
+				h.dispatched.push({ repo, version });
+			},
+		},
+		out: { log: (l) => h.logs.push(l), summary: (l) => h.summaries.push(l) },
+	};
+	return h;
+}
+
+const SECRETS = { STACK_BOT_APP_ID: '1', STACK_BOT_PRIVATE_KEY: 'pem' };
+
+test('runRollout: пустой CONSUMERS — успех без секретов, GitHub не вызывается', async () => {
+	const h = harness();
+	const result = await runRollout({ VERSION: 'v1.2.3', CONSUMERS: '\n  \n' }, h.github, h.out);
+	expect(result).toBeNull();
+	expect(h.calls).toEqual([]);
+	expect(h.logs).toEqual(['no consumers configured — nothing to roll out']);
+	expect(h.summaries).toEqual([]);
+});
+
+test('runRollout: непустой CONSUMERS без секретов — ошибка до вызова GitHub', async () => {
+	const h = harness();
+	await expect(
+		runRollout({ VERSION: '1.2.3', CONSUMERS: 'acme/app' }, h.github, h.out),
+	).rejects.toThrow('STACK_BOT_APP_ID/STACK_BOT_PRIVATE_KEY are not set');
+	expect(h.calls).toEqual([]);
+});
+
 // Публичный репозиторий: имена репозиториев-потребителей не должны попасть в вывод, даже когда
 // сам dispatch падает с ошибкой, чьё сообщение несёт имя репозитория.
-test('rollout: имя репозитория не попадает в вывод, даже если dispatch бросает ошибку с этим именем', async () => {
-	const installations: Installation[] = [{ id: 1, login: 'acme' }];
-	const logs: string[] = [];
-	const originalLog = console.log;
-	console.log = (...args: unknown[]) => {
-		logs.push(args.map(String).join(' '));
-	};
-	let result: { dispatched: number; failed: number };
-	try {
-		result = await rollout(['acme/secret-internal-name'], installations, '1.2.3', {
-			getToken: async () => 'tok',
-			dispatch: async (repo) => {
-				throw new Error(`dispatch to ${repo} failed`);
-			},
-		});
-		console.log(`dispatched: ${result.dispatched}, failed: ${result.failed}`);
-	} finally {
-		console.log = originalLog;
-	}
+test('runRollout: вывод и summary не содержат имён потребителей', async () => {
+	const h = harness(async (repo) => {
+		throw new Error(`dispatch to ${repo} failed`);
+	});
+	const result = await runRollout(
+		{ VERSION: '1.2.3', CONSUMERS: 'acme/secret-internal-name', ...SECRETS },
+		h.github,
+		h.out,
+	);
 	expect(result).toEqual({ dispatched: 0, failed: 1 });
-	expect(logs.join('\n')).not.toContain('secret-internal-name');
+	expect(h.logs).toEqual(['dispatched: 0, failed: 1']);
+	expect(h.summaries).toEqual(['dispatched: 0, failed: 1']);
+	expect([...h.logs, ...h.summaries].join('\n')).not.toContain('secret-internal-name');
+});
+
+test('runRollout: VERSION с префиксом v доходит до dispatch без него', async () => {
+	const h = harness();
+	const result = await runRollout(
+		{ VERSION: 'v1.2.3', CONSUMERS: 'acme/app', ...SECRETS },
+		h.github,
+		h.out,
+	);
+	expect(result).toEqual({ dispatched: 1, failed: 0 });
+	expect(h.dispatched).toEqual([{ repo: 'acme/app', version: '1.2.3' }]);
+	expect(h.calls).toEqual([
+		'signAppJwt',
+		'getInstallations',
+		'getInstallationToken',
+		'dispatchSync',
+	]);
+});
+
+test('consoleOutput: summary дописывает строку в файл GITHUB_STEP_SUMMARY', () => {
+	const dir = mkdtempSync(join(tmpdir(), 'rollout-'));
+	try {
+		const path = join(dir, 'summary.md');
+		consoleOutput(path).summary('x');
+		expect(readFileSync(path, 'utf8')).toBe('x\n');
+		consoleOutput(path).summary('y');
+		expect(readFileSync(path, 'utf8')).toBe('x\ny\n');
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test('consoleOutput: без пути summary ничего не пишет и не падает', () => {
+	expect(() => consoleOutput(undefined).summary('x')).not.toThrow();
 });
 
 test('signAppJwt: валидная RS256-подпись, iss/iat/exp выставлены', () => {
