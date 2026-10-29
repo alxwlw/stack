@@ -159,6 +159,20 @@ describe('removedAssertions', () => {
 			{ path: 'src/a.test.ts → src/b.test.ts', removed: 1, added: 0 },
 		]);
 	});
+	test('a .vue test file counts its assertions like .ts', () => {
+		const found = (ext: string) => {
+			const r = branch({ [`src/a.test.${ext}`]: T3 }, (r) => {
+				r.write({ [`src/a.test.${ext}`]: T1 });
+				r.commit('weaken');
+			});
+			return removedAssertions(r.root, loadConfig(r.root), 'main', noEnv).violations.map(
+				(v) => `${v.removed}/${v.added}`,
+			);
+		};
+		expect(found('ts')).toEqual(['2/0']);
+		expect(found('vue')).toEqual(found('ts'));
+		expect(found('svelte')).toEqual(found('ts'));
+	});
 	test('a rename counts when its old or its new name is a test file', () => {
 		const helper = 'export function check() {\n  expect(1);\n  expect(2);\n}\n';
 		const r = branch({ 'src/a.test.ts': T3, 'src/helper.ts': helper }, (r) => {
@@ -432,37 +446,6 @@ describe('removedAssertions', () => {
 			},
 		);
 		expect(removedAssertions(r.root, loadConfig(r.root), 'main', noEnv).violations).toEqual([]);
-	});
-	describe('countPairs: comments inside a line', () => {
-		const added = (...plus: string[]) =>
-			countPairs(fileDiff('src/a.test.ts', [], plus), matcher(['**/*.test.ts']))[0]?.added ?? 0;
-		test('two closed block comments before the code', () => {
-			expect(added('  /* a */ /* b */ expect(1);')).toBe(1);
-		});
-		test('a `*` after a closed comment is code, not a continuation line', () => {
-			expect(added('  /* a */ * 2; expect(1);')).toBe(1);
-		});
-		test('a block comment separates tokens like whitespace', () => {
-			expect(added('  return/* c */expect(1);')).toBe(1);
-		});
-		test('two block comments with no gap', () => {
-			expect(added('  /* a *//* b */ expect(1);')).toBe(1);
-		});
-		test('`/*/` does not close itself', () => {
-			expect(added('  /*/ expect(1);')).toBe(0);
-		});
-		test('an assertion inside the comment is not counted', () => {
-			expect(added('  /* expect(1) */ foo();')).toBe(0);
-		});
-		test('an unclosed block comment hides the rest of the line', () => {
-			expect(added('  /* open expect(1)')).toBe(0);
-		});
-		test('a `//` after a closed block comment hides the rest', () => {
-			expect(added('  /* a */ // expect(1);')).toBe(0);
-		});
-		test('a leading `*` line is a comment', () => {
-			expect(added('   * expect(1) */ expect(2);')).toBe(0);
-		});
 	});
 	describe('exclude', () => {
 		const files = (config: object) => ({

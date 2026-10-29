@@ -2,48 +2,9 @@
 /** `removed-assertions` (DP-014, spec § 4). */
 import { git, RepoRulesError } from './git.mjs';
 import { matcher } from './glob.mjs';
-import { commentStart, familyOf, hasReason } from './source.mjs';
+import { assertionPattern, familyOf, hasReason, lineOf } from './source.mjs';
 
 /** @typedef {import('./config.mjs').Config} Config */
-
-const JS_ASSERT = /\bexpect\s*\(|\bassert\s*\(|\bassert\.\w+\s*\(/g;
-const SOL_ASSERT = /\bassert[A-Z]\w*\s*\(/g;
-const PY_ASSERT = /^\s*assert\b|\bself\.assert[A-Z]\w*\s*\(/g;
-
-/**
- * @param {string} path
- * @returns {RegExp | null}
- */
-function assertionPattern(path) {
-	if (/\.(?:ts|tsx|js|jsx|mjs|cjs|mts|cts)$/.test(path)) return JS_ASSERT;
-	if (path.endsWith('.sol')) return SOL_ASSERT;
-	if (path.endsWith('.py')) return PY_ASSERT;
-	return null;
-}
-
-/**
- * The code of a diff line: its comments cut out (DP-030). A `/* … *\/` closed on the same line is
- * whitespace and the code after it stays; `//`, an unclosed `/*`, a leading `*` and Python `#` cut to the end.
- * @param {string} text
- * @param {import('./source.mjs').Family} family
- * @returns {string}
- */
-function codeOf(text, family) {
-	let code = '';
-	let rest = text;
-	// After the first span the rest is no line start: the `;` keeps a `*` there from reading as a continuation.
-	let pad = '';
-	for (;;) {
-		const c = commentStart(pad + rest, family);
-		if (c < 0) return code + rest;
-		const cut = c - pad.length;
-		const end = !rest.startsWith('/*', cut) ? -1 : rest.indexOf('*/', cut + 2);
-		if (end < 0) return code + rest.slice(0, cut);
-		code += `${rest.slice(0, cut)} `;
-		rest = rest.slice(end + 2);
-		pad = ';';
-	}
-}
 
 /**
  * Assertions in the code part of a diff line: a commented-out `// expect(…)` is not one (DP-030).
@@ -51,7 +12,7 @@ function codeOf(text, family) {
  * @param {Side} side
  */
 function countIn(text, side) {
-	return [...(side.family ? codeOf(text, side.family) : text).matchAll(side.re)].length;
+	return [...(side.family ? lineOf(text, side.family).code : text).matchAll(side.re)].length;
 }
 
 /** @type {Record<string, string>} */

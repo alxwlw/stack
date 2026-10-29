@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import { focusedSkippedTests, numberOrDefault, suppressionReason } from './rules.mjs';
-import { commentStart, familyOf } from './source.mjs';
+import { assertionPattern, commentStart, familyOf, lineOf } from './source.mjs';
 
 const flagged = (hits: { line: number }[]): number[] => hits.map((h) => h.line);
 
@@ -13,12 +13,42 @@ describe('source', () => {
 		expect(familyOf('x.py')).toBe('py');
 		expect(familyOf('README.md')).toBeNull();
 	});
+	test('assertionPattern follows the language table', () => {
+		const ts = assertionPattern('a.test.ts');
+		expect(ts).not.toBeNull();
+		expect(assertionPattern('a.test.vue')).toBe(ts);
+		expect(assertionPattern('a.test.svelte')).toBe(ts);
+		expect(assertionPattern('C.t.sol')).not.toBe(ts);
+		expect(assertionPattern('C.t.sol')).not.toBeNull();
+		expect(assertionPattern('a.d.ts')).toBeNull();
+		expect(assertionPattern('README.md')).toBeNull();
+		expect(familyOf('a.test.vue')).toBe('js');
+		expect(familyOf('a.test.svelte')).toBe('js');
+	});
 	test('commentStart skips openers inside string literals', () => {
 		expect(commentStart(`const u = 'http://x'; // real`, 'js')).toBe(22);
 		expect(commentStart('const s = `/* no */`;', 'js')).toBe(-1);
 		expect(commentStart(`s = "# no"  # yes`, 'py')).toBe(12);
 		expect(commentStart('   * continuation', 'js')).toBe(3);
 		expect(commentStart(`const q = 'it\\'s // no';`, 'js')).toBe(-1);
+	});
+	test('lineOf strips CR and cuts comments by the DP-030 rule', () => {
+		const hasExpect = (s: string) => lineOf(s, 'js').code.includes('expect(');
+		// code after a closed block comment is code
+		expect(hasExpect('/* note */ expect(f(2)).toBe(4);')).toBe(true);
+		expect(hasExpect('/* a */ /* b */ expect(1);')).toBe(true);
+		expect(hasExpect('/* a */ * 2; expect(1);')).toBe(true);
+		expect(hasExpect('return/* c */expect(1);')).toBe(true);
+		expect(hasExpect('/* a *//* b */ expect(1);')).toBe(true);
+		// the rest after an opener without a same-line close is comment
+		expect(hasExpect('/*/ expect(1);')).toBe(false);
+		expect(hasExpect('/* expect(1) */ foo();')).toBe(false);
+		expect(hasExpect('/* open expect(1)')).toBe(false);
+		expect(hasExpect('/* a */ // expect(1);')).toBe(false);
+		expect(hasExpect(' * expect(1) */ expect(2);')).toBe(false);
+		expect(lineOf('x; // c\r', 'js')).toEqual({ text: 'x; // c', code: 'x; ', comment: '// c' });
+		expect(lineOf('a = 1  # c', 'py').comment).toBe('# c');
+		expect(lineOf('x;', 'js').comment).toBe('');
 	});
 });
 
@@ -89,6 +119,13 @@ describe('focused-skipped-tests', () => {
 		expect(t(`describe.only.each([1])('a', () => {});`)).toEqual([1]);
 		expect(t(`test.only('a', () => {}); // -- debugging`)).toEqual([1]);
 	});
+	test('.only after a closed block comment is found', () => {
+		expect(t('/* a */ test.only("x", () => {})')).toEqual([1]);
+	});
+	test('CRLF smoke: findings survive a trailing CR (the strip itself is pinned in source)', () => {
+		expect(t('test.only("x", () => {})\r')).toEqual([1]);
+		expect(t('test.skip(\r', '"x", () => {})\r')).toEqual([1]);
+	});
 	test('.skip / .todo / x* without a reason', () => {
 		expect(t(`it.skip('a', () => {});`)).toEqual([1]);
 		expect(t(`test.todo('later');`)).toEqual([1]);
@@ -131,6 +168,15 @@ describe('number-or-default', () => {
 		expect(n(`const v = Number.parseFloat(q.replace(',', '.')) || 1.5;`)).toEqual([1]);
 		expect(n(`const s = parseFloat(x) || 'n/a';`)).toEqual([1]);
 		expect(n('const s = Number(x) || null;')).toEqual([1]);
+	});
+	test('Number(…) || literal after a closed block comment is found', () => {
+		expect(n('/* a */ const n = Number(y) || 5;')).toEqual([1]);
+		expect(n('const n = Number(y) || 5;\r')).toEqual([1]);
+	});
+	test('a comment opener inside a literal is not a comment', () => {
+		expect(n(`const n = '/* x */' + Number(y) || 5;`)).toEqual([1]);
+		expect(n(`const n = '// ' + Number(y) || 5;`)).toEqual([1]);
+		expect(n('const n = `// ${a}` + Number(y) || 5;')).toEqual([1]);
 	});
 	test('call forms and literal kinds', () => {
 		expect(n('const p = Number.parseInt(x, 10) || 5;')).toEqual([1]);

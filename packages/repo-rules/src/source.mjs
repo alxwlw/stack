@@ -3,18 +3,45 @@
 
 /** @typedef {'js' | 'sol' | 'py'} Family */
 
-const JS_EXT = /\.(?:ts|tsx|js|jsx|mjs|cjs|mts|cts|vue|svelte)$/;
+/**
+ * The one language table: extension, comment family, and the assertion pattern of that family's
+ * test files. Vue and Svelte files are read as JS, by scan and by removed-assertions alike.
+ * @type {{ ext: RegExp, family: Family, assertions: RegExp }[]}
+ */
+const LANGUAGES = [
+	{
+		ext: /\.(?:ts|tsx|js|jsx|mjs|cjs|mts|cts|vue|svelte)$/,
+		family: 'js',
+		assertions: /\bexpect\s*\(|\bassert\s*\(|\bassert\.\w+\s*\(/g,
+	},
+	{ ext: /\.sol$/, family: 'sol', assertions: /\bassert[A-Z]\w*\s*\(/g },
+	{ ext: /\.py$/, family: 'py', assertions: /^\s*assert\b|\bself\.assert[A-Z]\w*\s*\(/g },
+];
+
+/**
+ * @param {string} path
+ * @returns {(typeof LANGUAGES)[number] | null}
+ */
+function languageOf(path) {
+	if (path.endsWith('.d.ts')) return null;
+	return LANGUAGES.find((l) => l.ext.test(path)) ?? null;
+}
 
 /**
  * @param {string} path
  * @returns {Family | null}
  */
 export function familyOf(path) {
-	if (path.endsWith('.d.ts')) return null;
-	if (JS_EXT.test(path)) return 'js';
-	if (path.endsWith('.sol')) return 'sol';
-	if (path.endsWith('.py')) return 'py';
-	return null;
+	return languageOf(path)?.family ?? null;
+}
+
+/**
+ * The assertion pattern of a test file by its path; null when the path has no language.
+ * @param {string} path
+ * @returns {RegExp | null}
+ */
+export function assertionPattern(path) {
+	return languageOf(path)?.assertions ?? null;
 }
 
 /**
@@ -47,6 +74,44 @@ export function commentStart(line, family) {
 		}
 	}
 	return -1;
+}
+
+/** @typedef {{ text: string, code: string, comment: string }} Line */
+
+/**
+ * The views of one raw line: `text` without the trailing CR, `code` with its comments cut out (DP-030),
+ * `comment` from the comment opener to the end (`''` when there is none). A `/* … *\/` closed on the
+ * same line is whitespace and the code after it stays; `//`, an unclosed `/*`, a leading `*` and
+ * Python `#` cut to the end.
+ * @param {string} raw
+ * @param {Family} family
+ * @returns {Line}
+ */
+export function lineOf(raw, family) {
+	const text = raw.endsWith('\r') ? raw.slice(0, -1) : raw;
+	const start = commentStart(text, family);
+	const comment = start < 0 ? '' : text.slice(start);
+	let code = '';
+	let rest = text;
+	// After the first span the rest is no line start: the `;` keeps a `*` there from reading as a continuation.
+	let pad = '';
+	for (;;) {
+		const c = commentStart(pad + rest, family);
+		if (c < 0) {
+			code += rest;
+			break;
+		}
+		const cut = c - pad.length;
+		const end = !rest.startsWith('/*', cut) ? -1 : rest.indexOf('*/', cut + 2);
+		if (end < 0) {
+			code += rest.slice(0, cut);
+			break;
+		}
+		code += `${rest.slice(0, cut)} `;
+		rest = rest.slice(end + 2);
+		pad = ';';
+	}
+	return { text, code, comment };
 }
 
 /**
