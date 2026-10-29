@@ -417,6 +417,7 @@ describe('CLI', () => {
 	function publishRun(npmExit: number): {
 		code: number | null;
 		calls: { argv: string[]; cwd: string }[];
+		out: string;
 	} {
 		const root = packagesTree(['a', 'b', 'c', 'd']);
 		const man = (dir: string, version: string, extra = ''): void =>
@@ -460,12 +461,14 @@ globalThis.fetch = async (url) => {
 			.split('\n')
 			.filter(Boolean)
 			.map((l) => JSON.parse(l) as { argv: string[]; cwd: string });
-		return { code: r.exitCode, calls };
+		return { code: r.exitCode, calls, out: r.stdout.toString() };
 	}
 
 	test('publish: зовёт npm publish с флагами по порядку, пропускает выложенные и private, код 0', () => {
-		const { code, calls } = publishRun(0);
+		const { code, calls, out } = publishRun(0);
 		expect(code).toBe(0);
+		expect(out).toContain('@x/b@1.0.0 is already in the registry');
+		expect(out).toContain('@x/a@1.0.0 есть в реестре');
 		expect(calls.map((c) => c.argv)).toEqual([
 			['publish', '--provenance', '--access', 'public'],
 			['publish', '--provenance', '--access', 'public'],
