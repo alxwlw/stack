@@ -1,6 +1,6 @@
 {
 	"name": "@alxwlw/repo-rules",
-	"version": "1.8.0",
+	"version": "1.9.0",
 	"description": "Whole-repo lint rules from the alxwlw defect corpus — long files, unjustified suppressions, skipped/focused tests, Number(x) || <default>, removed assertions — with a shrink-only baseline.",
 	"license": "MIT",
 	"repository": {
