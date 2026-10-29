@@ -8,7 +8,7 @@ import JSON5 from 'json5';
 import { parse as parseYaml } from 'yaml';
 
 import { releasePackages } from '../../../scripts/release.ts';
-import { loadCanon, loadCatalogs } from './canon.ts';
+import { loadCanon, readCanonSource } from './canon.ts';
 import { canonFile } from './testkit.ts';
 
 // Репозиторий канона сознательно не вызывает `stack sync` на себе (его каталог dev называет
@@ -44,7 +44,7 @@ test('корневой pnpm-workspace.yaml catalogs.dev — версии инс�
 	};
 	const rootDev = root.catalogs?.dev ?? {};
 	expect(Object.keys(rootDev).length).toBeGreaterThan(0);
-	const canonDev = loadCatalogs().dev ?? {};
+	const canonDev = readCanonSource().catalogs.dev ?? {};
 	for (const [name, version] of Object.entries(rootDev)) {
 		const expected: string | undefined = canonDev[name];
 		expect(expected).toBeDefined();
@@ -163,7 +163,7 @@ const waitStep = syncSteps?.[waitIdx];
 // Пакеты, без которых sync не обойдётся: stack (bunx) и @alxwlw/*-записи каталога (pnpm install).
 // Остальные опубликованные (repo-rules) sync не тянет; их ожидание живёт в job publish.
 const catalogNames = new Set(
-	Object.values(loadCatalogs()).flatMap((group) =>
+	Object.values(readCanonSource().catalogs).flatMap((group) =>
 		Object.keys(group).filter((n) => n.startsWith('@alxwlw/')),
 	),
 );

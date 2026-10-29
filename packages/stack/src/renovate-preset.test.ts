@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { expect, test } from 'bun:test';
 import JSON5 from 'json5';
 
-import { loadCatalogs } from './canon.ts';
+import { readCanonSource } from './canon.ts';
 
 // Пресет Renovate живёт в корне репо, а не в npm-пакете: потребитель подключает его как
 // github>alxwlw/stack//renovate/canon.json5#v1, Renovate читает файл с GitHub по тегу.
@@ -42,7 +42,7 @@ test('пресет: выключает packageManager и engines', () => {
 // stack sync пишет в pnpm-workspace.yaml каждую группу канона, выбранную потребителем (dev всегда,
 // остальные через with), поэтому выключен должен быть каталог каждой группы из catalogs.json.
 test('пресет: выключает pnpm.catalog.<группа> для каждой группы каталогов канона', () => {
-	const groups = Object.keys(loadCatalogs());
+	const groups = Object.keys(readCanonSource().catalogs);
 	expect(groups).toContain('dev');
 	for (const g of groups) {
 		expect(disabled((r) => r.matchDepTypes?.includes(`pnpm.catalog.${g}`) === true)).toBe(true);

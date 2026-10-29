@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { expect, test } from 'bun:test';
 import { parse as parseYaml } from 'yaml';
 
-import { canonDir, canonGroups, filesFor, loadCanon, loadManifest } from './canon.ts';
+import { canonDir, loadCanon, readCanonSource, selectEntries } from './canon.ts';
 import { checkRepo, planRepo, syncRepo, type SyncResult } from './check.ts';
 import { readStackConfig, type StackConfig } from './config.ts';
 
@@ -64,14 +64,15 @@ test('fixtures/ хранит только семя: ни один файл фи�
 });
 
 // Группа в `with` ещё не значит, что её файлы доходят до фикстуры: профиль может их отсекать, а
-// каталожной группе нужен pnpm-workspace.yaml. Поэтому смотрим, какие записи отбирает filesFor — тот же
-// отбор, что у loadCanon. Запись узнаём по src: dest в манифесте не уникален.
+// каталожной группе нужен pnpm-workspace.yaml. Поэтому смотрим, какие записи отбирает canonFor — тот же
+// отбор (selectEntries), что у loadCanon. Запись узнаём по src: dest в манифесте не уникален.
 test('фикстуры вместе получают каждый файл файловой группы и включают каждую каталожную группу', () => {
 	const profiles = ['node', 'contracts', 'infra'] as const;
 	const cfgs = profiles.map((p) => ({ p, cfg: readStackConfig(join(FIXTURES, p)) }));
-	const received = new Set(cfgs.flatMap(({ cfg }) => filesFor(cfg).map((f) => f.src)));
+	const source = readCanonSource();
+	const received = new Set(cfgs.flatMap(({ cfg }) => selectEntries(source, cfg).map((f) => f.src)));
 	expect(
-		loadManifest()
+		source.entries
 			.filter((f) => f.group != null && !received.has(f.src))
 			.map((f) => `${f.group}: ${f.src}`),
 	).toEqual([]);
@@ -80,7 +81,7 @@ test('фикстуры вместе получают каждый файл фа�
 			.filter(({ p }) => existsSync(join(FIXTURES, p, 'pnpm-workspace.yaml')))
 			.flatMap(({ cfg }) => cfg.with),
 	);
-	expect(canonGroups().catalogs.filter((g) => !withWorkspace.has(g))).toEqual([]);
+	expect(source.groups.catalogs.filter((g) => !withWorkspace.has(g))).toEqual([]);
 });
 
 for (const profile of ['node', 'contracts', 'infra'] as const) {

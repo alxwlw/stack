@@ -7,7 +7,7 @@ The vocabulary of the toolchain canon and its `stack` CLI: what a repo adopts, w
 ### Canon and consumers
 
 **Canon**:
-The one shared set of toolchain files and pinned dependency versions, shipped inside `@alxwlw/stack`. Loaded per repo as a value by `loadCanon` (`packages/stack/src/canon.ts`); its sources are `packages/stack/canon/`.
+The one shared set of toolchain files and pinned dependency versions, shipped inside `@alxwlw/stack`. Loaded per repo as a value by `loadCanon` (`packages/stack/src/canon.ts`: `readCanonSource` reads `canon/` once, `canonFor` is the pure step of profile and `with` selection, group check and pins); its sources are `packages/stack/canon/`.
 _Avoid_: template, boilerplate, preset
 
 **Consumer**:
@@ -19,7 +19,7 @@ The kind of repository a consumer declares, `node`, `contracts` or `infra`; it d
 _Avoid_: preset, flavour, template
 
 **Group**:
-A named opt-in slice of the canon, switched on through `with` in `.stack.jsonc`. There are three kinds: a **file group** (the `group` field of a manifest entry), a **catalog group** (a key of `canon/catalogs.json` other than `dev`, which every consumer gets) and a **deprecated group** (accepted for old configs, enables nothing). Names come from `canonGroups` and `DEPRECATED_GROUPS` in `packages/stack/src/canon.ts`.
+A named opt-in slice of the canon, switched on through `with` in `.stack.jsonc`. There are three kinds: a **file group** (the `group` field of a manifest entry), a **catalog group** (a key of `canon/catalogs.json` other than `dev`, which every consumer gets) and a **deprecated group** (accepted for old configs, enables nothing). Names come from `readCanonSource().groups` in `packages/stack/src/canon.ts`.
 _Avoid_: feature, module, flag
 
 ### What the canon holds
@@ -37,7 +37,7 @@ One package name with its pinned version inside a catalog; the unit that drifts 
 _Avoid_: dependency line
 
 **Pin**:
-A tool version fixed in the consumer's `.prototools` (node, pnpm and the other proto-managed tools); the canon's own pins are in `canon/files/prototools`, and `loadCanon` reads them as `Canon.pins` (`node` and `pnpm` are required).
+A tool version fixed in the consumer's `.prototools` (node, pnpm and the other proto-managed tools); the canon's own pins are in `canon/files/prototools`, and `loadCanon` returns them as `Canon.pins` (`node` and `pnpm` are required).
 _Avoid_: lock, freeze
 
 ### Verdicts
