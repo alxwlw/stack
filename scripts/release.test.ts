@@ -306,7 +306,9 @@ describe('npmRegistry.has', () => {
 
 	test('200 не-JSON — throw с именем пакета, а не голый JSON Parse error', async () => {
 		stub(new Response('<html>', { status: 200 }));
-		await expect(reg.has('@alxwlw/stack', '1.2.3')).rejects.toThrow('@alxwlw/stack');
+		await expect(reg.has('@alxwlw/stack', '1.2.3')).rejects.toThrow(
+			/^@alxwlw\/stack: нечитаемый ответ реестра: JSON/,
+		);
 	});
 
 	test('сбой сети — throw с именем пакета', async () => {
