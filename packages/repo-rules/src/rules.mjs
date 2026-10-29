@@ -1,6 +1,6 @@
 // @ts-check
 /** The whole-repo rules of spec § 2. Each returns `{ line, message }` hits, with `line` 1-based. */
-import { commentStart, dashReason, hasReason } from './source.mjs';
+import { dashReason, hasReason, lineOf } from './source.mjs';
 
 /** @typedef {import('./source.mjs').Family} Family */
 /** @typedef {{ line: number, message: string }} Hit */
@@ -26,10 +26,8 @@ export function suppressionReason(lines, family) {
 	/** @type {Hit[]} */
 	const hits = [];
 	lines.forEach((raw, i) => {
-		const line = raw.endsWith('\r') ? raw.slice(0, -1) : raw;
-		const c = commentStart(line, family);
-		if (c < 0) return;
-		const comment = line.slice(c);
+		const { comment } = lineOf(raw, family);
+		if (comment === '') return;
 		/** @type {[string, boolean] | null} */
 		let found = null;
 		if (family === 'py') {
@@ -70,9 +68,7 @@ export function focusedSkippedTests(lines) {
 	/** @type {Hit[]} */
 	const hits = [];
 	lines.forEach((raw, i) => {
-		const line = raw.endsWith('\r') ? raw.slice(0, -1) : raw;
-		const c = commentStart(line, 'js');
-		const code = c < 0 ? line : line.slice(0, c);
+		const { code, comment: own } = lineOf(raw, 'js');
 		if (ONLY.test(code)) {
 			hits.push({ line: i + 1, message: '.only in a test file' });
 			return;
@@ -85,8 +81,7 @@ export function focusedSkippedTests(lines) {
 		let arg = code.slice((m.index ?? 0) + m[0].length).trimStart();
 		if (arg === '' && i + 1 < lines.length) arg = /** @type {string} */ (lines[i + 1]).trimStart();
 		if (m[1] === 'skip' && !m[0].includes('.each') && arg !== '' && !/^[)'"`]/.test(arg)) return;
-		const own = c < 0 ? '' : line.slice(c);
-		const prev = i > 0 ? /** @type {string} */ (lines[i - 1]).replace(/\r$/, '') : '';
+		const prev = i > 0 ? lineOf(/** @type {string} */ (lines[i - 1]), 'js').text : '';
 		const prevIsComment = /^\s*(?:\/\/|\/\*|\*)/.test(prev);
 		if (hasReason(dashReason(own)) || (prevIsComment && hasReason(dashReason(prev)))) return;
 		hits.push({ line: i + 1, message: `${m[1] ? `.${m[1]}` : m[2]} without a reason` });
@@ -129,9 +124,7 @@ export function numberOrDefault(lines) {
 	/** @type {Hit[]} */
 	const hits = [];
 	lines.forEach((raw, i) => {
-		const line = raw.endsWith('\r') ? raw.slice(0, -1) : raw;
-		const c = commentStart(line, 'js');
-		const code = c < 0 ? line : line.slice(0, c);
+		const { code } = lineOf(raw, 'js');
 		for (const m of code.matchAll(NUMBER_CALL)) {
 			const close = closingParen(code, (m.index ?? 0) + m[0].length - 1);
 			if (close < 0) continue;

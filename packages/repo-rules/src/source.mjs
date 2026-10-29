@@ -49,6 +49,44 @@ export function commentStart(line, family) {
 	return -1;
 }
 
+/** @typedef {{ text: string, code: string, comment: string }} Line */
+
+/**
+ * The views of one raw line: `text` without the trailing CR, `code` with its comments cut out (DP-030),
+ * `comment` from the comment opener to the end (`''` when there is none). A `/* … *\/` closed on the
+ * same line is whitespace and the code after it stays; `//`, an unclosed `/*`, a leading `*` and
+ * Python `#` cut to the end.
+ * @param {string} raw
+ * @param {Family} family
+ * @returns {Line}
+ */
+export function lineOf(raw, family) {
+	const text = raw.endsWith('\r') ? raw.slice(0, -1) : raw;
+	const start = commentStart(text, family);
+	const comment = start < 0 ? '' : text.slice(start);
+	let code = '';
+	let rest = text;
+	// After the first span the rest is no line start: the `;` keeps a `*` there from reading as a continuation.
+	let pad = '';
+	for (;;) {
+		const c = commentStart(pad + rest, family);
+		if (c < 0) {
+			code += rest;
+			break;
+		}
+		const cut = c - pad.length;
+		const end = !rest.startsWith('/*', cut) ? -1 : rest.indexOf('*/', cut + 2);
+		if (end < 0) {
+			code += rest.slice(0, cut);
+			break;
+		}
+		code += `${rest.slice(0, cut)} `;
+		rest = rest.slice(end + 2);
+		pad = ';';
+	}
+	return { text, code, comment };
+}
+
 /**
  * At least three non-space characters.
  * @param {string | undefined} text
