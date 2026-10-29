@@ -3,18 +3,45 @@
 
 /** @typedef {'js' | 'sol' | 'py'} Family */
 
-const JS_EXT = /\.(?:ts|tsx|js|jsx|mjs|cjs|mts|cts|vue|svelte)$/;
+/**
+ * The one language table: extension, comment family, and the assertion pattern of that family's
+ * test files. Vue and Svelte files are read as JS, by scan and by removed-assertions alike.
+ * @type {{ ext: RegExp, family: Family, assertions: RegExp }[]}
+ */
+const LANGUAGES = [
+	{
+		ext: /\.(?:ts|tsx|js|jsx|mjs|cjs|mts|cts|vue|svelte)$/,
+		family: 'js',
+		assertions: /\bexpect\s*\(|\bassert\s*\(|\bassert\.\w+\s*\(/g,
+	},
+	{ ext: /\.sol$/, family: 'sol', assertions: /\bassert[A-Z]\w*\s*\(/g },
+	{ ext: /\.py$/, family: 'py', assertions: /^\s*assert\b|\bself\.assert[A-Z]\w*\s*\(/g },
+];
+
+/**
+ * @param {string} path
+ * @returns {(typeof LANGUAGES)[number] | null}
+ */
+function languageOf(path) {
+	if (path.endsWith('.d.ts')) return null;
+	return LANGUAGES.find((l) => l.ext.test(path)) ?? null;
+}
 
 /**
  * @param {string} path
  * @returns {Family | null}
  */
 export function familyOf(path) {
-	if (path.endsWith('.d.ts')) return null;
-	if (JS_EXT.test(path)) return 'js';
-	if (path.endsWith('.sol')) return 'sol';
-	if (path.endsWith('.py')) return 'py';
-	return null;
+	return languageOf(path)?.family ?? null;
+}
+
+/**
+ * The assertion pattern of a test file by its path; null when the path has no language.
+ * @param {string} path
+ * @returns {RegExp | null}
+ */
+export function assertionPattern(path) {
+	return languageOf(path)?.assertions ?? null;
 }
 
 /**

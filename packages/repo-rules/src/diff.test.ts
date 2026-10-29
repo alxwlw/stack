@@ -159,6 +159,20 @@ describe('removedAssertions', () => {
 			{ path: 'src/a.test.ts → src/b.test.ts', removed: 1, added: 0 },
 		]);
 	});
+	test('a .vue test file counts its assertions like .ts', () => {
+		const found = (ext: string) => {
+			const r = branch({ [`src/a.test.${ext}`]: T3 }, (r) => {
+				r.write({ [`src/a.test.${ext}`]: T1 });
+				r.commit('weaken');
+			});
+			return removedAssertions(r.root, loadConfig(r.root), 'main', noEnv).violations.map(
+				(v) => `${v.removed}/${v.added}`,
+			);
+		};
+		expect(found('ts')).toEqual(['2/0']);
+		expect(found('vue')).toEqual(found('ts'));
+		expect(found('svelte')).toEqual(found('ts'));
+	});
 	test('a rename counts when its old or its new name is a test file', () => {
 		const helper = 'export function check() {\n  expect(1);\n  expect(2);\n}\n';
 		const r = branch({ 'src/a.test.ts': T3, 'src/helper.ts': helper }, (r) => {

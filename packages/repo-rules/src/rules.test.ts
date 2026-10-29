@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import { focusedSkippedTests, numberOrDefault, suppressionReason } from './rules.mjs';
-import { commentStart, familyOf, lineOf } from './source.mjs';
+import { assertionPattern, commentStart, familyOf, lineOf } from './source.mjs';
 
 const flagged = (hits: { line: number }[]): number[] => hits.map((h) => h.line);
 
@@ -12,6 +12,18 @@ describe('source', () => {
 		expect(familyOf('C.sol')).toBe('sol');
 		expect(familyOf('x.py')).toBe('py');
 		expect(familyOf('README.md')).toBeNull();
+	});
+	test('assertionPattern follows the language table', () => {
+		const ts = assertionPattern('a.test.ts');
+		expect(ts).not.toBeNull();
+		expect(assertionPattern('a.test.vue')).toBe(ts);
+		expect(assertionPattern('a.test.svelte')).toBe(ts);
+		expect(assertionPattern('C.t.sol')).not.toBe(ts);
+		expect(assertionPattern('C.t.sol')).not.toBeNull();
+		expect(assertionPattern('a.d.ts')).toBeNull();
+		expect(assertionPattern('README.md')).toBeNull();
+		expect(familyOf('a.test.vue')).toBe('js');
+		expect(familyOf('a.test.svelte')).toBe('js');
 	});
 	test('commentStart skips openers inside string literals', () => {
 		expect(commentStart(`const u = 'http://x'; // real`, 'js')).toBe(22);

@@ -2,24 +2,9 @@
 /** `removed-assertions` (DP-014, spec § 4). */
 import { git, RepoRulesError } from './git.mjs';
 import { matcher } from './glob.mjs';
-import { familyOf, hasReason, lineOf } from './source.mjs';
+import { assertionPattern, familyOf, hasReason, lineOf } from './source.mjs';
 
 /** @typedef {import('./config.mjs').Config} Config */
-
-const JS_ASSERT = /\bexpect\s*\(|\bassert\s*\(|\bassert\.\w+\s*\(/g;
-const SOL_ASSERT = /\bassert[A-Z]\w*\s*\(/g;
-const PY_ASSERT = /^\s*assert\b|\bself\.assert[A-Z]\w*\s*\(/g;
-
-/**
- * @param {string} path
- * @returns {RegExp | null}
- */
-function assertionPattern(path) {
-	if (/\.(?:ts|tsx|js|jsx|mjs|cjs|mts|cts)$/.test(path)) return JS_ASSERT;
-	if (path.endsWith('.sol')) return SOL_ASSERT;
-	if (path.endsWith('.py')) return PY_ASSERT;
-	return null;
-}
 
 /**
  * Assertions in the code part of a diff line: a commented-out `// expect(…)` is not one (DP-030).
