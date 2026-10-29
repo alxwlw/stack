@@ -1,5 +1,5 @@
 import { createVerify, generateKeyPairSync } from 'node:crypto';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -273,4 +273,44 @@ test('rollout.ts как скрипт: CONSUMERS без секретов — не
 	const res = runScript({ VERSION: 'v1.2.3', CONSUMERS: 'acme/app' });
 	expect(res.stderr.toString()).toContain('are not set');
 	expect(res.exitCode).not.toBe(0);
+});
+
+test('rollout.ts как скрипт: боевая сборка — fetch подменён preload-ом, summary из GITHUB_STEP_SUMMARY', () => {
+	const dir = mkdtempSync(join(tmpdir(), 'stack-rollout-e2e-'));
+	try {
+		const preload = join(dir, 'fake-fetch.ts');
+		writeFileSync(
+			preload,
+			`globalThis.fetch = (async (input: string | URL | Request) => {
+	const url = String(input);
+	const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
+	if (url.endsWith('/app/installations')) return json([{ id: 7, account: { login: 'acme' } }]);
+	if (url.endsWith('/access_tokens')) return json({ token: 't' });
+	if (url.endsWith('/dispatches')) return new Response(null, { status: 204 });
+	return new Response('unexpected ' + url, { status: 500 });
+}) as typeof fetch;
+`,
+		);
+		const summary = join(dir, 'summary.md');
+		const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
+		const script = fileURLToPath(new URL('./rollout.ts', import.meta.url));
+		const res = Bun.spawnSync([process.execPath, '--preload', preload, script], {
+			// Env собран явно, без process.env: ни секреты, ни summary раннера не протекают.
+			env: {
+				PATH: process.env.PATH ?? '',
+				VERSION: 'v1.2.3',
+				CONSUMERS: 'acme/app',
+				STACK_BOT_APP_ID: '42',
+				STACK_BOT_PRIVATE_KEY: privateKey.export({ type: 'pkcs1', format: 'pem' }).toString(),
+				GITHUB_STEP_SUMMARY: summary,
+			},
+			stdout: 'pipe',
+			stderr: 'pipe',
+		});
+		expect(res.stdout.toString()).toContain('dispatched: 1, failed: 0');
+		expect(readFileSync(summary, 'utf8')).toContain('dispatched: 1, failed: 0');
+		expect(res.exitCode).toBe(0);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
 });
