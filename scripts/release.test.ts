@@ -499,7 +499,8 @@ describe('связность релиза', () => {
 
 	test('publish.yml публикует через release.ts publish и не перечисляет пакеты', () => {
 		const job = /\n {2}publish:\n([\s\S]*)$/.exec(publish)?.[1] ?? '';
-		expect(job).toContain('bun scripts/release.ts publish');
+		// NPM в run-блоке — shell-переменная без export: без префикса CLI выйдет с кодом 2.
+		expect(job).toContain('NPM="$NPM" bun scripts/release.ts publish');
 		expect(job).not.toContain('for p in');
 		expect(job).not.toContain('npm view');
 		expect(job).not.toContain('"$NPM" view');
