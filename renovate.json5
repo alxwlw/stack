@@ -23,6 +23,11 @@
 	],
 	packageRules: [
 		{
+			description: 'Ночные 7.1.0-dev.* по семверу старше беты и rc: бот предложил бы их вместо релиза',
+			matchPackageNames: ['typescript'],
+			allowedVersions: '!/-dev\\./',
+		},
+		{
 			description: 'Свои пакеты и ссылки на себя: версии ставит scripts/release.ts, v1 двигает релиз',
 			matchPackageNames: ['@alxwlw/**', 'alxwlw/stack'],
 			enabled: false,

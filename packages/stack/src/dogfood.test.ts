@@ -216,6 +216,7 @@ const ownRenovate = JSON5.parse(readFileSync(join(ROOT, 'renovate.json5'), 'utf8
 		matchFileNames?: string[];
 		matchPackageNames?: string[];
 		enabled?: boolean;
+		allowedVersions?: string;
 	}[];
 };
 
@@ -282,4 +283,17 @@ test('свой renovate.json5: фикстуры Renovate не трогает', (
 	expect(ownRenovate.ignorePaths ?? []).toContain('fixtures/**');
 	// ignorePaths заменяет, а не дополняет config:recommended — node_modules надо вернуть явно.
 	expect(ownRenovate.ignorePaths ?? []).toContain('**/node_modules/**');
+});
+
+test('renovate.json5: typescript не поднимается на ночные сборки', () => {
+	const rule = (ownRenovate.packageRules ?? []).find(
+		(r) => JSON.stringify(r.matchPackageNames) === JSON.stringify(['typescript']),
+	);
+	expect(rule?.allowedVersions).toBeDefined();
+	// allowedVersions вида '!/regex/': версия, подходящая под regex, отвергается.
+	const m = /^!\/(.*)\/$/.exec(rule?.allowedVersions ?? '');
+	expect(m).not.toBeNull();
+	const night = new RegExp(m?.[1] ?? '');
+	expect(night.test('7.1.0-dev.20261104.1')).toBe(true);
+	for (const v of ['7.1.0-beta', '7.1.0-rc', '7.1.0', '7.1.1']) expect(night.test(v)).toBe(false);
 });

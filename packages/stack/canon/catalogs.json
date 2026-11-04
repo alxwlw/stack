@@ -1,13 +1,13 @@
 {
 	"dev": {
-		"typescript": "7.0.2",
+		"typescript": "7.1.0-beta",
 		"oxlint": "1.90.0",
 		"oxlint-tsgolint": "7.0.2005",
 		"oxfmt": "0.75.0",
 		"@types/node": "26.6.6",
 		"@types/bun": "1.4.4",
 		"knip": "6.44.1",
-		"dependency-cruiser": "18.7.1",
+		"dependency-cruiser": "18.8.0-beta-2",
 		"vitest": "5.1.0",
 		"@playwright/test": "1.64.1",
 		"@alxwlw/stack": "1.9.1",
