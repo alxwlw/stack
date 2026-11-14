@@ -237,7 +237,7 @@ history (`fetch-depth: 0`) with the config chain `.gitleaks.toml` (seeded by `st
 default. It is off by default: a history that was never cleaned would turn the check red on the day of
 the bump.
 
-The canon `.github/workflows/stack-check.yml` is synced verbatim, so any other `with:` entry in it is drift.
+The canon `stack-check` workflow file is synced verbatim, so any other `with:` entry in it is drift.
 Enable the input from your own workflow that calls `check.yml`, or run a separate job: `actions/checkout`
 with `fetch-depth: 0` → `alxwlw/stack/.github/actions/setup@v1` with `install: false` →
 `gitleaks git --redact --no-banner .`.
