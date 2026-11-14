@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -360,4 +360,73 @@ test('renovate.json5: typescript не поднимается на ночные �
 	const night = new RegExp(m?.[1] ?? '');
 	expect(night.test('7.1.0-dev.20261104.1')).toBe(true);
 	for (const v of ['7.1.0-beta', '7.1.0-rc', '7.1.0', '7.1.1']) expect(night.test(v)).toBe(false);
+});
+
+// Шаг доводки: репо-свой скрипт stack:post-sync. bash шага гоняется в каталоге «потребителя» с
+// заглушками proto и pnpm в PATH (порядок вызовов пишется в один файл); node настоящий.
+const postIdx = syncSteps?.findIndex((s) => s.name === 'доводка репозитория') ?? -1;
+const postStep = syncSteps?.[postIdx] as (SyncStep & { if?: string }) | undefined;
+
+function runPostSync(
+	pkg: object | null,
+	failing?: 'proto' | 'pnpm',
+): { status: number | null; calls: string[] } {
+	const dir = mkdtempSync(join(tmpdir(), 'sync-post-'));
+	const stubs = join(dir, 'bin');
+	const work = join(dir, 'repo');
+	const calls = join(dir, 'calls');
+	mkdirSync(stubs);
+	mkdirSync(work);
+	if (pkg) writeFileSync(join(work, 'package.json'), JSON.stringify(pkg));
+	for (const tool of ['proto', 'pnpm']) {
+		writeFileSync(
+			join(stubs, tool),
+			`#!/usr/bin/env bash\necho "${tool} $*|$VERSION" >> '${calls}'\n${failing === tool ? 'exit 1' : 'exit 0'}\n`,
+		);
+		chmodSync(join(stubs, tool), 0o755);
+	}
+	const res = spawnSync('bash', ['-eo', 'pipefail', '-c', postStep?.run ?? 'exit 99'], {
+		cwd: work,
+		env: { ...process.env, PATH: `${stubs}:${process.env.PATH}`, VERSION: '1.2.3' },
+		encoding: 'utf8',
+	});
+	const n = existsSync(calls) ? readFileSync(calls, 'utf8').split('\n').filter(Boolean) : [];
+	rmSync(dir, { recursive: true, force: true });
+	return { status: res.status, calls: n };
+}
+
+test('sync.yml: шаг доводки стоит после pnpm install и до проверки изменений', () => {
+	const installIdx =
+		syncSteps?.findIndex((s) => s.run?.includes('pnpm install --no-frozen-lockfile')) ?? -1;
+	const diffIdx = syncSteps?.findIndex((s) => (s as { id?: string }).id === 'diff') ?? -1;
+	expect(installIdx).toBeGreaterThanOrEqual(0);
+	expect(postIdx).toBeGreaterThan(installIdx);
+	expect(diffIdx).toBeGreaterThan(postIdx);
+	expect(postStep?.if).toBeUndefined();
+	expect(postStep?.env?.VERSION).toBe('${{ inputs.version }}');
+});
+
+test('шаг доводки: proto install, затем pnpm run stack:post-sync с VERSION, когда скрипт есть', () => {
+	const r = runPostSync({ scripts: { 'stack:post-sync': 'echo hi' } });
+	expect(r.status).toBe(0);
+	expect(r.calls).toEqual(['proto install|1.2.3', 'pnpm run stack:post-sync|1.2.3']);
+});
+
+test('шаг доводки молчит без скрипта и без package.json', () => {
+	for (const pkg of [{ scripts: { build: 'x' } }, {}, null]) {
+		const r = runPostSync(pkg);
+		expect(r.status).toBe(0);
+		expect(r.calls).toEqual([]);
+	}
+});
+
+test('падение хука роняет шаг', () => {
+	const r = runPostSync({ scripts: { 'stack:post-sync': 'x' } }, 'pnpm');
+	expect(r.status).not.toBe(0);
+});
+
+test('падение proto install роняет шаг до хука', () => {
+	const r = runPostSync({ scripts: { 'stack:post-sync': 'x' } }, 'proto');
+	expect(r.status).not.toBe(0);
+	expect(r.calls).toEqual(['proto install|1.2.3']);
 });

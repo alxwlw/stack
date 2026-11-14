@@ -7,7 +7,7 @@ on:
         type: string
         required: true
       install:
-        description: 'запускать ли pnpm install после sync (false для приватных реестров)'
+        description: 'запускать ли proto install и pnpm install после sync (false — репозиторий без package.json)'
         type: boolean
         default: true
       base:
@@ -94,6 +94,22 @@ jobs:
         run: proto install
       - if: inputs.install
         run: pnpm install --no-frozen-lockfile
+      # Точка вызова репо-своей доводки: скрипт stack:post-sync в корневом package.json. Шаг без if:
+      # хук сам решает, нужны ли ему зависимости (при install: false их нет). Падение хука роняет
+      # джобу: PR без доводки не открывается. proto install перед хуком — тулчейн мог отстать от
+      # пинов, которые sync только что поднял (при install: false шим proto иначе откажет pnpm).
+      - name: доводка репозитория
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          has=false
+          if [ -f package.json ]; then
+            has="$(node -p 'Boolean(require("./package.json").scripts?.["stack:post-sync"])')"
+          fi
+          if [ "$has" = true ]; then
+            proto install
+            pnpm run stack:post-sync
+          fi
       - name: проверить, есть ли изменения
         id: diff
         run: |
