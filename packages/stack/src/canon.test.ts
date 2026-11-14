@@ -455,7 +455,7 @@ test('libs: связка NATS и связка Prisma — одна версия �
 	const libs = readCanonSource().catalogs.libs ?? {};
 	for (const bundle of ['nats', 'prisma'] as const) {
 		const versions = new Set(BUNDLES[bundle].map((n) => libs[n]));
-		expect([bundle, [...versions].length]).toEqual([bundle, 1]);
+		expect([bundle, versions.size]).toEqual([bundle, 1]);
 	}
 });
 
@@ -466,11 +466,11 @@ test('libs: связка OpenTelemetry — SDK-пакеты на одной ве
 			(n) => libs[`@opentelemetry/${n}`],
 		),
 	);
-	expect([...sdk]).toHaveLength(1);
+	expect(sdk.size).toBe(1);
 	const experimental = new Set(
 		['sdk-node', 'exporter-trace-otlp-http', 'exporter-metrics-otlp-http'].map(
 			(n) => libs[`@opentelemetry/${n}`],
 		),
 	);
-	expect([...experimental]).toHaveLength(1);
+	expect(experimental.size).toBe(1);
 });
