@@ -144,10 +144,19 @@ test('renovate.yml: host rule приватного реестра только �
 	const action = job?.steps?.find((s) => s.uses?.startsWith('renovatebot/github-action@'));
 	const rules = action?.env?.RENOVATE_HOST_RULES ?? '';
 	expect(rules).toContain("inputs.registry != ''");
-	expect(rules).toContain('"hostType":"npm"');
-	expect(rules).toContain('secrets.registry-token');
-	expect(rules).toContain('inputs.registry');
-	// Пустой registry: действительный пустой список, а не битый JSON.
+	// format('<шаблон>', host, token): порядок аргументов важен, шаблон исполняем как GitHub.
+	const m = /format\('(.*)', inputs\.registry, secrets\.registry-token\)/.exec(rules);
+	expect(m).not.toBeNull();
+	const args = ['npm.example.com', 't'];
+	const rendered = (m?.[1] ?? '').replace(/\{\{|\}\}|\{(\d+)\}|[{}]/g, (tok, n?: string) => {
+		if (tok === '{{') return '{';
+		if (tok === '}}') return '}';
+		if (n === undefined) throw new Error(`неэкранированная скобка в format: ${tok}`);
+		return args[Number(n)] ?? 'MISSING';
+	});
+	expect(JSON.parse(rendered)).toEqual([
+		{ matchHost: 'npm.example.com', hostType: 'npm', token: 't' },
+	]);
 	expect(rules).toMatch(/\|\| '\[\]' \}\}$/);
 });
 
