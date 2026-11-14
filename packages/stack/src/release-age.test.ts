@@ -148,3 +148,14 @@ test('ключ есть, значения нет — последователь�
 		'@alxwlw/other@2.0.0',
 	]);
 });
+
+test.each(['foo', '{ a: b }'])(
+	'minimumReleaseAgeExclude не последовательность (%s) — находок нет, текст прежний',
+	(value) => {
+		const text = ws(`${AGE}minimumReleaseAgeExclude: ${value}\n`);
+		expect(drift(text)).toEqual([]);
+		const { out, applied } = synced(text);
+		expect(applied).toBe(0);
+		expect(out).toBe(text);
+	},
+);

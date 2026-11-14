@@ -96,19 +96,19 @@ jobs:
         run: pnpm install --no-frozen-lockfile
       # Точка вызова репо-своей доводки: скрипт stack:post-sync в корневом package.json. Шаг без if:
       # хук сам решает, нужны ли ему зависимости (при install: false их нет). Падение хука роняет
-      # джобу: PR без доводки не открывается. proto install перед хуком — тулчейн мог отстать от
-      # пинов, которые sync только что поднял (при install: false шим proto иначе откажет pnpm).
+      # джобу: PR без доводки не открывается. proto install стоит ДО чтения package.json: тулчейн
+      # мог отстать от пинов, которые sync только что поднял, и при install: false шим proto
+      # отказывает любому инструменту (node в том числе, missing_tool). Без package.json шаг пуст.
       - name: доводка репозитория
         env:
           VERSION: ${{ inputs.version }}
         run: |
-          has=false
           if [ -f package.json ]; then
-            has="$(node -p 'Boolean(require("./package.json").scripts?.["stack:post-sync"])')"
-          fi
-          if [ "$has" = true ]; then
             proto install
-            pnpm run stack:post-sync
+            has="$(node -p 'Boolean(require("./package.json").scripts?.["stack:post-sync"])')"
+            if [ "$has" = true ]; then
+              pnpm run stack:post-sync
+            fi
           fi
       - name: проверить, есть ли изменения
         id: diff

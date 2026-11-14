@@ -361,6 +361,9 @@ test('renovate: связки libs бампаются одной веткой', (
 		const idx = rules.findIndex(
 			(r) => JSON.stringify(r.matchPackageNames) === JSON.stringify(names),
 		);
+		// Правило связки не сужено другими match*/exclude*: иначе часть пакетов связки выпадает из группы.
+		const keys = Object.keys(rules[idx] ?? {}).filter((k) => /^(match|exclude)/.test(k));
+		expect([names, keys]).toEqual([names, ['matchPackageNames']]);
 		// Правило связки стоит ниже canon pins: Renovate применяет совпавшие правила по порядку, последнее побеждает.
 		expect([names, idx > canonIdx]).toEqual([names, true]);
 		expect([names, typeof rules[idx]?.groupName]).toEqual([names, 'string']);
@@ -398,7 +401,7 @@ const postIdx = syncSteps?.findIndex((s) => s.name === 'доводка репо�
 const postStep = syncSteps?.[postIdx] as (SyncStep & { if?: string }) | undefined;
 
 function runPostSync(
-	pkg: object | null,
+	pkg: object | string | null,
 	failing?: 'proto' | 'pnpm',
 ): { status: number | null; calls: string[] } {
 	const dir = mkdtempSync(join(tmpdir(), 'sync-post-'));
@@ -407,14 +410,26 @@ function runPostSync(
 	const calls = join(dir, 'calls');
 	mkdirSync(stubs);
 	mkdirSync(work);
-	if (pkg) writeFileSync(join(work, 'package.json'), JSON.stringify(pkg));
+	if (pkg !== null) {
+		writeFileSync(join(work, 'package.json'), typeof pkg === 'string' ? pkg : JSON.stringify(pkg));
+	}
+	// Шим proto отказывает node (missing_tool), пока proto install не отработал: заглушка node
+	// повторяет это и пускает настоящий node только после метки, которую ставит заглушка proto.
+	const marker = join(dir, 'installed');
+	const realNode = Bun.which('node') ?? 'node';
 	for (const tool of ['proto', 'pnpm']) {
+		const touch = tool === 'proto' ? `touch '${marker}'\n` : '';
 		writeFileSync(
 			join(stubs, tool),
-			`#!/usr/bin/env bash\necho "${tool} $*|$VERSION" >> '${calls}'\n${failing === tool ? 'exit 1' : 'exit 0'}\n`,
+			`#!/usr/bin/env bash\necho "${tool} $*|$VERSION" >> '${calls}'\n${touch}${failing === tool ? 'exit 1' : 'exit 0'}\n`,
 		);
 		chmodSync(join(stubs, tool), 0o755);
 	}
+	writeFileSync(
+		join(stubs, 'node'),
+		`#!/usr/bin/env bash\nif [ ! -f '${marker}' ]; then echo missing_tool >&2; exit 1; fi\nexec '${realNode}' "$@"\n`,
+	);
+	chmodSync(join(stubs, 'node'), 0o755);
 	const res = spawnSync('bash', ['-eo', 'pipefail', '-c', postStep?.run ?? 'exit 99'], {
 		cwd: work,
 		env: { ...process.env, PATH: `${stubs}:${process.env.PATH}`, VERSION: '1.2.3' },
@@ -442,12 +457,24 @@ test('шаг доводки: proto install, затем pnpm run stack:post-sync 
 	expect(r.calls).toEqual(['proto install|1.2.3', 'pnpm run stack:post-sync|1.2.3']);
 });
 
-test('шаг доводки молчит без скрипта и без package.json', () => {
-	for (const pkg of [{ scripts: { build: 'x' } }, {}, null]) {
+test('шаг доводки без скрипта: хук не зовётся, статус 0', () => {
+	for (const pkg of [{ scripts: { build: 'x' } }, {}]) {
 		const r = runPostSync(pkg);
 		expect(r.status).toBe(0);
-		expect(r.calls).toEqual([]);
+		expect(r.calls).toEqual(['proto install|1.2.3']);
 	}
+});
+
+test('шаг доводки без package.json пуст: ни proto, ни pnpm', () => {
+	const r = runPostSync(null);
+	expect(r.status).toBe(0);
+	expect(r.calls).toEqual([]);
+});
+
+test('битый package.json роняет шаг, хук не зовётся', () => {
+	const r = runPostSync('{');
+	expect(r.status).not.toBe(0);
+	expect(r.calls).toEqual(['proto install|1.2.3']);
 });
 
 test('падение хука роняет шаг', () => {

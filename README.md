@@ -305,12 +305,14 @@ and `STACK_SYNC_INSTALL=false` skips `pnpm install` for a repo without a `packag
 `pnpm install`.
 
 A consumer can add a repo-owned finishing step: a `stack:post-sync` script in the root
-`package.json`. The workflow runs `proto install` and then `pnpm run stack:post-sync` after
-`stack sync` and its install, before it looks for changes, so regenerated files land in the same
-sync PR. The script gets `VERSION` (the stack version, without `v`) in its environment. The step runs
-whatever `STACK_SYNC_INSTALL` says, so the hook decides itself whether it needs dependencies. A
-failing hook fails the job: no commit and no PR, rather than a PR without the finishing. Without the
-script (or without a `package.json`) the step does nothing.
+`package.json`. After `stack sync` and its install, before the workflow looks for changes, a repo
+with a `package.json` gets `proto install` (the pins the sync just raised, node included, must be
+installed before anything reads `package.json`), then `pnpm run stack:post-sync` if the script
+exists, so regenerated files land in the same sync PR. The script gets `VERSION` (the stack version,
+without `v`) in its environment. The step runs whatever `STACK_SYNC_INSTALL` says, so the hook
+decides itself whether it needs dependencies. A failing `proto install` or hook, or an unreadable
+`package.json`, fails the job: no commit and no PR, rather than a PR without the finishing. Without
+the script the step only runs `proto install`; without a `package.json` it does nothing.
 
 ## License
 
