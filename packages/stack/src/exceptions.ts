@@ -45,6 +45,8 @@ const ADDRESS: { [C in FindingCode]: ((f: FindingOf<C>) => Address) | 'unsuppres
 	'catalog-drift': (f) => ({ catalog: f.catalog, name: f.name }),
 	'catalog-missing': (f) => ({ catalog: f.catalog, name: f.name }),
 	'inline-version': (f) => ({ name: f.name }),
+	// Держим пакет на своей версии — не гоним ни запись каталога, ни её исключение из release-age.
+	'release-age-exclude': (f) => ({ catalog: 'dev', name: f.name }),
 	// packageManager в package.json — следствие решения про .prototools: одно исключение на
 	// .prototools держит оба симптома.
 	'package-manager': () => ({ file: '.prototools' }),
