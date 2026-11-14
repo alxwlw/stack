@@ -27,6 +27,9 @@ export function planReleaseAgeExcludes(repo: Repo, canon: Canon): Drift[] {
 	const age = Number(doc.get('minimumReleaseAge'));
 	if (!(age > 0)) return [];
 	const existing = doc.get(KEY);
+	// Ключ есть, а значения нет (`minimumReleaseAgeExclude:`): setIn по индексу в null бросает,
+	// поэтому первая запись создаёт последовательность целиком.
+	const empty = doc.has(KEY) && existing == null;
 	// Не последовательность (скаляр, map): структуру руками не ломаем.
 	if (existing != null && !isSeq(existing)) return [];
 	const items: (string | undefined)[] = (existing?.items ?? []).map((n) =>
@@ -39,7 +42,10 @@ export function planReleaseAgeExcludes(repo: Repo, canon: Canon): Drift[] {
 		if (items.some((s) => s !== undefined && covers(s, name, version))) continue;
 		const own = items.findIndex((s) => s !== undefined && s.trim().startsWith(`${name}@`));
 		const extend = own >= 0;
-		const path = [KEY, extend ? own : length++];
+		const seed = empty && !extend && length === 0;
+		const path = seed ? [KEY] : [KEY, extend ? own : length];
+		if (!extend) length++;
+		const entry = extend ? `${items[own]} || ${version}` : `${name}@${version}`;
 		plan.push({
 			code: 'release-age-exclude',
 			target: `${KEY}.${name}`,
@@ -50,7 +56,7 @@ export function planReleaseAgeExcludes(repo: Repo, canon: Canon): Drift[] {
 				kind: 'yaml-set',
 				file: WORKSPACE_FILE,
 				path,
-				value: extend ? `${items[own]} || ${version}` : `${name}@${version}`,
+				value: seed ? [entry] : entry,
 			},
 		});
 	}

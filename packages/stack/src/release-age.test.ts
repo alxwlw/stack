@@ -120,3 +120,31 @@ test('каталоги и release-age в одном sync', () => {
 	expect(js.catalogs.dev['@alxwlw/stack']).toBe('1.10.0');
 	expect(js.minimumReleaseAgeExclude).toEqual(['@alxwlw/stack@1.10.0']);
 });
+
+const canon2 = testCanon({
+	catalogs: { dev: { '@alxwlw/stack': '1.10.0', '@alxwlw/other': '2.0.0', oxlint: '1.90.0' } },
+});
+const ws2 = (extra: string) =>
+	`packages:\n  - packages/*\n\ncatalogs:\n  dev:\n    '@alxwlw/stack': 1.10.0\n    '@alxwlw/other': 2.0.0\n    oxlint: 1.90.0\n${extra}`;
+
+test('несколько пакетов: свой индекс записи и сдвиг добавлений', () => {
+	const { out } = synced(
+		ws2(`${AGE}minimumReleaseAgeExclude:\n  - foo\n  - '@alxwlw/stack@1.0.0'\n`),
+		canon2,
+	);
+	expect(list(out)).toEqual(['foo', '@alxwlw/stack@1.0.0 || 1.10.0', '@alxwlw/other@2.0.0']);
+});
+
+test('несколько пакетов без ключа — обе записи', () => {
+	const { out } = synced(ws2(AGE), canon2);
+	expect(list(out)).toEqual(['@alxwlw/stack@1.10.0', '@alxwlw/other@2.0.0']);
+});
+
+test('ключ есть, значения нет — последовательность создаётся, sync не падает', () => {
+	const { out } = synced(ws(`${AGE}minimumReleaseAgeExclude:\n`));
+	expect(list(out)).toEqual(['@alxwlw/stack@1.10.0']);
+	expect(list(synced(ws2(`${AGE}minimumReleaseAgeExclude:\n`), canon2).out)).toEqual([
+		'@alxwlw/stack@1.10.0',
+		'@alxwlw/other@2.0.0',
+	]);
+});
