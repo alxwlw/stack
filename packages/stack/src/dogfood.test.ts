@@ -285,6 +285,7 @@ const ownRenovate = JSON5.parse(readFileSync(join(ROOT, 'renovate.json5'), 'utf8
 	ignorePaths?: string[];
 	packageRules?: {
 		groupName?: string;
+		separateMajorMinor?: boolean;
 		matchFileNames?: string[];
 		matchPackageNames?: string[];
 		enabled?: boolean;
@@ -349,6 +350,27 @@ test('свой renovate.json5: канон и корень — одна груп�
 	expect(Object.keys(group ?? {}).filter((k) => /^(match|exclude)/.test(k))).toEqual([
 		'matchFileNames',
 	]);
+});
+
+test('renovate: связки libs бампаются одной веткой', () => {
+	const rules = ownRenovate.packageRules ?? [];
+	const canonIdx = rules.findIndex((r) => r.groupName === 'canon pins');
+	expect(canonIdx).toBeGreaterThanOrEqual(0);
+	const bundles = [['@opentelemetry/**'], ['@nats-io/**'], ['@prisma/**', 'prisma']];
+	for (const names of bundles) {
+		const idx = rules.findIndex(
+			(r) => JSON.stringify(r.matchPackageNames) === JSON.stringify(names),
+		);
+		// Правило связки стоит ниже canon pins: Renovate применяет совпавшие правила по порядку, последнее побеждает.
+		expect([names, idx > canonIdx]).toEqual([names, true]);
+		expect([names, typeof rules[idx]?.groupName]).toEqual([names, 'string']);
+		expect([names, rules[idx]?.separateMajorMinor]).toEqual([names, false]);
+	}
+	// Три связки — три разных группы: общая группа слила бы мажор NATS с OTel.
+	const groups = new Set(
+		rules.filter((r, i) => i > canonIdx && r.separateMajorMinor === false).map((r) => r.groupName),
+	);
+	expect(groups.size).toBe(3);
 });
 
 test('свой renovate.json5: фикстуры Renovate не трогает', () => {

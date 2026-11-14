@@ -424,3 +424,53 @@ test('readCanonSource читает manifest.json и catalogs.json по одно�
 		spy.mockRestore();
 	}
 });
+
+// Связки libs: потребитель, взявший группу целиком, получает одну копию каждого пакета связки.
+const BUNDLES = {
+	nats: ['@nats-io/jetstream', '@nats-io/nats-core', '@nats-io/transport-node'],
+	otel: [
+		'@opentelemetry/api',
+		'@opentelemetry/core',
+		'@opentelemetry/resources',
+		'@opentelemetry/sdk-metrics',
+		'@opentelemetry/context-async-hooks',
+		'@opentelemetry/sdk-node',
+		'@opentelemetry/exporter-trace-otlp-http',
+		'@opentelemetry/exporter-metrics-otlp-http',
+		'@opentelemetry/semantic-conventions',
+		'@opentelemetry/auto-instrumentations-node',
+	],
+	prisma: ['@prisma/client', 'prisma', '@prisma/adapter-pg'],
+} as const;
+
+test('libs: связки полные', () => {
+	const libs = readCanonSource().catalogs.libs ?? {};
+	for (const [bundle, names] of Object.entries(BUNDLES)) {
+		const missing = names.filter((n) => libs[n] == null);
+		expect([bundle, missing]).toEqual([bundle, []]);
+	}
+});
+
+test('libs: связка NATS и связка Prisma — одна версия на связку', () => {
+	const libs = readCanonSource().catalogs.libs ?? {};
+	for (const bundle of ['nats', 'prisma'] as const) {
+		const versions = new Set(BUNDLES[bundle].map((n) => libs[n]));
+		expect([bundle, [...versions].length]).toEqual([bundle, 1]);
+	}
+});
+
+test('libs: связка OpenTelemetry — SDK-пакеты на одной версии, экспортёры на версии sdk-node', () => {
+	const libs = readCanonSource().catalogs.libs ?? {};
+	const sdk = new Set(
+		['core', 'resources', 'sdk-metrics', 'context-async-hooks'].map(
+			(n) => libs[`@opentelemetry/${n}`],
+		),
+	);
+	expect([...sdk]).toHaveLength(1);
+	const experimental = new Set(
+		['sdk-node', 'exporter-trace-otlp-http', 'exporter-metrics-otlp-http'].map(
+			(n) => libs[`@opentelemetry/${n}`],
+		),
+	);
+	expect([...experimental]).toHaveLength(1);
+});
