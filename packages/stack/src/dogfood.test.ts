@@ -416,7 +416,9 @@ function runPostSync(
 	// Шим proto отказывает node (missing_tool), пока proto install не отработал: заглушка node
 	// повторяет это и пускает настоящий node только после метки, которую ставит заглушка proto.
 	const marker = join(dir, 'installed');
-	const realNode = Bun.which('node') ?? 'node';
+	// Не Bun.which('node'): на раннере это шим proto, а не настоящий node. Тест-раннер сам bun, и его
+	// `-p` исполняет то же выражение, что шаг отдаёт `node -p`.
+	const realNode = process.execPath;
 	for (const tool of ['proto', 'pnpm']) {
 		const touch = tool === 'proto' ? `touch '${marker}'\n` : '';
 		writeFileSync(
