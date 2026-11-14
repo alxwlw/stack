@@ -6,10 +6,17 @@ on:
         description: уровень лога Renovate — info или debug
         type: string
         default: info
+      registry:
+        description: хост приватного npm-реестра без схемы (пусто — реестр не подключается)
+        type: string
+        default: ''
     secrets:
       token:
         description: токен, от имени которого Renovate клонирует репо и открывает PR
         required: true
+      registry-token:
+        description: токен чтения приватного реестра; нужен вместе с входом registry
+        required: false
 permissions:
   contents: read
 jobs:
@@ -28,3 +35,5 @@ jobs:
         env:
           RENOVATE_REPOSITORIES: ${{ github.repository }}
           LOG_LEVEL: ${{ inputs.log-level }}
+          # Host rule приватного реестра только при непустом registry; иначе пустой список.
+          RENOVATE_HOST_RULES: ${{ inputs.registry != '' && format('[{{"matchHost":"{0}","hostType":"npm","token":"{1}"}}]', inputs.registry, secrets.registry-token) || '[]' }}

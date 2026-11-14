@@ -1,5 +1,13 @@
 import { spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+	chmodSync,
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -94,6 +102,70 @@ test('reusable renovate.yml: workflow_call с обязательным token, ac
 	// У action нет плавающего мажорного тега: @v46 не резолвится.
 	expect(action?.uses).toMatch(/^renovatebot\/github-action@v\d+\.\d+\.\d+$/);
 	expect(action?.env?.RENOVATE_REPOSITORIES).toBe('${{ github.repository }}');
+});
+
+type RegistryWf = {
+	on?: {
+		workflow_call?: {
+			inputs?: Record<string, unknown>;
+			secrets?: Record<string, { required?: boolean }>;
+		};
+	};
+	jobs?: Record<
+		string,
+		{
+			env?: Record<string, string>;
+			steps?: { uses?: string; with?: Record<string, unknown>; env?: Record<string, string> }[];
+		}
+	>;
+};
+const readWf = (name: string) =>
+	parseYaml(readFileSync(join(ROOT, '.github', 'workflows', name), 'utf8')) as RegistryWf;
+
+test.each(['check.yml', 'sync.yml', 'renovate.yml'])(
+	'%s: вход registry с дефолтом "" и необязательный секрет registry-token',
+	(name) => {
+		const call = readWf(name).on?.workflow_call;
+		expect(call?.inputs?.registry).toMatchObject({ type: 'string', default: '' });
+		expect(call?.inputs?.registry).toHaveProperty('description');
+		expect(call?.secrets?.['registry-token']?.required).toBe(false);
+	},
+);
+
+test.each(['check.yml', 'sync.yml'])(
+	'%s: setup получает реестр только при непустом registry',
+	(name) => {
+		const job = Object.values(readWf(name).jobs ?? {})[0];
+		const setup = job?.steps?.find((s) =>
+			s.uses?.startsWith('alxwlw/stack/.github/actions/setup@'),
+		);
+		expect(setup?.with?.registry).toBe('${{ inputs.registry }}');
+		expect(setup?.with?.['registry-token-var']).toBe(
+			"${{ inputs.registry != '' && 'STACK_REGISTRY_TOKEN' || '' }}",
+		);
+		expect(job?.env?.STACK_REGISTRY_TOKEN).toBe('${{ secrets.registry-token }}');
+	},
+);
+
+test('renovate.yml: host rule приватного реестра только при непустом registry', () => {
+	const job = Object.values(readWf('renovate.yml').jobs ?? {})[0];
+	const action = job?.steps?.find((s) => s.uses?.startsWith('renovatebot/github-action@'));
+	const rules = action?.env?.RENOVATE_HOST_RULES ?? '';
+	expect(rules).toContain("inputs.registry != ''");
+	// format('<шаблон>', host, token): порядок аргументов важен, шаблон исполняем как GitHub.
+	const m = /format\('(.*)', inputs\.registry, secrets\.registry-token\)/.exec(rules);
+	expect(m).not.toBeNull();
+	const args = ['npm.example.com', 't'];
+	const rendered = (m?.[1] ?? '').replace(/\{\{|\}\}|\{(\d+)\}|[{}]/g, (tok, n?: string) => {
+		if (tok === '{{') return '{';
+		if (tok === '}}') return '}';
+		if (n === undefined) throw new Error(`неэкранированная скобка в format: ${tok}`);
+		return args[Number(n)] ?? 'MISSING';
+	});
+	expect(JSON.parse(rendered)).toEqual([
+		{ matchHost: 'npm.example.com', hostType: 'npm', token: 't' },
+	]);
+	expect(rules).toMatch(/\|\| '\[\]' \}\}$/);
 });
 
 // sync.yml ждёт версию в реестре до bunx: rollout стартует сразу после publish, и в 1.6.0 все
@@ -213,6 +285,7 @@ const ownRenovate = JSON5.parse(readFileSync(join(ROOT, 'renovate.json5'), 'utf8
 	ignorePaths?: string[];
 	packageRules?: {
 		groupName?: string;
+		separateMajorMinor?: boolean;
 		matchFileNames?: string[];
 		matchPackageNames?: string[];
 		enabled?: boolean;
@@ -279,6 +352,30 @@ test('свой renovate.json5: канон и корень — одна груп�
 	]);
 });
 
+test('renovate: связки libs бампаются одной веткой', () => {
+	const rules = ownRenovate.packageRules ?? [];
+	const canonIdx = rules.findIndex((r) => r.groupName === 'canon pins');
+	expect(canonIdx).toBeGreaterThanOrEqual(0);
+	const bundles = [['@opentelemetry/**'], ['@nats-io/**'], ['@prisma/**', 'prisma']];
+	for (const names of bundles) {
+		const idx = rules.findIndex(
+			(r) => JSON.stringify(r.matchPackageNames) === JSON.stringify(names),
+		);
+		// Правило связки не сужено другими match*/exclude*: иначе часть пакетов связки выпадает из группы.
+		const keys = Object.keys(rules[idx] ?? {}).filter((k) => /^(match|exclude)/.test(k));
+		expect([names, keys]).toEqual([names, ['matchPackageNames']]);
+		// Правило связки стоит ниже canon pins: Renovate применяет совпавшие правила по порядку, последнее побеждает.
+		expect([names, idx > canonIdx]).toEqual([names, true]);
+		expect([names, typeof rules[idx]?.groupName]).toEqual([names, 'string']);
+		expect([names, rules[idx]?.separateMajorMinor]).toEqual([names, false]);
+	}
+	// Три связки — три разных группы: общая группа слила бы мажор NATS с OTel.
+	const groups = new Set(
+		rules.filter((r, i) => i > canonIdx && r.separateMajorMinor === false).map((r) => r.groupName),
+	);
+	expect(groups.size).toBe(3);
+});
+
 test('свой renovate.json5: фикстуры Renovate не трогает', () => {
 	expect(ownRenovate.ignorePaths ?? []).toContain('fixtures/**');
 	// ignorePaths заменяет, а не дополняет config:recommended — node_modules надо вернуть явно.
@@ -296,4 +393,99 @@ test('renovate.json5: typescript не поднимается на ночные �
 	const night = new RegExp(m?.[1] ?? '');
 	expect(night.test('7.1.0-dev.20261104.1')).toBe(true);
 	for (const v of ['7.1.0-beta', '7.1.0-rc', '7.1.0', '7.1.1']) expect(night.test(v)).toBe(false);
+});
+
+// Шаг доводки: репо-свой скрипт stack:post-sync. bash шага гоняется в каталоге «потребителя» с
+// заглушками proto и pnpm в PATH (порядок вызовов пишется в один файл); node настоящий.
+const postIdx = syncSteps?.findIndex((s) => s.name === 'доводка репозитория') ?? -1;
+const postStep = syncSteps?.[postIdx] as (SyncStep & { if?: string }) | undefined;
+
+function runPostSync(
+	pkg: object | string | null,
+	failing?: 'proto' | 'pnpm',
+): { status: number | null; calls: string[] } {
+	const dir = mkdtempSync(join(tmpdir(), 'sync-post-'));
+	const stubs = join(dir, 'bin');
+	const work = join(dir, 'repo');
+	const calls = join(dir, 'calls');
+	mkdirSync(stubs);
+	mkdirSync(work);
+	if (pkg !== null) {
+		writeFileSync(join(work, 'package.json'), typeof pkg === 'string' ? pkg : JSON.stringify(pkg));
+	}
+	// Шим proto отказывает node (missing_tool), пока proto install не отработал: заглушка node
+	// повторяет это и пускает настоящий node только после метки, которую ставит заглушка proto.
+	const marker = join(dir, 'installed');
+	// Не Bun.which('node'): на раннере это шим proto, а не настоящий node. Тест-раннер сам bun, и его
+	// `-p` исполняет то же выражение, что шаг отдаёт `node -p`.
+	const realNode = process.execPath;
+	for (const tool of ['proto', 'pnpm']) {
+		const touch = tool === 'proto' ? `touch '${marker}'\n` : '';
+		writeFileSync(
+			join(stubs, tool),
+			`#!/usr/bin/env bash\necho "${tool} $*|$VERSION" >> '${calls}'\n${touch}${failing === tool ? 'exit 1' : 'exit 0'}\n`,
+		);
+		chmodSync(join(stubs, tool), 0o755);
+	}
+	writeFileSync(
+		join(stubs, 'node'),
+		`#!/usr/bin/env bash\nif [ ! -f '${marker}' ]; then echo missing_tool >&2; exit 1; fi\nexec '${realNode}' "$@"\n`,
+	);
+	chmodSync(join(stubs, 'node'), 0o755);
+	const res = spawnSync('bash', ['-eo', 'pipefail', '-c', postStep?.run ?? 'exit 99'], {
+		cwd: work,
+		env: { ...process.env, PATH: `${stubs}:${process.env.PATH}`, VERSION: '1.2.3' },
+		encoding: 'utf8',
+	});
+	const n = existsSync(calls) ? readFileSync(calls, 'utf8').split('\n').filter(Boolean) : [];
+	rmSync(dir, { recursive: true, force: true });
+	return { status: res.status, calls: n };
+}
+
+test('sync.yml: шаг доводки стоит после pnpm install и до проверки изменений', () => {
+	const installIdx =
+		syncSteps?.findIndex((s) => s.run?.includes('pnpm install --no-frozen-lockfile')) ?? -1;
+	const diffIdx = syncSteps?.findIndex((s) => (s as { id?: string }).id === 'diff') ?? -1;
+	expect(installIdx).toBeGreaterThanOrEqual(0);
+	expect(postIdx).toBeGreaterThan(installIdx);
+	expect(diffIdx).toBeGreaterThan(postIdx);
+	expect(postStep?.if).toBeUndefined();
+	expect(postStep?.env?.VERSION).toBe('${{ inputs.version }}');
+});
+
+test('шаг доводки: proto install, затем pnpm run stack:post-sync с VERSION, когда скрипт есть', () => {
+	const r = runPostSync({ scripts: { 'stack:post-sync': 'echo hi' } });
+	expect(r.status).toBe(0);
+	expect(r.calls).toEqual(['proto install|1.2.3', 'pnpm run stack:post-sync|1.2.3']);
+});
+
+test('шаг доводки без скрипта: хук не зовётся, статус 0', () => {
+	for (const pkg of [{ scripts: { build: 'x' } }, {}]) {
+		const r = runPostSync(pkg);
+		expect(r.status).toBe(0);
+		expect(r.calls).toEqual(['proto install|1.2.3']);
+	}
+});
+
+test('шаг доводки без package.json пуст: ни proto, ни pnpm', () => {
+	const r = runPostSync(null);
+	expect(r.status).toBe(0);
+	expect(r.calls).toEqual([]);
+});
+
+test('битый package.json роняет шаг, хук не зовётся', () => {
+	const r = runPostSync('{');
+	expect(r.status).not.toBe(0);
+	expect(r.calls).toEqual(['proto install|1.2.3']);
+});
+
+test('падение хука роняет шаг', () => {
+	const r = runPostSync({ scripts: { 'stack:post-sync': 'x' } }, 'pnpm');
+	expect(r.status).not.toBe(0);
+});
+
+test('падение proto install роняет шаг до хука', () => {
+	const r = runPostSync({ scripts: { 'stack:post-sync': 'x' } }, 'proto');
+	expect(r.status).not.toBe(0);
+	expect(r.calls).toEqual(['proto install|1.2.3']);
 });

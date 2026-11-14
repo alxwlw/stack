@@ -14,9 +14,20 @@ on:
         description: сканировать всю историю gitleaks (конфиг .gitleaks.toml, посеянный `stack sync` → канон → default)
         type: boolean
         default: false
+      registry:
+        description: хост приватного npm-реестра без схемы (пусто — реестр не подключается)
+        type: string
+        default: ''
+    secrets:
+      registry-token:
+        description: токен чтения приватного реестра; нужен вместе с входом registry
+        required: false
 jobs:
   check:
     runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    env:
+      # Значение не печатается и не пишется в ~/.npmrc: setup кладёт туда ссылку ${STACK_REGISTRY_TOKEN}.
+      STACK_REGISTRY_TOKEN: ${{ secrets.registry-token }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -25,6 +36,8 @@ jobs:
       - uses: alxwlw/stack/.github/actions/setup@v1
         with:
           install: ${{ inputs.install }}
+          registry: ${{ inputs.registry }}
+          registry-token-var: ${{ inputs.registry != '' && 'STACK_REGISTRY_TOKEN' || '' }}
       - if: inputs.install
         run: pnpm exec stack check
       - if: ${{ !inputs.install }}

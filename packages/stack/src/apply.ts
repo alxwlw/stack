@@ -22,7 +22,9 @@ function renderFile(file: string, current: string | undefined, changes: Change[]
 		const doc = parseDocument(current ?? '');
 		for (const c of changes) {
 			// setIn создаёт недостающие узлы и не трогает соседей и их комментарии.
-			if (c.kind === 'yaml-set') doc.setIn(c.path, c.value);
+			if (c.kind === 'yaml-set') {
+				doc.setIn(c.path, Array.isArray(c.value) ? doc.createNode(c.value) : c.value);
+			}
 		}
 		// singleQuote: oxfmt (canon .oxfmtrc.jsonc) formats YAML with singleQuote:true, and
 		// pnpm-workspace.yaml's own pre-existing catalogs already use single quotes for scoped names.

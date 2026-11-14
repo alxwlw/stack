@@ -80,6 +80,13 @@ as `allowed (<reason>): …` and moves on, and `check` reports the same item as 
 never turns a held item into a stale exception. (`check`'s report-only rules — `engines.node`,
 a Renovate config without the canon preset, a leftover Dependabot config, inline versions — are not something `sync` fixes.)
 
+When `pnpm-workspace.yaml` sets `minimumReleaseAge` above zero, `sync` also keeps
+`minimumReleaseAgeExclude` covering the canon's own `@alxwlw/*` versions, so a rollout on the day of
+publication is not rejected by `pnpm install`. A version counts as covered by a bare name,
+`@alxwlw/*`, or `<name>@<v1> || <v2>` containing it; otherwise `sync` appends ` || <version>` to the
+package's own entry, or adds `<name>@<version>` (creating the list if absent). Other entries,
+their order and comments are left alone. A `catalog: dev` exception on the package holds this too.
+
 `sync` also keeps `package.json#packageManager` on the canon's pnpm pin whenever that field names
 pnpm (a `+sha512…` suffix on the same version is fine) — otherwise pnpm switches itself to the
 version in the field and the `.prototools` pin silently stops applying. An exception on
@@ -218,6 +225,14 @@ jobs:
 The project `.npmrc` must still map the scope to the registry (e.g.
 `@acme:registry=https://npm.pkg.github.com`); the action only adds the auth line.
 
+The reusable workflows `check.yml`, `sync.yml` and `renovate.yml` pass this through: each takes an
+optional `registry` input (host without scheme, default empty) and an optional `registry-token`
+secret. With `registry` empty they behave as before and `~/.npmrc` is untouched. The canon files
+synced into a consumer wire them to the repository variable `STACK_REGISTRY` and the secret
+`STACK_REGISTRY_TOKEN`, so a repo opts in by setting those two (for `acme/app`: variable
+`STACK_REGISTRY=npm.pkg.github.com`, secret `STACK_REGISTRY_TOKEN`). `renovate.yml` also gives
+Renovate an npm host rule for that host and token.
+
 The action also exports `ACTIONLINT_BIN` / `SHELLCHECK_BIN` — the real binaries behind the proto
 shims, which race each other when run in parallel — only for those two tools, and only when the
 repository-root `.prototools` pins them.
@@ -229,7 +244,7 @@ history (`fetch-depth: 0`) with the config chain `.gitleaks.toml` (seeded by `st
 default. It is off by default: a history that was never cleaned would turn the check red on the day of
 the bump.
 
-The canon `.github/workflows/stack-check.yml` is synced verbatim, so a `with:` block in it is drift.
+The canon `stack-check` workflow file is synced verbatim, so any other `with:` entry in it is drift.
 Enable the input from your own workflow that calls `check.yml`, or run a separate job: `actions/checkout`
 with `fetch-depth: 0` → `alxwlw/stack/.github/actions/setup@v1` with `install: false` →
 `gitleaks git --redact --no-banner .`.
@@ -288,6 +303,16 @@ branch instead of the default one (for a repo whose default branch only takes me
 and `STACK_SYNC_INSTALL=false` skips `pnpm install` for a repo without a `package.json`. After
 `stack sync` the workflow runs `proto install`, so pins the sync just raised are installed before
 `pnpm install`.
+
+A consumer can add a repo-owned finishing step: a `stack:post-sync` script in the root
+`package.json`. After `stack sync` and its install, before the workflow looks for changes, a repo
+with a `package.json` gets `proto install` (the pins the sync just raised, node included, must be
+installed before anything reads `package.json`), then `pnpm run stack:post-sync` if the script
+exists, so regenerated files land in the same sync PR. The script gets `VERSION` (the stack version,
+without `v`) in its environment. The step runs whatever `STACK_SYNC_INSTALL` says, so the hook
+decides itself whether it needs dependencies. A failing `proto install` or hook, or an unreadable
+`package.json`, fails the job: no commit and no PR, rather than a PR without the finishing. Without
+the script the step only runs `proto install`; without a `package.json` it does nothing.
 
 ## License
 

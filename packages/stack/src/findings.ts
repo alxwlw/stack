@@ -13,7 +13,7 @@ export type Finding = FindingBase &
 	(
 		| { code: 'file-drift' | 'file-missing'; file: string }
 		| { code: 'catalog-drift' | 'catalog-missing'; catalog: string; name: string }
-		| { code: 'inline-version'; name: string }
+		| { code: 'inline-version' | 'release-age-exclude'; name: string }
 		| {
 				code:
 					| 'package-manager'
@@ -31,7 +31,7 @@ export type FindingOf<C extends FindingCode> = Finding & { code: C };
 // Правка одного файла как данные: применитель собирает правки по файлу и пишет его один раз.
 export type Change =
 	| { file: string; kind: 'write'; content: string }
-	| { file: string; kind: 'yaml-set'; path: string[]; value: string }
+	| { file: string; kind: 'yaml-set'; path: (string | number)[]; value: string | string[] }
 	| { file: string; kind: 'json-set'; path: string[]; value: string };
 
 // Расхождение, которое sync умеет закрыть: находка плюс правка. check печатает message,

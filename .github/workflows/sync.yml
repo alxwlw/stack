@@ -7,11 +7,15 @@ on:
         type: string
         required: true
       install:
-        description: 'запускать ли pnpm install после sync (false для приватных реестров)'
+        description: 'запускать ли proto install и pnpm install после sync (false — репозиторий без package.json)'
         type: boolean
         default: true
       base:
         description: базовая ветка PR (пусто — ветка по умолчанию репозитория)
+        type: string
+        default: ''
+      registry:
+        description: хост приватного npm-реестра без схемы (пусто — реестр не подключается)
         type: string
         default: ''
     secrets:
@@ -21,9 +25,15 @@ on:
       app-private-key:
         description: приватный ключ той же GitHub App
         required: true
+      registry-token:
+        description: токен чтения приватного реестра; нужен вместе с входом registry
+        required: false
 jobs:
   sync:
     runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    env:
+      # Значение не печатается и не пишется в ~/.npmrc: setup кладёт туда ссылку ${STACK_REGISTRY_TOKEN}.
+      STACK_REGISTRY_TOKEN: ${{ secrets.registry-token }}
     # Конкурентный workflow_dispatch на ту же версию может открыть два PR на одну ветку
     # stack/v<version>; последующий запуск ждёт предыдущий, а не гонится с ним.
     concurrency:
@@ -42,6 +52,8 @@ jobs:
       - uses: alxwlw/stack/.github/actions/setup@v1
         with:
           install: false
+          registry: ${{ inputs.registry }}
+          registry-token-var: ${{ inputs.registry != '' && 'STACK_REGISTRY_TOKEN' || '' }}
       # Основное ожидание — в job publish: он зелёный, только когда все версии видны в реестре, и
       # rollout зовёт sync после этого. Здесь короткая страховка от отставания CDN у раннера
       # потребителя (в 1.6.0 все sync упали в bunx на «No version matching»). Ждём то, что нужно
@@ -82,6 +94,22 @@ jobs:
         run: proto install
       - if: inputs.install
         run: pnpm install --no-frozen-lockfile
+      # Точка вызова репо-своей доводки: скрипт stack:post-sync в корневом package.json. Шаг без if:
+      # хук сам решает, нужны ли ему зависимости (при install: false их нет). Падение хука роняет
+      # джобу: PR без доводки не открывается. proto install стоит ДО чтения package.json: тулчейн
+      # мог отстать от пинов, которые sync только что поднял, и при install: false шим proto
+      # отказывает любому инструменту (node в том числе, missing_tool). Без package.json шаг пуст.
+      - name: доводка репозитория
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          if [ -f package.json ]; then
+            proto install
+            has="$(node -p 'Boolean(require("./package.json").scripts?.["stack:post-sync"])')"
+            if [ "$has" = true ]; then
+              pnpm run stack:post-sync
+            fi
+          fi
       - name: проверить, есть ли изменения
         id: diff
         run: |

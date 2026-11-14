@@ -131,7 +131,23 @@ test('проводка канон-файлов: токен Renovate и базо�
 		(parseYaml(canonEntries.find((e) => e.src === src)?.content ?? '') as Workflow).jobs?.[name];
 	expect(job('files/workflow-renovate.yml', 'renovate')?.secrets).toEqual({
 		token: '${{ secrets.RENOVATE_TOKEN }}',
+		'registry-token': '${{ secrets.STACK_REGISTRY_TOKEN }}',
 	});
+	for (const [src, name] of [
+		['files/workflow-stack-check.yml', 'check'],
+		['files/workflow-stack-sync.yml', 'sync'],
+		['files/workflow-renovate.yml', 'renovate'],
+	] as const) {
+		expect(job(src, name)?.with?.registry).toBe("${{ vars.STACK_REGISTRY || '' }}");
+	}
+	for (const [src, name] of [
+		['files/workflow-stack-check.yml', 'check'],
+		['files/workflow-stack-sync.yml', 'sync'],
+	] as const) {
+		expect(job(src, name)?.secrets).toMatchObject({
+			'registry-token': '${{ secrets.STACK_REGISTRY_TOKEN }}',
+		});
+	}
 	expect(job('files/workflow-stack-sync.yml', 'sync')?.with?.base).toBe(
 		"${{ vars.STACK_SYNC_BASE || '' }}",
 	);

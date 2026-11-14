@@ -43,5 +43,23 @@
 				'package.json',
 			],
 		},
+		{
+			description: 'Связка OpenTelemetry: пакеты пинят друг друга точно, мажор и минор идут одной веткой — иначе у потребителя две копии',
+			matchPackageNames: ['@opentelemetry/**'],
+			groupName: 'bundle opentelemetry',
+			separateMajorMinor: false,
+		},
+		{
+			description: 'Связка NATS: transport-node пинит nats-core точно',
+			matchPackageNames: ['@nats-io/**'],
+			groupName: 'bundle nats',
+			separateMajorMinor: false,
+		},
+		{
+			description: 'Связка Prisma: client, cli и adapter-pg выходят одной версией',
+			matchPackageNames: ['@prisma/**', 'prisma'],
+			groupName: 'bundle prisma',
+			separateMajorMinor: false,
+		},
 	],
 }

@@ -12,6 +12,7 @@ import { planFiles } from './files.ts';
 import type { Drift, Finding } from './findings.ts';
 import { checkMoonToolchains } from './moon-toolchains.ts';
 import { planPackageManager } from './package-manager.ts';
+import { planReleaseAgeExcludes } from './release-age.ts';
 import { loadRepo, type Repo } from './repo.ts';
 
 // План дрейфа: всё, что sync умеет закрыть, в порядке применения — файлы, каталоги, packageManager.
@@ -19,6 +20,7 @@ export function plan(repo: Repo, canon: Canon): Drift[] {
 	return [
 		...planFiles(repo, canon),
 		...planCatalogs(repo, canon),
+		...planReleaseAgeExcludes(repo, canon),
 		...planPackageManager(repo, canon),
 	];
 }
