@@ -96,6 +96,61 @@ test('reusable renovate.yml: workflow_call с обязательным token, ac
 	expect(action?.env?.RENOVATE_REPOSITORIES).toBe('${{ github.repository }}');
 });
 
+type RegistryWf = {
+	on?: {
+		workflow_call?: {
+			inputs?: Record<string, unknown>;
+			secrets?: Record<string, { required?: boolean }>;
+		};
+	};
+	jobs?: Record<
+		string,
+		{
+			env?: Record<string, string>;
+			steps?: { uses?: string; with?: Record<string, unknown>; env?: Record<string, string> }[];
+		}
+	>;
+};
+const readWf = (name: string) =>
+	parseYaml(readFileSync(join(ROOT, '.github', 'workflows', name), 'utf8')) as RegistryWf;
+
+test.each(['check.yml', 'sync.yml', 'renovate.yml'])(
+	'%s: вход registry с дефолтом "" и необязательный секрет registry-token',
+	(name) => {
+		const call = readWf(name).on?.workflow_call;
+		expect(call?.inputs?.registry).toMatchObject({ type: 'string', default: '' });
+		expect(call?.inputs?.registry).toHaveProperty('description');
+		expect(call?.secrets?.['registry-token']?.required).toBe(false);
+	},
+);
+
+test.each(['check.yml', 'sync.yml'])(
+	'%s: setup получает реестр только при непустом registry',
+	(name) => {
+		const job = Object.values(readWf(name).jobs ?? {})[0];
+		const setup = job?.steps?.find((s) =>
+			s.uses?.startsWith('alxwlw/stack/.github/actions/setup@'),
+		);
+		expect(setup?.with?.registry).toBe('${{ inputs.registry }}');
+		expect(setup?.with?.['registry-token-var']).toBe(
+			"${{ inputs.registry != '' && 'STACK_REGISTRY_TOKEN' || '' }}",
+		);
+		expect(job?.env?.STACK_REGISTRY_TOKEN).toBe('${{ secrets.registry-token }}');
+	},
+);
+
+test('renovate.yml: host rule приватного реестра только при непустом registry', () => {
+	const job = Object.values(readWf('renovate.yml').jobs ?? {})[0];
+	const action = job?.steps?.find((s) => s.uses?.startsWith('renovatebot/github-action@'));
+	const rules = action?.env?.RENOVATE_HOST_RULES ?? '';
+	expect(rules).toContain("inputs.registry != ''");
+	expect(rules).toContain('"hostType":"npm"');
+	expect(rules).toContain('secrets.registry-token');
+	expect(rules).toContain('inputs.registry');
+	// Пустой registry: действительный пустой список, а не битый JSON.
+	expect(rules).toMatch(/\|\| '\[\]' \}\}$/);
+});
+
 // sync.yml ждёт версию в реестре до bunx: rollout стартует сразу после publish, и в 1.6.0 все
 // sync упали на «No version matching»; в 1.7.0 — pnpm install на tsconfig, опубликованной позже
 // stack. Шаг гоняется в bash с curl-заглушкой, отдающей тело по имени пакета, а не сверяется текстом.

@@ -14,6 +14,10 @@ on:
         description: базовая ветка PR (пусто — ветка по умолчанию репозитория)
         type: string
         default: ''
+      registry:
+        description: хост приватного npm-реестра без схемы (пусто — реестр не подключается)
+        type: string
+        default: ''
     secrets:
       app-id:
         description: ID GitHub App, от имени которого коммитится и открывается PR
@@ -21,9 +25,15 @@ on:
       app-private-key:
         description: приватный ключ той же GitHub App
         required: true
+      registry-token:
+        description: токен чтения приватного реестра; нужен вместе с входом registry
+        required: false
 jobs:
   sync:
     runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    env:
+      # Значение не печатается и не пишется в ~/.npmrc: setup кладёт туда ссылку ${STACK_REGISTRY_TOKEN}.
+      STACK_REGISTRY_TOKEN: ${{ secrets.registry-token }}
     # Конкурентный workflow_dispatch на ту же версию может открыть два PR на одну ветку
     # stack/v<version>; последующий запуск ждёт предыдущий, а не гонится с ним.
     concurrency:
@@ -42,6 +52,8 @@ jobs:
       - uses: alxwlw/stack/.github/actions/setup@v1
         with:
           install: false
+          registry: ${{ inputs.registry }}
+          registry-token-var: ${{ inputs.registry != '' && 'STACK_REGISTRY_TOKEN' || '' }}
       # Основное ожидание — в job publish: он зелёный, только когда все версии видны в реестре, и
       # rollout зовёт sync после этого. Здесь короткая страховка от отставания CDN у раннера
       # потребителя (в 1.6.0 все sync упали в bunx на «No version matching»). Ждём то, что нужно
