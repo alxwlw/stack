@@ -321,7 +321,7 @@ The consumer list is the `STACK_CONSUMERS` secret of this repository (`owner/rep
 A consumer tunes its sync with one repository variable: `STACK_SYNC_BASE` opens the PR against that
 branch instead of the default one (for a repo whose default branch only takes merges from another).
 `STACK_SYNC_INSTALL` is no longer read: the repository decides itself — a root `package.json` means the
-registry wait, `proto install` and `pnpm install`. A `stack-sync.yml` copied before 1.12.0 still passes
+registry wait, `proto install` and `pnpm install`. A consumer's copy of that workflow made before 1.12.0 still passes
 the variable as the `install` input on its first sync (`false` becomes `--no-install`), and that sync PR
 replaces the copy.
 
