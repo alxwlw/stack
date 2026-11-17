@@ -29,9 +29,12 @@ export type FindingCode = Finding['code'];
 export type FindingOf<C extends FindingCode> = Finding & { code: C };
 
 // Правка одного файла как данные: применитель собирает правки по файлу и пишет его один раз.
+// yaml-append называет намерение («в последовательности по пути есть ещё один элемент»), позицию и
+// создание последовательности решает применитель, поэтому правки одного файла не зависят друг от друга.
 export type Change =
 	| { file: string; kind: 'write'; content: string }
 	| { file: string; kind: 'yaml-set'; path: (string | number)[]; value: string | string[] }
+	| { file: string; kind: 'yaml-append'; path: string[]; value: string }
 	| { file: string; kind: 'json-set'; path: string[]; value: string };
 
 // Расхождение, которое sync умеет закрыть: находка плюс правка. check печатает message,

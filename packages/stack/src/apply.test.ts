@@ -2,8 +2,10 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { expect, test } from 'bun:test';
+import { isSeq, parseDocument } from 'yaml';
 
 import { applyChanges, renderChanges } from './apply.ts';
+import type { Change } from './findings.ts';
 import { repoDir } from './testkit.ts';
 
 test('две записи одного каталога — один итог на файл, обе записи в нём, комментарий цел', () => {
@@ -96,4 +98,84 @@ test('applyChanges: файла нет в снимке — правка созд�
 		new Map(),
 	);
 	expect(readFileSync(join(root, 'p.json'), 'utf8')).toBe('{"packageManager":"pnpm@1.0.0"}');
+});
+
+const W = 'pnpm-workspace.yaml';
+const append = (value: string, path: string[] = ['list']): Change => ({
+	file: W,
+	kind: 'yaml-append',
+	path,
+	value,
+});
+const render = (current: string | undefined, changes: Change[]): string =>
+	renderChanges(new Map([[W, current]]), changes).get(W) ?? '';
+const js = (text: string) => parseDocument(text).toJS();
+
+test.each<[string, string | undefined]>([
+	['ключа нет', 'packages:\n  - packages/*\n'],
+	['ключ без значения', 'packages:\n  - packages/*\nlist:\n'],
+	['пустая последовательность', 'packages:\n  - packages/*\nlist: []\n'],
+	['файл пуст', ''],
+	['файла нет', undefined],
+])('yaml-append: %s — последовательность создаётся, записи идут в порядке правок', (_, current) => {
+	const out = render(current, [append('a@1'), append('@scope/b@2')]);
+	expect(isSeq(parseDocument(out).get('list'))).toBe(true);
+	expect(js(out)).toEqual({ ...js(current ?? ''), list: ['a@1', '@scope/b@2'] });
+});
+
+test('yaml-append: существующая последовательность — в конец; чужие записи, порядок и комментарии целы', () => {
+	const current =
+		'# шапка\nlist:\n  # про foo\n  - foo@1.0.0 # держим\n  - bar\n  # хвост\nnext: 1\n';
+	const out = render(current, [append('a@1'), append('@scope/b@2')]);
+	expect(js(out)).toEqual({ list: ['foo@1.0.0', 'bar', 'a@1', '@scope/b@2'], next: 1 });
+	for (const comment of ['# шапка', '# про foo', '# держим', '# хвост']) {
+		expect(out).toContain(comment);
+	}
+	// Как и ключи каталогов: scoped-имя в одинарных кавычках, иначе у потребителя краснеет oxfmt.
+	expect(out).toContain("  - '@scope/b@2'\n");
+});
+
+test('yaml-append: нестроковые элементы последовательности остаются на месте', () => {
+	const out = render('list:\n  - 5\n  - { a: b }\n  -\n', [append('a@1')]);
+	expect(js(out).list).toEqual([5, { a: 'b' }, null, 'a@1']);
+});
+
+test('yaml-set и yaml-append одного файла совместимы, их взаимный порядок на итог не влияет', () => {
+	const current = "catalogs:\n  dev:\n    x: 1.0.0\nlist:\n  - foo\n  - 'own@1'\n";
+	const changes: Change[] = [
+		{ file: W, kind: 'yaml-set', path: ['catalogs', 'dev', 'x'], value: '2.0.0' },
+		{ file: W, kind: 'yaml-set', path: ['list', 1], value: 'own@1 || 2' },
+		append('a@1'),
+	];
+	const out = render(current, changes);
+	expect(js(out)).toEqual({
+		catalogs: { dev: { x: '2.0.0' } },
+		list: ['foo', 'own@1 || 2', 'a@1'],
+	});
+	expect(render(current, [...changes].reverse())).toBe(out);
+});
+
+test.each([
+	['скаляр', 'list: foo\n'],
+	['map', 'list: { a: b }\n'],
+	['alias', 'shared: &shared\n  - a\nlist: *shared\n'],
+])('yaml-append: по пути %s — ошибка с именем файла и ключа', (_, current) => {
+	expect(() => render(current, [append('a@1')])).toThrow(
+		'pnpm-workspace.yaml: list is not a sequence',
+	);
+});
+
+test('yaml-append: вложенный путь — недостающие узлы создаются, в ошибке путь через точку', () => {
+	expect(js(render('b: 1\n', [append('x', ['a', 'list'])]))).toEqual({ b: 1, a: { list: ['x'] } });
+	expect(() => render('a:\n  list: 5\n', [append('x', ['a', 'list'])])).toThrow(
+		'pnpm-workspace.yaml: a.list is not a sequence',
+	);
+});
+
+test.each<[string, Change]>([
+	['write', { file: W, kind: 'write', content: 'x' }],
+	['json-set', { file: W, kind: 'json-set', path: ['k'], value: 'v' }],
+])('yaml-append и %s одного файла — ошибка программы', (_, other) => {
+	expect(() => render('', [append('a@1'), other])).toThrow(`conflicting changes for ${W}`);
+	expect(() => render('', [other, append('a@1')])).toThrow(`conflicting changes for ${W}`);
 });
