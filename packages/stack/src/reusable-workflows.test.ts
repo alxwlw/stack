@@ -6,7 +6,7 @@ import { parse as parseYaml } from 'yaml';
 
 const ROOT = join(import.meta.dir, '..', '..', '..');
 
-// Reusable workflow, который зовёт канон-файл .github/workflows/stack-check.yml потребителя.
+// Reusable workflow, который зовёт канон-файл packages/stack/canon/files/workflow-stack-check.yml.
 test('reusable check.yml: вход gitleaks выключен по умолчанию и включает скан всей истории', () => {
 	const wf = parseYaml(readFileSync(join(ROOT, '.github', 'workflows', 'check.yml'), 'utf8')) as {
 		on?: { workflow_call?: { inputs?: Record<string, { type?: string; default?: unknown }> } };
