@@ -238,8 +238,8 @@ jobs:
           registry-token-var: NODE_AUTH_TOKEN
 ```
 
-`registry-token-var` may be left out — with `registry` set, the action reads the token from the env
-var `STACK_REGISTRY_TOKEN`, so the job only declares that variable; `registry-token-var` without
+`registry-token-var` may be left out — with `registry` set, the action points `~/.npmrc` at the env
+var `STACK_REGISTRY_TOKEN` (pnpm reads it), so the job only declares that variable; `registry-token-var` without
 `registry` fails the step.
 
 The project `.npmrc` must still map the scope to the registry (e.g.

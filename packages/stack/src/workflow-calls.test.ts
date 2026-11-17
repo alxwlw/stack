@@ -42,7 +42,7 @@ type Contract = {
 type ActionManifest = { inputs?: Contract['inputs'] };
 
 type Workflow = {
-	on?: { workflow_call?: Partial<Contract> | null };
+	on?: string | string[] | { workflow_call?: Partial<Contract> | null } | null;
 	jobs?: Record<
 		string,
 		{
@@ -93,15 +93,30 @@ function callsOf(from: string, text: string): Call[] {
 	});
 }
 
+// Файл reusable, если ключ workflow_call есть в любой из форм `on`: пустой `workflow_call:` (null), `{}`,
+// строка `on: workflow_call`, список `on: [workflow_call]`. Проверка значения на null их теряет.
+function declaresWorkflowCall(on: Workflow['on']): boolean {
+	if (typeof on === 'string') return on === 'workflow_call';
+	if (Array.isArray(on)) return on.includes('workflow_call');
+	return on != null && Object.hasOwn(on, 'workflow_call');
+}
+
+function workflowCallOf(on: Workflow['on']): Partial<Contract> | null {
+	return on != null && typeof on === 'object' && !Array.isArray(on)
+		? (on.workflow_call ?? null)
+		: null;
+}
+
 function contractOf(target: string): Contract {
 	const text = readFileSync(join(ROOT, target), 'utf8');
 	if (target.endsWith('/action.yml')) {
 		return { inputs: (parseYaml(text) as ActionManifest).inputs ?? {}, secrets: {} };
 	}
-	const wc = (parseYaml(text) as Workflow).on?.workflow_call;
+	const on = (parseYaml(text) as Workflow).on;
 	// Цель без workflow_call нельзя звать вовсе: падаем, а не считаем контракт пустым.
-	if (wc == null) throw new Error(`${target}: нет on.workflow_call`);
-	return { inputs: wc.inputs ?? {}, secrets: wc.secrets ?? {} };
+	if (!declaresWorkflowCall(on)) throw new Error(`${target}: нет on.workflow_call`);
+	const wc = workflowCallOf(on);
+	return { inputs: wc?.inputs ?? {}, secrets: wc?.secrets ?? {} };
 }
 
 function callProblems(call: Call, contract: Contract): string[] {
@@ -153,7 +168,7 @@ test('обход находит вызовы reusable workflow и своего a
 	]) {
 		expect(pairs).toContainEqual(pair);
 	}
-	// Вызовов setup в корне на 00b5d83 — 11.
+	// Пол: вызовы setup, что уже стояли в корне (check 1, ci 6, publish 2, rollout 1, sync 1); новые его только поднимают.
 	expect(calls.filter((c) => c.step !== null).length).toBeGreaterThanOrEqual(11);
 });
 
@@ -175,8 +190,8 @@ test('канон-файлы зовут reusable workflow стека на @v1', (
 });
 
 test('reusable workflow стека зовёт свой action по alxwlw/stack/…@v1: ./ у потребителя — его репозиторий', () => {
-	const reusable = rootFiles.filter(
-		(f) => (parseYaml(readFileSync(join(ROOT, f), 'utf8')) as Workflow).on?.workflow_call != null,
+	const reusable = rootFiles.filter((f) =>
+		declaresWorkflowCall((parseYaml(readFileSync(join(ROOT, f), 'utf8')) as Workflow).on),
 	);
 	expect(reusable.length).toBeGreaterThan(0);
 	const stepCalls = rootCalls.filter((c) => c.step !== null && reusable.includes(c.from));
@@ -237,7 +252,10 @@ test('свой setup с registry без registry-token-var: job несёт пе�
 	expect(froms).toContain(`${WORKFLOWS}check.yml`);
 	expect(froms).toContain(`${WORKFLOWS}sync.yml`);
 	for (const c of rows) {
-		expect({ from: c.from, has: DEFAULT in c.env }).toStrictEqual({ from: c.from, has: true });
+		expect({ from: c.from, has: Object.hasOwn(c.env, DEFAULT) }).toStrictEqual({
+			from: c.from,
+			has: true,
+		});
 	}
 	// Умолчание получает секрет, который объявляет сам workflow.
 	for (const c of rows.filter(
@@ -247,6 +265,18 @@ test('свой setup с registry без registry-token-var: job несёт пе�
 			from: c.from,
 			value: '${{ secrets.registry-token }}',
 		});
+	}
+});
+
+test('проводка registry: свой setup в check.yml и sync.yml получает input registry самого workflow', () => {
+	for (const f of ['check.yml', 'sync.yml']) {
+		const wf = parseYaml(readFileSync(join(ROOT, WORKFLOWS, f), 'utf8')) as Workflow;
+		const withs = Object.values(wf.jobs ?? {}).flatMap((j) =>
+			(j.steps ?? []).flatMap((s) =>
+				s.uses != null && ACTION_USES.exec(s.uses)?.[1] === 'setup' ? [s.with?.registry] : [],
+			),
+		);
+		expect({ f, withs }).toStrictEqual({ f, withs: ['${{ inputs.registry }}'] });
 	}
 });
 
@@ -279,7 +309,26 @@ describe('dispatch из scripts/rollout.ts в рамках workflow_dispatch к�
 
 test('sync.yml: вход install объявлен — его передают копии канон-файла до 1.12.0', () => {
 	const wf = parseYaml(readFileSync(join(ROOT, WORKFLOWS, 'sync.yml'), 'utf8')) as Workflow;
-	expect(wf.on?.workflow_call?.inputs?.install).toMatchObject({ type: 'boolean', default: true });
+	expect(workflowCallOf(wf.on)?.inputs?.install).toMatchObject({ type: 'boolean', default: true });
+});
+
+describe('declaresWorkflowCall', () => {
+	test.each([
+		['нет on', undefined, false],
+		['on без workflow_call', { push: null }, false],
+		['пустой workflow_call:', { workflow_call: null }, true],
+		['workflow_call: {}', { workflow_call: {} }, true],
+		['on: workflow_call', 'workflow_call', true],
+		['on: push', 'push', false],
+		['on: [workflow_call]', ['push', 'workflow_call'], true],
+		['on: [push]', ['push'], false],
+	] as const)('%s', (_name, on, expected) => {
+		expect(declaresWorkflowCall(on as Workflow['on'])).toBe(expected);
+	});
+
+	test('ключ из прототипа не считается', () => {
+		expect(declaresWorkflowCall({} as Workflow['on'])).toBe(false);
+	});
 });
 
 describe('callProblems', () => {
