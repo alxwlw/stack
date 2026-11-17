@@ -34,15 +34,15 @@ interface GitResult {
 }
 
 function runGit(cwd: string, args: readonly string[]): GitResult {
-	const r = spawnSync('git', args, { cwd, encoding: 'utf8' });
+	const r = spawnSync('git', args, { cwd, encoding: 'utf8', maxBuffer: 1 << 30 });
 	const stderr = r.error ? r.error.message : r.stderr;
 	return { ok: r.status === 0 && !r.error, stdout: r.stdout, stderr: stderr.trimEnd() };
 }
 
 // Записи `XY путь` через NUL; при R/C следом идёт исходный путь. Игнорируемые файлы git не выводит.
-function changedFiles(repoRoot: string): string[] | undefined {
+function changedFiles(repoRoot: string): string[] {
 	const r = runGit(repoRoot, ['status', '--porcelain=v1', '-z', '--untracked-files=all']);
-	if (!r.ok) return undefined;
+	if (!r.ok) throw new Error(r.stderr);
 	const fields = r.stdout.split('\0');
 	const files: string[] = [];
 	for (let i = 0; i < fields.length; i++) {
@@ -60,7 +60,7 @@ function changedFiles(repoRoot: string): string[] | undefined {
 const message = (error: unknown): string =>
 	error instanceof Error ? error.message : String(error);
 
-// Всё, что sync.yml делает после sync: список файлов, пользователь бота, ветка, commit, force-push, PR.
+// Шаги sync.yml:113-173 после установки и хука: список файлов, пользователь бота, ветка, commit, force-push, PR.
 export async function publishChanges(
 	opts: PublishOptions,
 	github: GitHub,
@@ -70,9 +70,11 @@ export async function publishChanges(
 	const branch = `stack/v${version}`;
 	const title = `chore(stack): канон ${version}`;
 
-	const files = changedFiles(repoRoot);
-	if (files === undefined) {
-		print('err', 'sync-pr: git status failed');
+	let files: string[];
+	try {
+		files = changedFiles(repoRoot);
+	} catch (error) {
+		print('err', `sync-pr: git status failed: ${message(error)}`);
 		return 1;
 	}
 	if (files.length === 0) {

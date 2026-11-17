@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 
 import { type GitHub, type NewPr, prBody, publishChanges, type PublishOptions } from './sync-pr.ts';
-import { git, gitRepo, isolateGitConfig } from './testkit.ts';
+import { git, gitRepo, isolateGitConfig, repoDir } from './testkit.ts';
 
 const PR_URL = 'https://github.com/acme/app/pull/1';
 
@@ -154,6 +154,60 @@ describe('publishChanges', () => {
 		expect(created[0]?.base).toBe('staging');
 	});
 
+	test('копия: исходный путь и новый по одному разу', async () => {
+		const { dir } = gitRepo({ 'a.txt': 'x\n'.repeat(50) });
+		git(dir, 'config', 'status.renames', 'copies');
+		put(dir, 'a.txt', `${'x\n'.repeat(50)}y\n`);
+		put(dir, 'b.txt', `${'x\n'.repeat(50)}y\n`);
+		git(dir, 'add', '-A');
+		const { github, created } = fakeGitHub();
+		await run(opts(dir), github);
+		expect(created[0]?.body).toBe(prBody('1.2.3', ['a.txt', 'b.txt']));
+	});
+
+	test('путь в списке один раз, даже если он и источник переименования, и новый файл', async () => {
+		const { dir } = gitRepo({ 'a.txt': 'a' });
+		git(dir, 'mv', 'a.txt', 'b.txt');
+		put(dir, 'a.txt', 'new');
+		const { github, created } = fakeGitHub();
+		await run(opts(dir), github);
+		expect(created[0]?.body).toBe(prBody('1.2.3', ['b.txt', 'a.txt']));
+	});
+
+	test('ветка уже есть локально — checkout -B её пересоздаёт, код 0', async () => {
+		const { dir, remote } = gitRepo({ 'a.txt': 'a' });
+		git(dir, 'branch', 'stack/v1.2.3');
+		put(dir, 'b.txt', 'b');
+		const { github } = fakeGitHub();
+		const r = await run(opts(dir), github);
+		expect(r.code).toBe(0);
+		expect(git(remote, 'rev-parse', 'stack/v1.2.3^')).toBe(git(remote, 'rev-parse', 'main'));
+	});
+
+	test('пустой base — как без base', async () => {
+		const { dir } = gitRepo({ 'a.txt': 'a' });
+		put(dir, 'b.txt', 'b');
+		const { github, created } = fakeGitHub();
+		await run(opts(dir, { base: '' }), github);
+		expect('base' in (created[0] as NewPr)).toBe(false);
+	});
+
+	test('git status упал — код 1, причина git в сообщении, GitHub не зовётся', async () => {
+		const dir = repoDir({ 'a.txt': 'a' });
+		const saved = process.env.GIT_CEILING_DIRECTORIES;
+		process.env.GIT_CEILING_DIRECTORIES = dirname(dir);
+		try {
+			const { github, calls } = fakeGitHub();
+			const r = await run(opts(dir), github);
+			expect(r.code).toBe(1);
+			expect(r.err[0]).toStartWith('sync-pr: git status failed: fatal: not a git repository');
+			expect(calls).toEqual([]);
+		} finally {
+			if (saved === undefined) delete process.env.GIT_CEILING_DIRECTORIES;
+			else process.env.GIT_CEILING_DIRECTORIES = saved;
+		}
+	});
+
 	test('prBody — текст sync.yml, список пофайлово', () => {
 		expect(prBody('1.2.3', ['a.txt', 'b/c.txt'])).toBe(
 			'Канон `@alxwlw/stack@1.2.3` применён к репозиторию.\n\nИзменённые файлы:\n- a.txt\n- b/c.txt\n\nРелиз: https://github.com/alxwlw/stack/releases/tag/v1.2.3\n',
@@ -194,6 +248,7 @@ describe('publishChanges', () => {
 		const r = await run(opts(dir), github);
 		expect(r.code).toBe(1);
 		expect(r.err[0]).toStartWith('sync-pr: git push failed:');
+		expect(r.err[0]?.endsWith('\n')).toBe(false);
 		expect(calls).toEqual(['botUserId']);
 	});
 
