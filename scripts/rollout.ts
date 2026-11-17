@@ -3,7 +3,7 @@ import { appendFileSync } from 'node:fs';
 
 import { stripTagPrefix } from './release.ts';
 
-const DISPATCH_WORKFLOW = 'stack-sync.yml';
+export const DISPATCH_WORKFLOW = 'stack-sync.yml';
 const DISPATCH_REF = 'main';
 
 export interface Installation {
@@ -116,15 +116,16 @@ export async function getInstallationToken(installationId: number, jwt: string):
 	return body.token;
 }
 
+export function dispatchRequest(version: string): { ref: string; inputs: Record<string, string> } {
+	return { ref: DISPATCH_REF, inputs: { version } };
+}
+
 export async function dispatchSync(repo: string, token: string, version: string): Promise<void> {
 	await githubRequest(
 		`/repos/${repo}/actions/workflows/${DISPATCH_WORKFLOW}/dispatches`,
 		token,
 		'POST',
-		{
-			ref: DISPATCH_REF,
-			inputs: { version },
-		},
+		dispatchRequest(version),
 	);
 }
 

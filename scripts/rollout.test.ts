@@ -8,6 +8,8 @@ import { expect, test } from 'bun:test';
 
 import {
 	consoleOutput,
+	DISPATCH_WORKFLOW,
+	dispatchRequest,
 	dispatchSync,
 	getInstallations,
 	getInstallationToken,
@@ -200,6 +202,27 @@ test('runRollout: VERSION не задан — ошибка о теге, а не 
 		'not a version tag',
 	);
 	expect(h.calls).toEqual([]);
+});
+
+test('dispatchSync: POST в workflow DISPATCH_WORKFLOW с телом dispatchRequest', async () => {
+	const seen: { url: string; init: RequestInit | undefined }[] = [];
+	const original = globalThis.fetch;
+	globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+		seen.push({ url: String(input), init });
+		return new Response(null, { status: 204 });
+	}) as typeof fetch;
+	try {
+		await dispatchSync('acme/app', 't', '1.2.3');
+	} finally {
+		globalThis.fetch = original;
+	}
+	expect(seen).toHaveLength(1);
+	expect(seen[0]?.url).toBe(
+		`https://api.github.com/repos/acme/app/actions/workflows/${DISPATCH_WORKFLOW}/dispatches`,
+	);
+	expect(seen[0]?.init?.method).toBe('POST');
+	expect(JSON.parse(String(seen[0]?.init?.body))).toStrictEqual(dispatchRequest('1.2.3'));
+	expect(dispatchRequest('1.2.3')).toStrictEqual({ ref: 'main', inputs: { version: '1.2.3' } });
 });
 
 test('githubApi: прод-adapter — те самые четыре функции', () => {
