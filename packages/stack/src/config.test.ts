@@ -1,7 +1,10 @@
+import { readFileSync } from 'node:fs';
+
 import { expect, test } from 'bun:test';
 
-import { readStackConfig, StackConfigError } from './config.ts';
-import { repoDir } from './testkit.ts';
+import { knownGroups, readCanonSource } from './canon.ts';
+import { readStackConfig, StackConfigError, stackConfigSchema } from './config.ts';
+import { repoDir, SCHEMA_PATH } from './testkit.ts';
 
 test('читает профиль, группы и исключения, не спотыкаясь о комментарии', () => {
 	const dir = repoDir({
@@ -203,4 +206,18 @@ test('$schema-строка принимается и в конфигурацию
 		'.stack.jsonc': '{ "$schema": "./node_modules/@alxwlw/stack/schema.json", "profile": "node" }',
 	});
 	expect(readStackConfig(dir)).toEqual({ profile: 'node', with: [], exceptions: [] });
+});
+
+// schema.json читает редактор по `$schema`, который пишет init; CLI его не читает. Файл — производный:
+// форму заявляют PROFILES, CONFIG_KEYS, EXCEPTION_SHAPES и группы канона, схема строится из них.
+test('schema.json равен схеме, построенной из констант читателя и групп канона', () => {
+	const built = stackConfigSchema(knownGroups(readCanonSource().groups));
+	expect(JSON.parse(readFileSync(SCHEMA_PATH, 'utf8'))).toEqual(built);
+});
+
+test('stackConfigSchema: enum групп — переданный список как есть', () => {
+	const schema = stackConfigSchema(['b', 'a']) as {
+		properties: { with: { items: { enum: string[] } } };
+	};
+	expect(schema.properties.with.items.enum).toEqual(['b', 'a']);
 });

@@ -74,9 +74,13 @@ export function readCanonSource(dir: string = canonDir()): CanonSource {
 	return { entries, catalogs, groups };
 }
 
+// Все имена, допустимые в `with`: файловые, каталожные и устаревшие — без повторов, по алфавиту.
+export function knownGroups(g: CanonGroups): string[] {
+	return [...new Set([...g.files, ...g.catalogs, ...g.deprecated])].sort();
+}
+
 export function assertKnownGroups(groups: readonly string[], source: CanonSource): void {
-	const g = source.groups;
-	const known = [...g.files, ...g.catalogs, ...g.deprecated].sort();
+	const known = knownGroups(source.groups);
 	for (const name of groups) {
 		if (!known.includes(name)) {
 			throw new StackConfigError(

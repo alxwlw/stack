@@ -10,13 +10,14 @@ import {
 	canonDir,
 	canonFor,
 	type CanonSource,
+	knownGroups,
 	loadCanon,
 	readCanonSource,
 	selectEntries,
 } from './canon.ts';
 import { type Profile, PROFILES, type StackConfig, StackConfigError } from './config.ts';
 import { RENOVATE_CONFIGS } from './repo.ts';
-import { canonFile, SCHEMA_PATH } from './testkit.ts';
+import { canonFile } from './testkit.ts';
 
 // Не канон-файл: README лежит рядом с пакетом, а не в canon/.
 const README_PATH = join(import.meta.dir, '..', '..', '..', 'README.md');
@@ -294,18 +295,14 @@ test('канон Renovate: засев конфига подключает пре
 	expect(seed).toContain("'config:recommended'");
 });
 
-// `init` пишет `$schema` в .stack.jsonc, редактор валидирует против него: enum групп в schema.json
-// должен покрывать все group из манифеста, каталоги кроме dev и устаревшие группы.
-test('schema.json: enum групп with = группы манифеста ∪ каталоги (кроме dev) ∪ устаревшие', () => {
-	const g = readCanonSource().groups;
-	const expectedGroups = [...g.files, ...g.catalogs, ...g.deprecated].sort();
-
-	const schema = JSON.parse(readFileSync(SCHEMA_PATH, 'utf8')) as {
-		properties?: { with?: { items?: { enum?: string[] } } };
-	};
-	const schemaEnum = schema.properties?.with?.items?.enum;
-	expect(schemaEnum).toBeDefined();
-	expect((schemaEnum ?? []).sort()).toEqual(expectedGroups);
+test('knownGroups: файловые, каталожные и устаревшие группы — без повторов, по алфавиту', () => {
+	expect(
+		knownGroups({
+			files: ['knip', 'moon-tasks'],
+			catalogs: ['libs', 'knip'],
+			deprecated: ['renovate'],
+		}),
+	).toEqual(['knip', 'libs', 'moon-tasks', 'renovate']);
 });
 
 // Строки таблицы «Group» в README: имя группы (текст между обратными кавычками первой ячейки) → вторая ячейка.
@@ -325,9 +322,7 @@ function readmeGroupRows(): Map<string, string> {
 
 test('README: таблица групп перечисляет ровно группы канона', () => {
 	const g = readCanonSource().groups;
-	expect([...readmeGroupRows().keys()].sort()).toEqual(
-		[...g.files, ...g.catalogs, ...g.deprecated].sort(),
-	);
+	expect([...readmeGroupRows().keys()].sort()).toEqual(knownGroups(g));
 });
 
 // «Seeds» в README обещает засев: файл принадлежит репозиторию, sync его не перезаписывает.

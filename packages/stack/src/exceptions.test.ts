@@ -1,17 +1,7 @@
-import { readFileSync } from 'node:fs';
-
 import { expect, test } from 'bun:test';
 
-import {
-	addressOf,
-	allowedLine,
-	type Exception,
-	EXCEPTION_SHAPES,
-	exceptionProblem,
-	resolve,
-} from './exceptions.ts';
+import { addressOf, allowedLine, type Exception, exceptionProblem, resolve } from './exceptions.ts';
 import type { Finding } from './findings.ts';
-import { SCHEMA_PATH } from './testkit.ts';
 
 const drift: Finding = {
 	code: 'file-drift',
@@ -200,38 +190,6 @@ test('stale-exception не гасится ничем: сама находка о
 	const r = resolve([staleF], [{ file: '.prototools', reason: 'r' }]);
 	expect(r.findings).toEqual([staleF]);
 	expect(r.stale.map((f) => f.target)).toEqual(['.prototools']);
-});
-
-interface SchemaBranch {
-	required: string[];
-	not?: { required?: string[]; anyOf?: { required: string[] }[] };
-}
-
-const exceptionBranches = (): SchemaBranch[] =>
-	(
-		JSON.parse(readFileSync(SCHEMA_PATH, 'utf8')) as {
-			properties: { exceptions: { items: { oneOf: SchemaBranch[] } } };
-		}
-	).properties.exceptions.items.oneOf;
-
-test('schema.json: oneOf исключения — ровно формы EXCEPTION_SHAPES', () => {
-	const shapes = exceptionBranches().map((b) => [...b.required].sort());
-	expect(shapes).toEqual(EXCEPTION_SHAPES.map((s) => [...s].sort()));
-});
-
-// Исключительность формы держит `not`: ветка запрещает адресные ключи чужих форм. Проверяем
-// структурно (валидатор JSON Schema не подключён): запрещённые ключи ветки — ровно адресные ключи
-// EXCEPTION_SHAPES минус ключи её формы. Без этого `not` можно удалить, а тест остаётся зелёным.
-test('schema.json: not каждой ветки oneOf запрещает ровно адресные ключи чужих форм', () => {
-	const addressKeys = [...new Set(EXCEPTION_SHAPES.flat())];
-	for (const branch of exceptionBranches()) {
-		const not = branch.not ?? {};
-		const forbidden = (
-			not.anyOf ? not.anyOf.flatMap((n) => n.required) : (not.required ?? [])
-		).sort();
-		const others = addressKeys.filter((k) => !branch.required.includes(k)).sort();
-		expect(forbidden).toEqual(others);
-	}
 });
 
 // Каждая строка — одна форма записи: допустима ли она. Пары «да» и «нет» стоят рядом, чтобы правило

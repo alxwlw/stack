@@ -8,7 +8,7 @@ export interface Exception {
 	reason: string;
 }
 
-// Допустимые адреса исключения. schema.json (oneOf исключения) сверяется с этим тестом.
+// Допустимые адреса исключения. Схема строится из этих форм функцией exceptionSchema.
 export const EXCEPTION_SHAPES = [['file'], ['catalog', 'name']] as const;
 
 const ADDRESS_KEYS: string[] = EXCEPTION_SHAPES.flat();
@@ -18,6 +18,27 @@ export const EXCEPTION_KEYS: readonly (keyof Exception)[] = [
 	...new Set(EXCEPTION_SHAPES.flat()),
 	'reason',
 ];
+
+// Фрагмент JSON Schema одной записи исключения: по ветке oneOf на форму, `not` запрещает адресные ключи
+// чужих форм. Собирается из EXCEPTION_KEYS и EXCEPTION_SHAPES, чтобы схема не пересказывала их руками.
+export function exceptionSchema(): Record<string, unknown> {
+	const oneOf = EXCEPTION_SHAPES.map((shape) => {
+		const own: readonly string[] = shape;
+		return {
+			required: [...shape],
+			not: { anyOf: ADDRESS_KEYS.filter((k) => !own.includes(k)).map((k) => ({ required: [k] })) },
+		};
+	});
+	return {
+		type: 'object',
+		additionalProperties: false,
+		properties: Object.fromEntries(
+			EXCEPTION_KEYS.map((k) => [k, { type: 'string', minLength: 1 }]),
+		),
+		required: ['reason'],
+		oneOf,
+	};
+}
 
 // Текст проблемы одной записи .stack.jsonc или undefined, если запись верна. Порядок: запись — объект,
 // ключи известны, причина есть и непустая строка, форма адреса. Форма допустима, если все ключи одной

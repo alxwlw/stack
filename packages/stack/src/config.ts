@@ -3,7 +3,7 @@ import { join } from 'node:path';
 
 import { parse as parseJsonc, type ParseError } from 'jsonc-parser';
 
-import { type Exception, exceptionProblem } from './exceptions.ts';
+import { type Exception, exceptionProblem, exceptionSchema } from './exceptions.ts';
 
 export const STACK_CONFIG_FILE = '.stack.jsonc';
 export const PROFILES = ['node', 'contracts', 'infra'] as const;
@@ -65,5 +65,38 @@ export function readStackConfig(repoRoot: string): StackConfig {
 		profile: profile as Profile,
 		with: groups as string[],
 		exceptions: exceptions as Exception[],
+	};
+}
+
+// JSON Schema файла для редактора: строится из тех же констант, что читатель. packages/stack/schema.json
+// равен её результату (config.test.ts). Свойство без ключа в CONFIG_KEYS и ключ без свойства не проходят tsc.
+export function stackConfigSchema(groups: readonly string[]): Record<string, unknown> {
+	const properties: Record<(typeof CONFIG_KEYS)[number], unknown> = {
+		$schema: { type: 'string' },
+		profile: {
+			type: 'string',
+			enum: [...PROFILES],
+			description: 'Repo profile: picks which canon verbatim files get synced.',
+		},
+		with: {
+			type: 'array',
+			description:
+				'Opt-in canon groups. "renovate" is deprecated and does nothing: Renovate is the canon\'s dependency bot for every profile.',
+			items: { type: 'string', enum: [...groups] },
+		},
+		exceptions: {
+			type: 'array',
+			description:
+				'An exception holds its item back in both `stack check` (the finding is suppressed and reported as allowed) and `stack sync` (the item is left untouched). Each exception addresses exactly one canon file or exactly one catalog entry.',
+			items: exceptionSchema(),
+		},
+	};
+	return {
+		$schema: 'http://json-schema.org/draft-07/schema#',
+		title: 'stack config (.stack.jsonc)',
+		type: 'object',
+		properties,
+		required: ['profile'],
+		additionalProperties: false,
 	};
 }
