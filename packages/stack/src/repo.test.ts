@@ -76,7 +76,7 @@ test('битый renovate.json5 — одна unreadable-file, renovate есть,
 		{
 			code: 'unreadable-file',
 			target: 'renovate.json5',
-			message: 'renovate.json5 does not parse as JSON5',
+			message: 'renovate.json5 does not parse: JSON5: invalid end of input at 1:2',
 		},
 	]);
 	expect(repo.renovate).toEqual({ path: 'renovate.json5' });
@@ -137,7 +137,11 @@ test('значения: первый конфиг Renovate не читается
 		'.github/renovate.json5': '{',
 	});
 	expect(triple(repo)).toEqual([
-		['unreadable-file', 'renovate.json', 'renovate.json does not parse as JSON5'],
+		[
+			'unreadable-file',
+			'renovate.json',
+			"renovate.json does not parse: EISDIR: illegal operation on a directory, open 'x'",
+		],
 	]);
 	expect(repo.renovate).toEqual({ path: 'renovate.json' });
 	expect(repo.files.get('.github/renovate.json5')).toBe('{');
@@ -290,7 +294,11 @@ test('каталог (failed) на месте renovate.json заслоняет r
 	});
 	expect(repo.renovate).toEqual({ path: 'renovate.json' });
 	expect(triple(repo)).toEqual([
-		['unreadable-file', 'renovate.json', 'renovate.json does not parse as JSON5'],
+		[
+			'unreadable-file',
+			'renovate.json',
+			"renovate.json does not parse: EISDIR: illegal operation on a directory, open 'x'",
+		],
 	]);
 	expect(repo.paths.has('renovate.json5')).toBe(true);
 	expect(repo.files.get('renovate.json5')).toBe('{');

@@ -134,9 +134,12 @@ export function repoFromSnapshot(snapshot: Snapshot): Repo {
 		try {
 			if ('failed' in read) throw read.failed;
 			renovate = { path: renovatePath, config: JSON5.parse((read as { text: string }).text) };
-		} catch {
+		} catch (err) {
 			renovate = { path: renovatePath };
-			bad(renovatePath, `${renovatePath} does not parse as JSON5`);
+			bad(
+				renovatePath,
+				`${renovatePath} does not parse: ${err instanceof Error ? err.message : String(err)}`,
+			);
 		}
 	}
 	let moonToolchains: Record<string, unknown> | undefined;
