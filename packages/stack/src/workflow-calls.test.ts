@@ -8,15 +8,20 @@ import { readCanonSource } from './canon.ts';
 
 // Вызов reusable workflow стека должен укладываться в on.workflow_call цели: иначе у потребителя
 // workflow падает при запуске. Таблицу вызовов строит обход файлов (корень + канон-файлы), а не список
-// в тесте: новый `uses:` попадает под проверку сам.
+// в тесте: новый `uses:` попадает под проверку сам. Таблица держит и вызовы своего action из шагов:
+// actionlint сверяет входы локального `./.github/actions/…`, но молчит на `alxwlw/stack/.github/actions/…@v1`,
+// а именно такой вызов исполняет потребитель.
 const ROOT = join(import.meta.dir, '..', '..', '..');
 const WORKFLOWS = '.github/workflows/';
+const ACTIONS = '.github/actions/';
 
 type Call = {
 	/** Корневой файл — путь от корня репо; канон-файл — `canon:<src из манифеста>` (dest у двух stack-check общий). */
 	from: string;
 	job: string;
-	/** Имя файла цели в `.github/workflows/`. */
+	/** Индекс шага в `jobs.<job>.steps`; `null` у вызова reusable workflow. */
+	step: number | null;
+	/** Путь от корня репо к файлу контракта: `.github/workflows/<файл>.yml` или `.github/actions/<имя>/action.yml`. */
 	target: string;
 	/** `v1` у вызова по имени репо стека; `null` у локального `./`. */
 	ref: string | null;
@@ -29,37 +34,63 @@ type Contract = {
 	secrets: Record<string, { required?: boolean }>;
 };
 
+type ActionManifest = { inputs?: Contract['inputs'] };
+
 type Workflow = {
 	on?: { workflow_call?: Partial<Contract> | null };
 	jobs?: Record<
 		string,
-		{ uses?: string; with?: Record<string, unknown>; secrets?: Record<string, unknown> | string }
+		{
+			uses?: string;
+			with?: Record<string, unknown>;
+			secrets?: Record<string, unknown> | string;
+			steps?: { uses?: string; with?: Record<string, unknown> }[];
+		}
 	>;
 };
 
 const USES = /^(?:alxwlw\/stack\/|\.\/)\.github\/workflows\/([\w.-]+\.yml)(?:@(.+))?$/;
+const ACTION_USES = /^(?:alxwlw\/stack\/|\.\/)\.github\/actions\/([\w.-]+)(?:@(.+))?$/;
 
 function callsOf(from: string, text: string): Call[] {
 	const wf = parseYaml(text) as Workflow;
 	return Object.entries(wf.jobs ?? {}).flatMap(([job, j]) => {
+		const calls: Call[] = [];
 		const m = j.uses == null ? null : USES.exec(j.uses);
-		if (m?.[1] == null) return [];
-		return [
-			{
+		if (m?.[1] != null) {
+			calls.push({
 				from,
 				job,
-				target: m[1],
+				step: null,
+				target: `${WORKFLOWS}${m[1]}`,
 				ref: m[2] ?? null,
 				with: Object.keys(j.with ?? {}),
 				secrets: typeof j.secrets === 'string' ? 'inherit' : Object.keys(j.secrets ?? {}),
-			},
-		];
+			});
+		}
+		for (const [step, s] of (j.steps ?? []).entries()) {
+			const am = s.uses == null ? null : ACTION_USES.exec(s.uses);
+			if (am?.[1] == null) continue;
+			calls.push({
+				from,
+				job,
+				step,
+				target: `${ACTIONS}${am[1]}/action.yml`,
+				ref: am[2] ?? null,
+				with: Object.keys(s.with ?? {}),
+				secrets: [],
+			});
+		}
+		return calls;
 	});
 }
 
 function contractOf(target: string): Contract {
-	const wf = parseYaml(readFileSync(join(ROOT, WORKFLOWS, target), 'utf8')) as Workflow;
-	const wc = wf.on?.workflow_call;
+	const text = readFileSync(join(ROOT, target), 'utf8');
+	if (target.endsWith('/action.yml')) {
+		return { inputs: (parseYaml(text) as ActionManifest).inputs ?? {}, secrets: {} };
+	}
+	const wc = (parseYaml(text) as Workflow).on?.workflow_call;
 	// Цель без workflow_call нельзя звать вовсе: падаем, а не считаем контракт пустым.
 	if (wc == null) throw new Error(`${target}: нет on.workflow_call`);
 	return { inputs: wc.inputs ?? {}, secrets: wc.secrets ?? {} };
@@ -97,32 +128,52 @@ const canonEntries = readCanonSource().entries.filter((e) => e.dest.startsWith(W
 const canonCalls = canonEntries.flatMap((e) => callsOf(`canon:${e.src}`, e.content));
 const calls = [...rootCalls, ...canonCalls];
 
-test('обход находит вызовы reusable workflow', () => {
+test('обход находит вызовы reusable workflow и своего action', () => {
 	expect(calls.length).toBeGreaterThanOrEqual(5);
 	const pairs = calls.map((c) => [c.from, c.target]);
 	for (const pair of [
-		['canon:files/workflow-renovate.yml', 'renovate.yml'],
-		['canon:files/workflow-stack-sync.yml', 'sync.yml'],
-		['canon:files/workflow-stack-check.yml', 'check.yml'],
-		['canon:files/workflow-stack-check-infra.yml', 'check.yml'],
-		['.github/workflows/renovate-self.yml', 'renovate.yml'],
+		['canon:files/workflow-renovate.yml', '.github/workflows/renovate.yml'],
+		['canon:files/workflow-stack-sync.yml', '.github/workflows/sync.yml'],
+		['canon:files/workflow-stack-check.yml', '.github/workflows/check.yml'],
+		['canon:files/workflow-stack-check-infra.yml', '.github/workflows/check.yml'],
+		['.github/workflows/renovate-self.yml', '.github/workflows/renovate.yml'],
+		['.github/workflows/check.yml', '.github/actions/setup/action.yml'],
+		['.github/workflows/sync.yml', '.github/actions/setup/action.yml'],
+		['.github/workflows/ci.yml', '.github/actions/setup/action.yml'],
+		['.github/workflows/publish.yml', '.github/actions/setup/action.yml'],
+		['.github/workflows/rollout.yml', '.github/actions/setup/action.yml'],
 	]) {
 		expect(pairs).toContainEqual(pair);
 	}
+	// Вызовов setup в корне на 00b5d83 — 11.
+	expect(calls.filter((c) => c.step !== null).length).toBeGreaterThanOrEqual(11);
 });
 
-describe('вызовы в рамках workflow_call цели', () => {
-	test.each(calls.map((c) => [`${c.from}#${c.job} → ${c.target}`, c] as const))(
-		'%s',
-		(_name, call) => {
-			expect(callProblems(call, contractOf(call.target))).toEqual([]);
-		},
-	);
+describe('вызовы в рамках контракта цели', () => {
+	test.each(
+		calls.map(
+			(c) =>
+				[`${c.from}#${c.job}${c.step === null ? '' : `[${c.step}]`} → ${c.target}`, c] as const,
+		),
+	)('%s', (_name, call) => {
+		expect(callProblems(call, contractOf(call.target))).toEqual([]);
+	});
 });
 
 test('канон-файлы зовут reusable workflow стека на @v1', () => {
 	expect(canonCalls.length).toBeGreaterThan(0);
 	for (const c of canonCalls)
+		expect({ from: c.from, ref: c.ref }).toEqual({ from: c.from, ref: 'v1' });
+});
+
+test('reusable workflow стека зовёт свой action по alxwlw/stack/…@v1: ./ у потребителя — его репозиторий', () => {
+	const reusable = rootFiles.filter(
+		(f) => (parseYaml(readFileSync(join(ROOT, f), 'utf8')) as Workflow).on?.workflow_call != null,
+	);
+	expect(reusable.length).toBeGreaterThan(0);
+	const stepCalls = rootCalls.filter((c) => c.step !== null && reusable.includes(c.from));
+	expect(stepCalls.length).toBeGreaterThan(0);
+	for (const c of stepCalls)
 		expect({ from: c.from, ref: c.ref }).toEqual({ from: c.from, ref: 'v1' });
 });
 
@@ -164,7 +215,15 @@ test('sync.yml: вход install объявлен — его передают к
 });
 
 describe('callProblems', () => {
-	const call: Call = { from: 'f', job: 'j', target: 't.yml', ref: null, with: [], secrets: [] };
+	const call: Call = {
+		from: 'f',
+		job: 'j',
+		step: null,
+		target: 't.yml',
+		ref: null,
+		with: [],
+		secrets: [],
+	};
 	const contract: Contract = {
 		inputs: { a: { required: true }, b: { required: true, default: 1 }, c: {} },
 		secrets: { s: { required: true }, o: {} },
@@ -215,7 +274,7 @@ describe('callProblems', () => {
 });
 
 describe('callsOf', () => {
-	test('находит jobs.*.uses обоих видов, шаги и сторонние actions пропускает', () => {
+	test('находит jobs.*.uses и steps.*.uses своего репо обоих видов, сторонние пропускает', () => {
 		const text = [
 			'jobs:',
 			'  a:',
@@ -228,11 +287,71 @@ describe('callsOf', () => {
 			'    uses: other/repo/.github/workflows/check.yml@v1',
 			'  d:',
 			'    steps:',
+			'      - uses: actions/checkout@v7',
 			'      - uses: alxwlw/stack/.github/actions/setup@v1',
+			'        with: { install: false, registry: r }',
+			'      - run: echo',
+			'      - uses: ./.github/actions/setup',
+			'      - uses: other/repo/.github/actions/setup@v1',
 		].join('\n');
-		expect(callsOf('f', text)).toEqual([
-			{ from: 'f', job: 'a', target: 'check.yml', ref: 'main', with: [], secrets: 'inherit' },
-			{ from: 'f', job: 'b', target: 'sync.yml', ref: null, with: ['version'], secrets: [] },
+		const got = callsOf('f', text);
+		expect(got).toHaveLength(4);
+		expect(got).toStrictEqual([
+			{
+				from: 'f',
+				job: 'a',
+				step: null,
+				target: '.github/workflows/check.yml',
+				ref: 'main',
+				with: [],
+				secrets: 'inherit',
+			},
+			{
+				from: 'f',
+				job: 'b',
+				step: null,
+				target: '.github/workflows/sync.yml',
+				ref: null,
+				with: ['version'],
+				secrets: [],
+			},
+			{
+				from: 'f',
+				job: 'd',
+				step: 1,
+				target: '.github/actions/setup/action.yml',
+				ref: 'v1',
+				with: ['install', 'registry'],
+				secrets: [],
+			},
+			{
+				from: 'f',
+				job: 'd',
+				step: 3,
+				target: '.github/actions/setup/action.yml',
+				ref: null,
+				with: [],
+				secrets: [],
+			},
 		]);
+	});
+});
+
+describe('contractOf', () => {
+	test('action: inputs из action.yml, секретов нет', () => {
+		const c = contractOf('.github/actions/setup/action.yml');
+		expect(Object.keys(c.inputs).toSorted()).toStrictEqual([
+			'install',
+			'registry',
+			'registry-token-var',
+			'working-directory',
+		]);
+		expect(c.secrets).toStrictEqual({});
+	});
+
+	test('action, которого нет, — ошибка с путём, а не пустой контракт', () => {
+		expect(() => contractOf('.github/actions/setpu/action.yml')).toThrow(
+			'.github/actions/setpu/action.yml',
+		);
 	});
 });
