@@ -25,7 +25,7 @@ test('reusable check.yml: вход gitleaks выключен по умолчан
 	expect(checkout?.with?.['fetch-depth']).toBe("${{ inputs.gitleaks && '0' || '1' }}");
 });
 
-// Reusable workflow, который зовёт канон-файл .github/workflows/renovate.yml потребителя.
+// Reusable workflow, который зовёт канон-файл packages/stack/canon/files/workflow-renovate.yml.
 test('reusable renovate.yml: workflow_call с обязательным token, action на полной версии', () => {
 	const wf = parseYaml(
 		readFileSync(join(ROOT, '.github', 'workflows', 'renovate.yml'), 'utf8'),
