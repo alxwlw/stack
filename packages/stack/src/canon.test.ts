@@ -290,6 +290,11 @@ test.each(badManifests)('readCanonSource отклоняет manifest: %s', (_nam
 	expect(() => readCanonSource(literalCanon(files))).toThrow(message);
 });
 
+test('manifest.json с текстом null — files не массив', () => {
+	const dir = repoDir({ 'manifest.json': 'null', 'catalogs.json': '{ "dev": {} }' });
+	expect(() => readCanonSource(dir)).toThrow(/^canon manifest: "files" must be an array$/);
+});
+
 test('нарушение manifest — обычная ошибка, не StackConfigError, и раньше чтения src', () => {
 	// src не существует: без проверки manifest чтение упало бы на ENOENT.
 	const dir = literalCanon([entry({ src: 'files/missing', appliesTo: ['nod'] })]);

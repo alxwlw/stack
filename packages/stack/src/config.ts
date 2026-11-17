@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { parse as parseJsonc, type ParseError } from 'jsonc-parser';
+import { type Node, type ParseError, parseTree } from 'jsonc-parser';
 
 import { type Exception, exceptionProblem, exceptionSchema } from './exceptions.ts';
 
@@ -19,6 +19,21 @@ export interface StackConfig {
 
 export class StackConfigError extends Error {}
 
+// Значение узла дерева разбора. parse из jsonc-parser пишет obj[key] = value: ключ __proto__ подменял бы
+// прототип, а скаляр терялся; здесь объект собирается собственными свойствами, и __proto__ — обычный ключ.
+function nodeValue(node: Node): unknown {
+	if (node.type === 'object') {
+		return Object.fromEntries(
+			(node.children ?? []).map((prop) => {
+				const [key, value] = prop.children ?? [];
+				return [key?.value, value ? nodeValue(value) : undefined];
+			}),
+		);
+	}
+	if (node.type === 'array') return (node.children ?? []).map(nodeValue);
+	return node.value;
+}
+
 export function readStackConfig(repoRoot: string): StackConfig {
 	const path = join(repoRoot, STACK_CONFIG_FILE);
 	if (!existsSync(path)) {
@@ -27,17 +42,19 @@ export function readStackConfig(repoRoot: string): StackConfig {
 		);
 	}
 	const errors: ParseError[] = [];
-	const raw: unknown = parseJsonc(readFileSync(path, 'utf8'), errors, { allowTrailingComma: true });
+	const tree = parseTree(readFileSync(path, 'utf8'), errors, { allowTrailingComma: true });
 	if (errors.length) throw new StackConfigError(`${STACK_CONFIG_FILE}: does not parse as JSONC`);
+	const raw: unknown = tree === undefined ? undefined : nodeValue(tree);
 	if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
 		throw new StackConfigError(`${STACK_CONFIG_FILE}: top level must be an object`);
 	}
 	const top = raw as Record<string, unknown>;
-	// Форма файла заявлена schema.json: лишний ключ — опечатка, а не расширение.
+	// Форму файла заявляют CONFIG_KEYS, PROFILES и EXCEPTION_SHAPES, schema.json строится из них: лишний
+	// ключ — опечатка, а не расширение.
 	const unknownKey = Object.keys(top).find((k) => !(CONFIG_KEYS as readonly string[]).includes(k));
 	if (unknownKey !== undefined) {
 		throw new StackConfigError(
-			`${STACK_CONFIG_FILE}: unknown key "${unknownKey}", expected one of: ${CONFIG_KEYS.join(', ')}`,
+			`${STACK_CONFIG_FILE}: unknown key ${JSON.stringify(unknownKey)}, expected one of: ${CONFIG_KEYS.join(', ')}`,
 		);
 	}
 	if (top.$schema !== undefined && typeof top.$schema !== 'string') {

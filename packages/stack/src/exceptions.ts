@@ -11,7 +11,7 @@ export interface Exception {
 // Допустимые адреса исключения. Схема строится из этих форм функцией exceptionSchema.
 export const EXCEPTION_SHAPES = [['file'], ['catalog', 'name']] as const;
 
-const ADDRESS_KEYS: string[] = EXCEPTION_SHAPES.flat();
+const ADDRESS_KEYS: string[] = [...new Set(EXCEPTION_SHAPES.flat())];
 
 // Допустимые ключи записи: адресные и reason; другой ключ — опечатка.
 export const EXCEPTION_KEYS: readonly (keyof Exception)[] = [
@@ -51,7 +51,7 @@ export function exceptionProblem(raw: unknown): string | undefined {
 	const e = raw as Record<string, unknown>;
 	const unknownKey = Object.keys(e).find((k) => !(EXCEPTION_KEYS as readonly string[]).includes(k));
 	if (unknownKey !== undefined) {
-		return `exception has unknown key "${unknownKey}", expected one of: ${EXCEPTION_KEYS.join(', ')}: ${JSON.stringify(e)}`;
+		return `exception has unknown key ${JSON.stringify(unknownKey)}, expected one of: ${EXCEPTION_KEYS.join(', ')}: ${JSON.stringify(e)}`;
 	}
 	if (e.reason === undefined) return `exception is missing "reason": ${JSON.stringify(e)}`;
 	if (typeof e.reason !== 'string' || e.reason === '') {

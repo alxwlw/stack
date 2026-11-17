@@ -44,7 +44,7 @@ function checkEntry(raw: unknown, index: number): CanonFile {
 		throw new Error(`canon manifest: ${at}: ${what}`);
 	}
 	for (const key of Object.keys(raw)) {
-		if (!Object.hasOwn(ENTRY_KEYS, key)) bad(`unknown key "${key}"`);
+		if (!Object.hasOwn(ENTRY_KEYS, key)) bad(`unknown key ${JSON.stringify(key)}`);
 	}
 	const { src, dest, appliesTo, strategy, group, satisfiedBy } = raw;
 	if (!isNonEmptyString(dest)) return bad('"dest" must be a non-empty string');

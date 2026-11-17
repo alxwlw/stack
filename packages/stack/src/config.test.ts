@@ -157,6 +157,32 @@ const rejected: [string, string, string][] = [
 		`.stack.jsonc: unknown key "Profile", expected one of: ${KEYS}`,
 	],
 	[
+		// parse из jsonc-parser пишет obj['__proto__'] = value: объект подменяет прототип, скаляр теряется.
+		'ключ __proto__ с объектом',
+		'{ "profile": "node", "__proto__": { "with": ["libs"] } }',
+		`.stack.jsonc: unknown key "__proto__", expected one of: ${KEYS}`,
+	],
+	[
+		'ключ __proto__ со скаляром',
+		'{ "profile": "node", "__proto__": 5 }',
+		`.stack.jsonc: unknown key "__proto__", expected one of: ${KEYS}`,
+	],
+	[
+		'__proto__ — единственный ключ',
+		'{ "__proto__": { "profile": "node" } }',
+		`.stack.jsonc: unknown key "__proto__", expected one of: ${KEYS}`,
+	],
+	[
+		'ключ с переводом строки остаётся в одной строке сообщения',
+		'{ "profile": "node", "a\\nb": 1 }',
+		`.stack.jsonc: unknown key "a\\nb", expected one of: ${KEYS}`,
+	],
+	[
+		'исключение с ключом __proto__',
+		'{ "profile": "node", "exceptions": [{ "file": "a", "reason": "r", "__proto__": {} }] }',
+		'.stack.jsonc: exception has unknown key "__proto__", expected one of: file, catalog, name, reason: {"file":"a","reason":"r","__proto__":{}}',
+	],
+	[
 		'исключение с лишним ключом',
 		'{ "profile": "node", "exceptions": [{ "file": "a", "reason": "r", "note": "x" }] }',
 		'.stack.jsonc: exception has unknown key "note", expected one of: file, catalog, name, reason: {"file":"a","reason":"r","note":"x"}',
