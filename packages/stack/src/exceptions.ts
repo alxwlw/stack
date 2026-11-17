@@ -13,13 +13,29 @@ export const EXCEPTION_SHAPES = [['file'], ['catalog', 'name']] as const;
 
 const ADDRESS_KEYS: string[] = EXCEPTION_SHAPES.flat();
 
-// Текст проблемы одной записи .stack.jsonc или undefined, если запись верна. Форма допустима, если
-// все ключи одной формы — непустые строки, а остальные адресные ключи отсутствуют.
+// Допустимые ключи записи: адресные и reason; другой ключ — опечатка.
+export const EXCEPTION_KEYS: readonly (keyof Exception)[] = [
+	...new Set(EXCEPTION_SHAPES.flat()),
+	'reason',
+];
+
+// Текст проблемы одной записи .stack.jsonc или undefined, если запись верна. Порядок: запись — объект,
+// ключи известны, причина есть и непустая строка, форма адреса. Форма допустима, если все ключи одной
+// формы — непустые строки, а остальные адресные ключи отсутствуют.
 export function exceptionProblem(raw: unknown): string | undefined {
-	// exceptions пришёл из JSON и типизирован через "as" — реальный элемент массива может быть
-	// null/undefined, даже когда тип обещает Exception; проверяем честно, не полагаясь на "as".
-	const e = raw as Record<string, unknown> | null | undefined;
-	if (e == null || !e.reason) return `exception is missing "reason": ${JSON.stringify(e)}`;
+	// Запись пришла из JSON: строка, массив или null — не Exception, что бы ни обещал тип.
+	if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
+		return `exception must be an object: ${JSON.stringify(raw)}`;
+	}
+	const e = raw as Record<string, unknown>;
+	const unknownKey = Object.keys(e).find((k) => !(EXCEPTION_KEYS as readonly string[]).includes(k));
+	if (unknownKey !== undefined) {
+		return `exception has unknown key "${unknownKey}", expected one of: ${EXCEPTION_KEYS.join(', ')}: ${JSON.stringify(e)}`;
+	}
+	if (e.reason === undefined) return `exception is missing "reason": ${JSON.stringify(e)}`;
+	if (typeof e.reason !== 'string' || e.reason === '') {
+		return `exception "reason" must be a non-empty string: ${JSON.stringify(e)}`;
+	}
 	const present = (v: unknown): boolean => v !== undefined;
 	const nonEmpty = (v: unknown): boolean => typeof v === 'string' && v !== '';
 	const fits = (keys: readonly string[]): boolean =>

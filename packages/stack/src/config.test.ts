@@ -130,3 +130,77 @@ test('исключение: только name, без file и catalog — оши
 	});
 	expect(() => readStackConfig(dir)).toThrow(StackConfigError);
 });
+
+function configError(text: string): Error {
+	try {
+		readStackConfig(repoDir({ '.stack.jsonc': text }));
+	} catch (error) {
+		return error as Error;
+	}
+	throw new Error('readStackConfig не бросил');
+}
+
+const KEYS = '$schema, profile, with, exceptions';
+// Каждая строка — вход, который schema.json запрещает: читатель обязан отклонить его тем же правилом.
+const rejected: [string, string, string][] = [
+	[
+		'опечатка в ключе верхнего уровня',
+		'{ "profile": "node", "wiht": ["libs"], "extra": 1 }',
+		`.stack.jsonc: unknown key "wiht", expected one of: ${KEYS}`,
+	],
+	[
+		'ключ отличается регистром',
+		'{ "Profile": "node" }',
+		`.stack.jsonc: unknown key "Profile", expected one of: ${KEYS}`,
+	],
+	[
+		'исключение с лишним ключом',
+		'{ "profile": "node", "exceptions": [{ "file": "a", "reason": "r", "note": "x" }] }',
+		'.stack.jsonc: exception has unknown key "note", expected one of: file, catalog, name, reason: {"file":"a","reason":"r","note":"x"}',
+	],
+	[
+		'причина — число',
+		'{ "profile": "node", "exceptions": [{ "file": "a", "reason": 5 }] }',
+		'.stack.jsonc: exception "reason" must be a non-empty string: {"file":"a","reason":5}',
+	],
+	[
+		'$schema — не строка',
+		'{ "$schema": 1, "profile": "node" }',
+		'.stack.jsonc: "$schema" must be a string',
+	],
+	[
+		'верхний уровень — массив',
+		'[{ "profile": "node" }]',
+		'.stack.jsonc: top level must be an object',
+	],
+	['верхний уровень — строка', '"node"', '.stack.jsonc: top level must be an object'],
+	['верхний уровень — null', 'null', '.stack.jsonc: top level must be an object'],
+	[
+		'исключение — строка',
+		'{ "profile": "node", "exceptions": ["a"] }',
+		'.stack.jsonc: exception must be an object: "a"',
+	],
+	[
+		'with — null',
+		'{ "profile": "node", "with": null }',
+		'.stack.jsonc: "with" must be an array of strings',
+	],
+	[
+		'exceptions — null',
+		'{ "profile": "node", "exceptions": null }',
+		'.stack.jsonc: "exceptions" must be an array',
+	],
+];
+
+test.each(rejected)('читатель отклоняет: %s', (_name, text, message) => {
+	const error = configError(text);
+	expect(error).toBeInstanceOf(StackConfigError);
+	expect(error.message).toBe(message);
+});
+
+test('$schema-строка принимается и в конфигурацию не попадает', () => {
+	const dir = repoDir({
+		'.stack.jsonc': '{ "$schema": "./node_modules/@alxwlw/stack/schema.json", "profile": "node" }',
+	});
+	expect(readStackConfig(dir)).toEqual({ profile: 'node', with: [], exceptions: [] });
+});

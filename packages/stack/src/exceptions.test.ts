@@ -249,15 +249,36 @@ const shapeTable: [string, unknown, boolean][] = [
 		false,
 	],
 	['без адреса — недопустима', { reason: 'r' }, false],
+	['лишний ключ — недопустима', { file: 'a', reason: 'r', note: 'x' }, false],
+	['причина-число — недопустима', { file: 'a', reason: 5 }, false],
+	['причина — пустая строка — недопустима', { file: 'a', reason: '' }, false],
+	['строка вместо записи — недопустима', 'file', false],
+	['массив вместо записи — недопустима', [], false],
 ];
 
 test.each(shapeTable)('форма исключения: %s', (_name, raw, ok) => {
 	expect(exceptionProblem(raw) === undefined).toBe(ok);
 });
 
-test('запись без причины и запись с неверной формой — разные тексты, причина первая', () => {
-	expect(exceptionProblem(null)).toBe('exception is missing "reason": null');
+test('тексты проблем записи: не объект, неизвестный ключ, причина, форма — в этом порядке', () => {
+	expect(exceptionProblem(null)).toBe('exception must be an object: null');
+	expect(exceptionProblem('file')).toBe('exception must be an object: "file"');
+	expect(exceptionProblem(['a'])).toBe('exception must be an object: ["a"]');
+	// Опечатка в самом reason: называем неизвестный ключ, а не отсутствие причины.
+	expect(exceptionProblem({ file: 'a', reson: 'r' })).toBe(
+		'exception has unknown key "reson", expected one of: file, catalog, name, reason: {"file":"a","reson":"r"}',
+	);
 	expect(exceptionProblem({ file: 'a' })).toBe('exception is missing "reason": {"file":"a"}');
+	expect(exceptionProblem({ file: 'a', reason: 5 })).toBe(
+		'exception "reason" must be a non-empty string: {"file":"a","reason":5}',
+	);
+	expect(exceptionProblem({ file: 'a', reason: '' })).toBe(
+		'exception "reason" must be a non-empty string: {"file":"a","reason":""}',
+	);
+	// Причина раньше формы.
+	expect(exceptionProblem({ file: 'a', name: 'x' })).toBe(
+		'exception is missing "reason": {"file":"a","name":"x"}',
+	);
 	expect(exceptionProblem({ file: 'a', reason: 'r', name: 'x' })).toBe(
 		'an exception must address either "file" or a "catalog"+"name" pair: {"file":"a","reason":"r","name":"x"}',
 	);
