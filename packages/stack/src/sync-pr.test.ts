@@ -1,10 +1,28 @@
-import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import {
+	chmodSync,
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 
-import { type GitHub, type NewPr, prBody, publishChanges, type PublishOptions } from './sync-pr.ts';
+import { loadCanon } from './canon.ts';
+import {
+	type GitHub,
+	type NewPr,
+	ownVersion,
+	prBody,
+	publishChanges,
+	type PublishOptions,
+	type RunProcess,
+	syncPr,
+	type SyncPrOptions,
+} from './sync-pr.ts';
 import { git, gitRepo, isolateGitConfig, repoDir } from './testkit.ts';
 
 const PR_URL = 'https://github.com/acme/app/pull/1';
@@ -293,5 +311,187 @@ describe('publishChanges', () => {
 		expect(r.code).toBe(1);
 		expect(r.err).toEqual(['sync-pr: creating the PR failed: boom']);
 		expect(() => git(remote, 'rev-parse', '--verify', 'stack/v1.2.3')).not.toThrow();
+	});
+});
+
+const HOOK = 'pnpm run stack:post-sync|VERSION=1.2.3';
+
+// Ожидаемые обращения к реестру — из канона, а не литералом.
+const wantedHas = loadCanon({ profile: 'node', with: [], exceptions: [] }).catalogs.dev;
+const HAS = Object.entries(wantedHas ?? {})
+	.filter(([name]) => name.startsWith('@alxwlw/'))
+	.map(([name, v]) => `has ${name}@${v}`);
+
+const NODE_PKG = JSON.stringify({ name: 'app', scripts: { 'stack:post-sync': 'true' } });
+
+async function runSyncPr(
+	dir: string,
+	over: Partial<SyncPrOptions> = {},
+	handlers: {
+		run?: (line: string) => number | undefined;
+		has?: boolean;
+		github?: GitHub;
+	} = {},
+) {
+	const journal: string[] = [];
+	const out: string[] = [];
+	const err: string[] = [];
+	const fake = fakeGitHub();
+	const execute: RunProcess = (cmd, args, o) => {
+		const line = `${cmd} ${args.join(' ')}`;
+		journal.push(o.env?.VERSION ? `${line}|VERSION=${o.env.VERSION}` : line);
+		return handlers.run?.(line) ?? 0;
+	};
+	const code = await syncPr(
+		{
+			repoRoot: dir,
+			version: '1.2.3',
+			appSlug: 'acme-bot',
+			install: true,
+			wait: { attempts: 2, intervalMs: 0 },
+			...over,
+		},
+		{
+			run: execute,
+			github: handlers.github ?? fake.github,
+			registry: {
+				has: async (name, version) => {
+					journal.push(`has ${name}@${version}`);
+					return handlers.has ?? true;
+				},
+			},
+			print: (stream, line) => (stream === 'out' ? out : err).push(line),
+		},
+	);
+	return { code, journal, out, err, github: fake };
+}
+
+describe('syncPr', () => {
+	test('порядок шагов: sync, ожидание реестра, proto install, pnpm install, хук с VERSION, публикация', async () => {
+		const { dir } = gitRepo({ '.stack.jsonc': '{ "profile": "node" }', 'package.json': NODE_PKG });
+		const r = await runSyncPr(dir);
+		expect(r.code).toBe(0);
+		expect(r.journal).toEqual([...HAS, 'proto install', 'pnpm install --no-frozen-lockfile', HOOK]);
+		expect(r.github.created).toHaveLength(1);
+		expect(r.out.indexOf('canon applied')).toBeGreaterThanOrEqual(0);
+		expect(r.out.indexOf('canon applied')).toBeLessThan(r.out.indexOf('pushed stack/v1.2.3'));
+	});
+
+	test('файл, который написал хук, есть в теле PR', async () => {
+		const { dir } = gitRepo({ '.stack.jsonc': '{ "profile": "node" }', 'package.json': NODE_PKG });
+		const r = await runSyncPr(
+			dir,
+			{},
+			{
+				run: (line) => {
+					if (line === 'pnpm run stack:post-sync') writeFileSync(join(dir, 'hook.txt'), 'h');
+					return undefined;
+				},
+			},
+		);
+		expect(r.github.created[0]?.body).toContain('- hook.txt\n');
+	});
+
+	test('без package.json при install: true — ни ожидания, ни процессов, публикация идёт', async () => {
+		const { dir } = gitRepo({ '.stack.jsonc': '{ "profile": "infra" }' });
+		const r = await runSyncPr(dir);
+		expect(r.code).toBe(0);
+		expect(r.journal).toEqual([]);
+		expect(existsSync(join(dir, 'package.json'))).toBe(false);
+		expect(r.github.created).toHaveLength(1);
+	});
+
+	test('--no-install: ни ожидания, ни pnpm install; proto install и хук идут', async () => {
+		const { dir } = gitRepo({ '.stack.jsonc': '{ "profile": "node" }', 'package.json': NODE_PKG });
+		const r = await runSyncPr(dir, { install: false });
+		expect(r.code).toBe(0);
+		expect(r.journal).toEqual(['proto install', HOOK]);
+	});
+
+	test('хука нет — pnpm run не зовётся', async () => {
+		const { dir } = gitRepo({
+			'.stack.jsonc': '{ "profile": "node" }',
+			'package.json': JSON.stringify({ name: 'app' }),
+		});
+		const r = await runSyncPr(dir);
+		expect(r.journal).toEqual([...HAS, 'proto install', 'pnpm install --no-frozen-lockfile']);
+	});
+
+	test('хук упал — код 1, публикации нет', async () => {
+		const { dir } = gitRepo({ '.stack.jsonc': '{ "profile": "node" }', 'package.json': NODE_PKG });
+		const r = await runSyncPr(dir, {}, { run: (l) => (l === 'pnpm run stack:post-sync' ? 1 : 0) });
+		expect(r.code).toBe(1);
+		expect(r.err.at(-1)).toBe('sync-pr: `pnpm run stack:post-sync` exited with 1');
+		expect(r.github.calls).toEqual([]);
+		expect(git(dir, 'branch', '--list', 'stack/v1.2.3')).toBe('');
+	});
+
+	test('package.json не разбирается — код 1, ни ожидания, ни процессов', async () => {
+		const { dir } = gitRepo({ '.stack.jsonc': '{ "profile": "node" }', 'package.json': '{' });
+		const r = await runSyncPr(dir);
+		expect(r.code).toBe(1);
+		expect(r.err).toHaveLength(1);
+		expect(r.err[0]).toStartWith('sync-pr: package.json does not parse:');
+		expect(r.journal).toEqual([]);
+	});
+
+	test('proto install упал — код 1, pnpm не зовётся', async () => {
+		const { dir } = gitRepo({ '.stack.jsonc': '{ "profile": "node" }', 'package.json': NODE_PKG });
+		const r = await runSyncPr(dir, {}, { run: (l) => (l === 'proto install' ? 1 : 0) });
+		expect(r.code).toBe(1);
+		expect(r.journal).toEqual([...HAS, 'proto install']);
+		expect(r.err.at(-1)).toBe('sync-pr: `proto install` exited with 1');
+	});
+
+	test('pnpm install упал — код 1, хук не зовётся', async () => {
+		const { dir } = gitRepo({ '.stack.jsonc': '{ "profile": "node" }', 'package.json': NODE_PKG });
+		const r = await runSyncPr(
+			dir,
+			{},
+			{ run: (l) => (l === 'pnpm install --no-frozen-lockfile' ? 1 : 0) },
+		);
+		expect(r.code).toBe(1);
+		expect(r.journal).toEqual([...HAS, 'proto install', 'pnpm install --no-frozen-lockfile']);
+		expect(r.err.at(-1)).toBe('sync-pr: `pnpm install --no-frozen-lockfile` exited with 1');
+	});
+
+	test('реестр не показал версию — код 1, процессов нет', async () => {
+		const { dir } = gitRepo({ '.stack.jsonc': '{ "profile": "node" }', 'package.json': NODE_PKG });
+		const r = await runSyncPr(dir, {}, { has: false });
+		expect(r.code).toBe(1);
+		expect(r.err.at(-1)).toStartWith('sync-pr: за 2 попыток в реестре не появились версии:');
+		expect(r.journal.every((l) => l.startsWith('has '))).toBe(true);
+		expect(r.journal.length).toBeGreaterThan(0);
+	});
+
+	test('ошибка .stack.jsonc — код 2, ничего не запускается', async () => {
+		const { dir } = gitRepo({
+			'.stack.jsonc': '{ "profile": "node", "wiht": [] }',
+			'package.json': NODE_PKG,
+		});
+		const r = await runSyncPr(dir);
+		expect(r.code).toBe(2);
+		expect(r.err.join('\n')).toContain('unknown key "wiht"');
+		expect(r.journal).toEqual([]);
+		expect(r.github.calls).toEqual([]);
+	});
+
+	test('второй запуск на применённом каноне — менять нечего, код 0', async () => {
+		const { dir } = gitRepo({ '.stack.jsonc': '{ "profile": "infra" }' });
+		const first = await runSyncPr(dir);
+		const second = await runSyncPr(dir);
+		expect(first.code).toBe(0);
+		expect(second.code).toBe(0);
+		expect(second.out.at(-1)).toBe('canon already applied, nothing to commit');
+		expect(first.github.created).toHaveLength(1);
+		expect(second.github.created).toHaveLength(0);
+	});
+
+	test('ownVersion — version из packages/stack/package.json', () => {
+		const pkg = JSON.parse(readFileSync(join(import.meta.dir, '..', 'package.json'), 'utf8')) as {
+			version: string;
+		};
+		expect(ownVersion()).toBe(pkg.version);
+		expect(ownVersion()).toMatch(/^\d+\.\d+\.\d+/);
 	});
 });

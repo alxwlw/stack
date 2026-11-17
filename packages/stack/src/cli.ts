@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 
 import { assertKnownGroups, loadCanon, readCanonSource } from './canon.ts';
-import { checkRepo, syncRepo } from './check.ts';
+import { checkRepo, syncOutput, syncRepo } from './check.ts';
 import { type Profile, PROFILES, readStackConfig, StackConfigError } from './config.ts';
 import { allowedLine, isHeld } from './exceptions.ts';
 import { type Finding, isDrift } from './findings.ts';
@@ -60,12 +60,9 @@ try {
 		console.log(`created ${path}`);
 	} else if (command === 'sync') {
 		const cfg = readStackConfig(repoRoot);
-		const { applied, held } = syncRepo(repoRoot, loadCanon(cfg), cfg.exceptions);
-		for (const f of held) {
-			console.warn(allowedLine(f));
-		}
-		for (const d of applied) console.log(d.fix);
-		console.log(`canon ${applied.length === 0 ? 'already up to date' : 'applied'}`);
+		const { stdout, stderr } = syncOutput(syncRepo(repoRoot, loadCanon(cfg), cfg.exceptions));
+		for (const line of stderr) console.warn(line);
+		for (const line of stdout) console.log(line);
 	} else if (command === 'check') {
 		const cfg = readStackConfig(repoRoot);
 		const findings = checkRepo(repoRoot, loadCanon(cfg), cfg.exceptions);
