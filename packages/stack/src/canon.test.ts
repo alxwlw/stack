@@ -251,6 +251,25 @@ const badManifests: [string, unknown, RegExp][] = [
 	['неизвестный ключ записи', [entry({ stratgy: 'verbatim' })], new RegExp(`${AT}.*stratgy`)],
 	['нет src', [{ dest: 'a.txt', appliesTo: ['node'] }], new RegExp(`${AT}.*src`)],
 	['group — число', [entry({ group: 1 })], new RegExp(`${AT}.*group`)],
+	['пустой src', [entry({ src: '' })], new RegExp(`${AT}.*src`)],
+	['пустой group', [entry({ group: '' })], new RegExp(`${AT}.*group`)],
+	[
+		// Пустой satisfiedBy не закрывает ни одного имени: в manifest это ошибка.
+		'satisfiedBy — пустой массив',
+		[entry({ strategy: 'create-if-absent', satisfiedBy: [] })],
+		new RegExp(`${AT}.*satisfiedBy`),
+	],
+	[
+		'satisfiedBy — не строка в массиве',
+		[entry({ strategy: 'create-if-absent', satisfiedBy: [1] })],
+		new RegExp(`${AT}.*satisfiedBy`),
+	],
+	// Унаследованное имя не ключ записи: `in` пропустил бы его.
+	[
+		'унаследованное имя как ключ записи',
+		[entry({ constructor: 'x' })],
+		new RegExp(`${AT}.*constructor`),
+	],
 	['пустой dest', [entry({ dest: '' })], /^canon manifest: entry 0: .*dest/],
 	['запись — не объект', ['files/a'], /^canon manifest: entry 0: /],
 	['files — не массив', 'files/a', /^canon manifest: "files" must be an array$/],
