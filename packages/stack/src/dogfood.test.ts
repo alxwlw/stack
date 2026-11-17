@@ -3,12 +3,12 @@ import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { expect, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import JSON5 from 'json5';
 import { parse as parseYaml } from 'yaml';
 
 import { loadCanon, readCanonSource } from './canon.ts';
-import { canonFile } from './testkit.ts';
+import { canonBundles, canonFile } from './testkit.ts';
 
 // Репозиторий канона сознательно не вызывает `stack sync` на себе (его каталог dev называет
 // версии @alxwlw/* как workspace:*, sync их сломает) — поэтому ничто не мешает корневым файлам
@@ -393,28 +393,39 @@ test('свой renovate.json5: канон и корень — одна груп�
 	]);
 });
 
-test('renovate: связки libs бампаются одной веткой', () => {
+// Связка из canon/bundles.json бампается одной веткой: своё правило 'bundle <имя>' с тем же matchPackageNames.
+// Правило стоит ниже canon pins: Renovate применяет совпавшие правила по порядку, поздний groupName перекрывает ранний.
+describe('renovate.json5: правила связок canon/bundles.json', () => {
+	const bundles = canonBundles();
 	const rules = ownRenovate.packageRules ?? [];
 	const canonIdx = rules.findIndex((r) => r.groupName === 'canon pins');
-	expect(canonIdx).toBeGreaterThanOrEqual(0);
-	const bundles = [['@opentelemetry/**'], ['@nats-io/**'], ['@prisma/**', 'prisma']];
-	for (const names of bundles) {
-		const idx = rules.findIndex(
-			(r) => JSON.stringify(r.matchPackageNames) === JSON.stringify(names),
-		);
-		// Правило связки не сужено другими match*/exclude*: иначе часть пакетов связки выпадает из группы.
-		const keys = Object.keys(rules[idx] ?? {}).filter((k) => /^(match|exclude)/.test(k));
-		expect([names, keys]).toEqual([names, ['matchPackageNames']]);
-		// Правило связки стоит ниже canon pins: Renovate применяет совпавшие правила по порядку, последнее побеждает.
-		expect([names, idx > canonIdx]).toEqual([names, true]);
-		expect([names, typeof rules[idx]?.groupName]).toEqual([names, 'string']);
-		expect([names, rules[idx]?.separateMajorMinor]).toEqual([names, false]);
-	}
-	// Три связки — три разных группы: общая группа слила бы мажор NATS с OTel.
-	const groups = new Set(
-		rules.filter((r, i) => i > canonIdx && r.separateMajorMinor === false).map((r) => r.groupName),
+
+	test.each(Object.keys(bundles))(
+		'bundle %s: одно правило, тот же matchPackageNames, ниже canon pins',
+		(name) => {
+			expect(canonIdx).toBeGreaterThanOrEqual(0);
+			const idx = rules.flatMap((r, i) => (r.groupName === `bundle ${name}` ? [i] : []));
+			// Своя группа, ни с кем не общая: общая слила бы мажор одной связки с другой.
+			expect(idx).toHaveLength(1);
+			const rule = rules[idx[0] ?? -1];
+			expect(rule?.matchPackageNames).toStrictEqual(bundles[name]?.match);
+			// Лишний match*/exclude* сузил бы правило: часть пакетов связки ушла бы из ветки.
+			expect(Object.keys(rule ?? {}).filter((k) => /^(match|exclude)/.test(k))).toStrictEqual([
+				'matchPackageNames',
+			]);
+			expect(rule?.separateMajorMinor).toBe(false);
+			expect(idx[0]).toBeGreaterThan(canonIdx);
+		},
 	);
-	expect(groups.size).toBe(3);
+
+	test('правило группы по именам пакетов — правило связки из canon/bundles.json', () => {
+		// Правило с groupName и matchPackageNames группирует пакеты в одну ветку — это связка, и её запись обязана быть.
+		const orphans = rules
+			.filter((r) => r.groupName !== undefined && r.matchPackageNames !== undefined)
+			.map((r) => r.groupName)
+			.filter((g) => !Object.keys(bundles).some((n) => g === `bundle ${n}`));
+		expect(orphans).toStrictEqual([]);
+	});
 });
 
 test('свой renovate.json5: фикстуры Renovate не трогает', () => {
