@@ -43,6 +43,7 @@
 				'package.json',
 			],
 		},
+		// Связки — packages/stack/canon/bundles.json: groupName правила — 'bundle <имя записи>', matchPackageNames — её match; сверяет dogfood.test.ts.
 		{
 			description: 'Связка OpenTelemetry: пакеты пинят друг друга точно, мажор и минор идут одной веткой — иначе у потребителя две копии',
 			matchPackageNames: ['@opentelemetry/**'],
