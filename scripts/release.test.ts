@@ -1,4 +1,14 @@
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import {
+	chmodSync,
+	cpSync,
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -391,12 +401,13 @@ describe('связность релиза', () => {
 		expect(new Set(versions).size).toBe(1);
 	});
 
+	// yaml — зависимость packages/stack (как в dogfood.test.ts); из корня scripts/ он не виден.
+	const { parse } = createRequire(join(REPO_ROOT, 'packages/stack/package.json'))('yaml') as {
+		parse(text: string): { jobs: Record<string, { steps?: { run?: string }[] }> };
+	};
+	const runs = (parse(publish).jobs.publish?.steps ?? []).map((st) => st.run ?? '');
+
 	test('publish.yml публикует через release.ts publish и не перечисляет пакеты', () => {
-		// yaml — зависимость packages/stack (как в dogfood.test.ts); из корня scripts/ он не виден.
-		const { parse } = createRequire(join(REPO_ROOT, 'packages/stack/package.json'))('yaml') as {
-			parse(text: string): { jobs: Record<string, { steps?: { run?: string }[] }> };
-		};
-		const runs = (parse(publish).jobs.publish?.steps ?? []).map((st) => st.run ?? '');
 		// NPM в run-блоке — shell-переменная без export: без префикса CLI выйдет с кодом 2.
 		const calls = runs
 			.flatMap((r) => r.split('\n'))
@@ -407,6 +418,69 @@ describe('связность релиза', () => {
 		expect(job).not.toContain('npm view');
 		expect(job).not.toContain('"$NPM" view');
 	});
+
+	/**
+	 * Шаг publish job с заглушками: `npm root -g` печатает каталог с файлом CLI npm, другие вызовы npm
+	 * пишутся в installs; `node` на любой вызов печатает `version`; `bun` пишет аргументы в bun и выходит с 0.
+	 * Как раннер GitHub без `shell:`: `bash -e -c`.
+	 */
+	function runPublishStep(version: string): {
+		status: number | null;
+		out: string;
+		installs: string[];
+		bun: string[];
+	} {
+		const dir = mkdtempSync(join(tmpdir(), 'publish-step-'));
+		const installsFile = join(dir, 'installs.log');
+		const bunFile = join(dir, 'bun.log');
+		mkdirSync(join(dir, 'g/npm/bin'), { recursive: true });
+		writeFileSync(join(dir, 'g/npm/bin/npm-cli.js'), '');
+		const stubs: Record<string, string> = {
+			npm: `if [ "$1" = root ]; then echo '${join(dir, 'g')}'; else echo "$*" >> '${installsFile}'; fi`,
+			node: `echo '${version}'`,
+			bun: `echo "$*" >> '${bunFile}'`,
+		};
+		for (const [name, body] of Object.entries(stubs)) {
+			writeFileSync(join(dir, name), `#!/usr/bin/env bash\n${body}\n`);
+			chmodSync(join(dir, name), 0o755);
+		}
+		const step = runs.find((r) => r.includes('bun scripts/release.ts publish')) ?? 'exit 99';
+		const res = spawnSync('bash', ['-e', '-c', step], {
+			env: { ...process.env, PATH: `${dir}:${process.env.PATH}` },
+			encoding: 'utf8',
+		});
+		const lines = (f: string): string[] =>
+			existsSync(f) ? readFileSync(f, 'utf8').split('\n').slice(0, -1) : [];
+		const installs = lines(installsFile);
+		const bun = lines(bunFile);
+		rmSync(dir, { recursive: true, force: true });
+		return { status: res.status, out: res.stdout + res.stderr, installs, bun };
+	}
+
+	// [версия npm, код шага]
+	const npmVersions: [string, number][] = [
+		['10.9.2', 1],
+		['11.5.0', 1],
+		['11.5.1', 0],
+		['11.10.0', 0],
+		['12.0.0', 0],
+	];
+
+	test.each(npmVersions)(
+		'шаг publish: npm %s — код %d, сообщение и сравнение на 11.5.1',
+		(version, status) => {
+			const r = runPublishStep(version);
+			expect(r.status).toBe(status);
+			expect(r.installs).toStrictEqual(['i -g npm@^11.5.1']);
+			if (status === 0) {
+				expect(r.out).toContain(`npm ${version} ok`);
+				expect(r.bun).toStrictEqual(['scripts/release.ts publish']);
+			} else {
+				expect(r.out).toContain(`npm ${version} < 11.5.1`);
+				expect(r.bun).toStrictEqual([]);
+			}
+		},
+	);
 
 	test('job selftest в publish.yml проверяет тег через release.ts', () => {
 		const selftest = /\n {2}selftest:\n([\s\S]*?)\n {2}publish:/.exec(publish)?.[1] ?? '';

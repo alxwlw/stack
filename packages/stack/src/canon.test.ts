@@ -395,7 +395,7 @@ test('канон Renovate: workflow и засев конфига — в кажд
 	}
 });
 
-// Связка канон-файла workflow с reusable стека проверяется в dogfood.test.ts: там разбирается YAML.
+// Связка канон-файла workflow с reusable стека проверяется в workflow-calls.test.ts: там разбирается YAML.
 test('канон Renovate: засев конфига подключает пресет стека @v1', () => {
 	const seed = canonFile('renovate.json5');
 	expect(seed).toContain("'github>alxwlw/stack//renovate/canon.json5#v1'");

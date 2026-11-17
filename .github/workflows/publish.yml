@@ -31,18 +31,18 @@ jobs:
           # потому что PATH указывает не туда, куда лёг новый пакет (проверено на прогоне 1.0.1).
           # Поэтому обращаемся к установленному CLI по абсолютному пути и им же публикуем — PATH
           # в этой джобе не участвует вовсе.
-          npm i -g npm@^11.5
+          # OIDC trusted publishing — с npm 11.5.1 (docs.npmjs.com/trusted-publishers). Одна переменная
+          # на пин установки, сравнение и сообщение; sort -V сравнивает числами: 11.10.0 новее 11.5.1.
+          min=11.5.1
+          npm i -g "npm@^$min"
           NPM="$(npm root -g)/npm/bin/npm-cli.js"
           [ -f "$NPM" ] || { echo "не нашёл npm-cli.js по пути $NPM"; exit 1; }
 
           v=$(node "$NPM" --version)
-          major="${v%%.*}"
-          minor="${v#*.}"
-          minor="${minor%%.*}"
-          if [ "$major" -lt 11 ] || { [ "$major" -eq 11 ] && [ "$minor" -lt 5 ]; }; then
-            echo "npm $v < 11.5.1 — OIDC trusted publishing не сработает"
+          printf '%s\n' "$min" "$v" | sort -V -C || {
+            echo "npm $v < $min — OIDC trusted publishing не сработает"
             exit 1
-          fi
+          }
           echo "npm $v ok"
 
           # Пакеты, пропуск уже выложенных версий и ожидание реестра — в scripts/release.ts: список
