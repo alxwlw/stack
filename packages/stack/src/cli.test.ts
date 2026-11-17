@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { expect, test } from 'bun:test';
@@ -8,8 +8,12 @@ import { repoDir } from './testkit.ts';
 
 const CLI = join(import.meta.dir, 'cli.ts');
 
-async function run(args: string[], cwd: string) {
-	const proc = Bun.spawn(['bun', CLI, ...args, '--repo', cwd], { stdout: 'pipe', stderr: 'pipe' });
+async function run(args: string[], cwd: string, env: Record<string, string> = {}) {
+	const proc = Bun.spawn(['bun', CLI, ...args, '--repo', cwd], {
+		stdout: 'pipe',
+		stderr: 'pipe',
+		env: { ...process.env, ...env },
+	});
 	const [out, err] = await Promise.all([
 		new Response(proc.stdout).text(),
 		new Response(proc.stderr).text(),
@@ -48,7 +52,29 @@ test('check до sync — код 1, после sync — код 0', async () => {
 });
 
 test('неизвестная команда — код 2', async () => {
-	expect((await run(['помой-посуду'], repoDir(BARE))).code).toBe(2);
+	const r = await run(['помой-посуду'], repoDir(BARE));
+	expect(r.code).toBe(2);
+	expect(r.err).toContain('Available: init, sync, check, sync-pr');
+});
+
+test('sync-pr без GH_TOKEN или STACK_APP_SLUG — код 2 до sync, файлы не тронуты', async () => {
+	for (const env of [
+		{ GH_TOKEN: '', STACK_APP_SLUG: 'acme-bot' },
+		{ GH_TOKEN: 't', STACK_APP_SLUG: '' },
+	]) {
+		const dir = repoDir({ '.stack.jsonc': '{ "profile": "node" }' });
+		const r = await run(['sync-pr'], dir, env);
+		expect(r.code).toBe(2);
+		expect(r.err).toContain('sync-pr needs GH_TOKEN and STACK_APP_SLUG');
+		expect(readdirSync(dir)).toEqual(['.stack.jsonc']);
+	}
+});
+
+test('sync-pr --base без значения — код 2', async () => {
+	const dir = repoDir({ '.stack.jsonc': '{ "profile": "node" }' });
+	const r = await run(['sync-pr', '--base'], dir, { GH_TOKEN: 't', STACK_APP_SLUG: 'acme-bot' });
+	expect(r.code).toBe(2);
+	expect(readdirSync(dir)).toEqual(['.stack.jsonc']);
 });
 
 test('init без --profile — код 2', async () => {
