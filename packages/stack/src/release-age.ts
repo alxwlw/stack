@@ -21,43 +21,41 @@ function covers(entry: string, name: string, version: string): boolean {
 // Пока в pnpm-workspace.yaml включён minimumReleaseAge, свежий @alxwlw/* из канона pnpm install
 // отвергает в день публикации: sync держит версии канона в minimumReleaseAgeExclude. Чужие записи
 // и их порядок не трогаются, правка — только добавление версии к своей записи или новая запись.
+// Правило называет намерение: позицию новой записи и создание списка (ключа нет, ключ без значения)
+// решает применитель, поэтому находки не зависят друг от друга и любую из них можно удержать.
 export function planReleaseAgeExcludes(repo: Repo, canon: Canon): Drift[] {
 	const doc = repo.workspace;
 	if (doc === undefined) return [];
 	const age = Number(doc.get('minimumReleaseAge'));
 	if (!(age > 0)) return [];
 	const existing = doc.get(KEY);
-	// Ключ есть, а значения нет (`minimumReleaseAgeExclude:`): setIn по индексу в null бросает,
-	// поэтому первая запись создаёт последовательность целиком.
-	const empty = doc.has(KEY) && existing == null;
 	// Не последовательность (скаляр, map): структуру руками не ломаем.
 	if (existing != null && !isSeq(existing)) return [];
 	const items: (string | undefined)[] = (existing?.items ?? []).map((n) =>
 		isScalar(n) && typeof n.value === 'string' ? n.value : undefined,
 	);
-	let length = items.length;
 	const plan: Drift[] = [];
 	for (const [name, version] of Object.entries(canon.catalogs.dev ?? {})) {
 		if (!name.startsWith(SCOPE)) continue;
 		if (items.some((s) => s !== undefined && covers(s, name, version))) continue;
+		// Существующие элементы не сдвигаются, новые идут в конец: индекс своей записи верен при любом
+		// подмножестве применённых правок.
 		const own = items.findIndex((s) => s !== undefined && s.trim().startsWith(`${name}@`));
-		const extend = own >= 0;
-		const seed = empty && !extend && length === 0;
-		const path = seed ? [KEY] : [KEY, extend ? own : length];
-		if (!extend) length++;
-		const entry = extend ? `${items[own]} || ${version}` : `${name}@${version}`;
 		plan.push({
 			code: 'release-age-exclude',
 			target: `${KEY}.${name}`,
 			message: `${KEY} does not cover ${name}@${version}`,
 			name,
 			fix: `${KEY}: ${name}@${version}`,
-			change: {
-				kind: 'yaml-set',
-				file: WORKSPACE_FILE,
-				path,
-				value: seed ? [entry] : entry,
-			},
+			change:
+				own >= 0
+					? {
+							kind: 'yaml-set',
+							file: WORKSPACE_FILE,
+							path: [KEY, own],
+							value: `${items[own]} || ${version}`,
+						}
+					: { kind: 'yaml-append', file: WORKSPACE_FILE, path: [KEY], value: `${name}@${version}` },
 		});
 	}
 	return plan;

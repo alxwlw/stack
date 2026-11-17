@@ -33,7 +33,7 @@ export type FindingOf<C extends FindingCode> = Finding & { code: C };
 // создание последовательности решает применитель, поэтому правки одного файла не зависят друг от друга.
 export type Change =
 	| { file: string; kind: 'write'; content: string }
-	| { file: string; kind: 'yaml-set'; path: (string | number)[]; value: string | string[] }
+	| { file: string; kind: 'yaml-set'; path: (string | number)[]; value: string }
 	| { file: string; kind: 'yaml-append'; path: string[]; value: string }
 	| { file: string; kind: 'json-set'; path: string[]; value: string };
 

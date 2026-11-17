@@ -24,9 +24,8 @@ function renderFile(file: string, current: string | undefined, changes: Change[]
 		const doc = parseDocument(current ?? '');
 		for (const c of changes) {
 			// setIn создаёт недостающие узлы и не трогает соседей и их комментарии.
-			if (c.kind === 'yaml-set') {
-				doc.setIn(c.path, Array.isArray(c.value) ? doc.createNode(c.value) : c.value);
-			} else if (c.kind === 'yaml-append') {
+			if (c.kind === 'yaml-set') doc.setIn(c.path, c.value);
+			else if (c.kind === 'yaml-append') {
 				const node = doc.getIn(c.path, true);
 				if (isSeq(node)) node.add(doc.createNode(c.value));
 				else if (node === undefined || (isScalar(node) && node.value === null)) {
