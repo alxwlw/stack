@@ -1,15 +1,31 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import {
+	chmodSync,
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	realpathSync,
+	rmSync,
+	writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 
-import { expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { parse as parseJsonc } from 'jsonc-parser';
 
-import { repoDir } from './testkit.ts';
+import { ownVersion } from './sync-pr.ts';
+import { gitRepo, isolateGitConfig, repoDir } from './testkit.ts';
 
 const CLI = join(import.meta.dir, 'cli.ts');
 
-async function run(args: string[], cwd: string) {
-	const proc = Bun.spawn(['bun', CLI, ...args, '--repo', cwd], { stdout: 'pipe', stderr: 'pipe' });
+async function run(args: string[], cwd: string, env: Record<string, string> = {}) {
+	const proc = Bun.spawn(['bun', CLI, ...args, '--repo', cwd], {
+		stdout: 'pipe',
+		stderr: 'pipe',
+		env: { ...process.env, ...env },
+	});
 	const [out, err] = await Promise.all([
 		new Response(proc.stdout).text(),
 		new Response(proc.stderr).text(),
@@ -48,7 +64,158 @@ test('check до sync — код 1, после sync — код 0', async () => {
 });
 
 test('неизвестная команда — код 2', async () => {
-	expect((await run(['помой-посуду'], repoDir(BARE))).code).toBe(2);
+	const r = await run(['помой-посуду'], repoDir(BARE));
+	expect(r.code).toBe(2);
+	expect(r.err).toContain('Available: init, sync, check, sync-pr');
+});
+
+test('sync-pr без GH_TOKEN или STACK_APP_SLUG — код 2 до sync, файлы не тронуты', async () => {
+	for (const env of [
+		{ GH_TOKEN: '', STACK_APP_SLUG: 'acme-bot' },
+		{ GH_TOKEN: 't', STACK_APP_SLUG: '' },
+	]) {
+		const dir = repoDir({ '.stack.jsonc': '{ "profile": "node" }' });
+		const r = await run(['sync-pr'], dir, env);
+		expect(r.code).toBe(2);
+		expect(r.err).toContain('sync-pr needs GH_TOKEN and STACK_APP_SLUG');
+		expect(readdirSync(dir)).toEqual(['.stack.jsonc']);
+	}
+});
+
+test('sync-pr --base без значения — код 2, сообщение parseArgs, файлы не тронуты', async () => {
+	const dir = repoDir({ '.stack.jsonc': '{ "profile": "node" }' });
+	const r = await run(['sync-pr', '--base'], dir, { GH_TOKEN: 't', STACK_APP_SLUG: 'acme-bot' });
+	expect(r.code).toBe(2);
+	expect(r.err).toContain("Option '--base' argument is ambiguous");
+	expect(readdirSync(dir)).toEqual(['.stack.jsonc']);
+});
+
+// Фальшивые бинари на PATH: адаптеры процессов и gh проверяются настоящим cli.ts без сети.
+const TOKEN_ENV = { GH_TOKEN: 'secret-token', STACK_APP_SLUG: 'acme-bot' };
+
+function fakeBin(scripts: Record<string, string>): { path: string; env: Record<string, string> } {
+	const path = mkdtempSync(join(tmpdir(), 'stack-bin-'));
+	for (const [name, body] of Object.entries(scripts)) {
+		writeFileSync(join(path, name), `#!/bin/sh\n${body}\n`);
+		chmodSync(join(path, name), 0o755);
+	}
+	return { path, env: { PATH: `${path}:${process.env.PATH ?? ''}` } };
+}
+
+const NODE_REPO_NO_PKG = { '.stack.jsonc': '{ "profile": "node" }' };
+const NODE_REPO = { ...BARE, '.stack.jsonc': '{ "profile": "node" }' };
+
+describe('sync-pr через настоящий cli', () => {
+	let restore: () => void;
+	beforeAll(() => {
+		restore = isolateGitConfig();
+	});
+	afterAll(() => restore());
+
+	test('окружение задано, нет .stack.jsonc — код 2 из sync, не из проверки окружения', async () => {
+		const r = await run(['sync-pr'], repoDir(BARE), TOKEN_ENV);
+		expect(r.code).toBe(2);
+		expect(r.err).not.toContain('sync-pr needs');
+		expect(r.err).toContain('stack init');
+	});
+
+	test('proto убит сигналом — код 1 и имя сигнала', async () => {
+		const bin = fakeBin({ proto: 'kill -TERM $$' });
+		const r = await run(['sync-pr', '--no-install'], repoDir(NODE_REPO), {
+			...TOKEN_ENV,
+			...bin.env,
+		});
+		expect(r.code).toBe(1);
+		expect(r.err).toContain('sync-pr: proto killed by SIGTERM');
+	});
+
+	test('proto не найден — код 127 в сообщении шага', async () => {
+		// PATH без каталога proto: только каталог bun и системные.
+		const path = `${dirname(process.execPath)}:/usr/bin:/bin`;
+		const r = await run(['sync-pr', '--no-install'], repoDir(NODE_REPO), {
+			...TOKEN_ENV,
+			PATH: path,
+		});
+		expect(r.code).toBe(1);
+		expect(r.err).toContain('sync-pr: proto:');
+		expect(r.err).toContain('`proto install` exited with 127');
+	});
+
+	test('вывод процесса наследуется, GH_TOKEN до него не доходит, сообщения шагов — в stderr', async () => {
+		const bin = fakeBin({ proto: 'echo "token=${GH_TOKEN-unset}"; exit 1' });
+		const r = await run(['sync-pr', '--no-install'], repoDir(NODE_REPO), {
+			...TOKEN_ENV,
+			...bin.env,
+		});
+		expect(r.code).toBe(1);
+		expect(r.out).toContain('token=unset');
+		expect(r.out).not.toContain('secret-token');
+		expect(r.out).not.toContain('exited with 1');
+		expect(r.err).toContain('`proto install` exited with 1');
+	});
+
+	test('--no-install: pnpm не зовётся', async () => {
+		const log = join(mkdtempSync(join(tmpdir(), 'stack-log-')), 'pnpm.log');
+		const bin = fakeBin({ proto: 'exit 0', pnpm: `echo "$@" >> ${log}` });
+		const dir = repoDir(NODE_REPO);
+		const r = await run(['sync-pr', '--no-install'], dir, {
+			...TOKEN_ENV,
+			...bin.env,
+			GIT_CEILING_DIRECTORIES: dirname(dir), // репозиторий не git, даже если TMPDIR внутри чужого
+		});
+		expect(r.code).toBe(1); // дальше шага установки репозиторий не git: падает publishChanges
+		expect(existsSync(log)).toBe(false);
+	});
+
+	test('хук stack:post-sync получает VERSION пакета и не получает GH_TOKEN', async () => {
+		const log = join(mkdtempSync(join(tmpdir(), 'stack-log-')), 'hook.log');
+		const bin = fakeBin({
+			proto: 'exit 0',
+			pnpm: `echo "$1 $2 version=$VERSION token=\${GH_TOKEN-unset}" >> ${log}`,
+		});
+		const dir = repoDir({
+			...NODE_REPO,
+			'package.json':
+				'{ "name": "r", "engines": { "node": ">=26.8.1" }, "scripts": { "stack:post-sync": "x" } }',
+		});
+		await run(['sync-pr', '--no-install'], dir, {
+			...TOKEN_ENV,
+			...bin.env,
+			GIT_CEILING_DIRECTORIES: dirname(dir),
+		});
+		expect(readFileSync(log, 'utf8').trim()).toBe(
+			`run stack:post-sync version=${ownVersion()} token=unset`,
+		);
+	});
+
+	test('gh идёт в каталог --repo, --base доходит до gh pr create, out и err разведены', async () => {
+		const { dir } = gitRepo(NODE_REPO_NO_PKG);
+		const log = join(mkdtempSync(join(tmpdir(), 'stack-log-')), 'gh.log');
+		const bin = fakeBin({
+			gh: `case "$1 $2" in
+"api /users/acme-bot[bot]") echo 42;;
+"pr list") echo;;
+"pr create") echo "$PWD|$*" >> ${log}; cat >/dev/null; echo https://github.com/acme/app/pull/8;;
+*) echo "unexpected $*" >&2; exit 9;;
+esac`,
+		});
+		const elsewhere = mkdtempSync(join(tmpdir(), 'stack-cwd-'));
+		const proc = Bun.spawn(['bun', CLI, 'sync-pr', '--base', 'staging', '--repo', dir], {
+			cwd: elsewhere,
+			stdout: 'pipe',
+			stderr: 'pipe',
+			env: { ...process.env, ...TOKEN_ENV, ...bin.env },
+		});
+		const [out, err] = await Promise.all([
+			new Response(proc.stdout).text(),
+			new Response(proc.stderr).text(),
+		]);
+		expect({ code: await proc.exited, err }).toEqual({ code: 0, err: '' });
+		expect(out).toContain('opened PR https://github.com/acme/app/pull/8');
+		const [cwd, args] = readFileSync(log, 'utf8').trim().split('|');
+		expect(realpathSync(cwd ?? '')).toBe(realpathSync(dir));
+		expect(args).toContain('--base staging');
+	});
 });
 
 test('init без --profile — код 2', async () => {

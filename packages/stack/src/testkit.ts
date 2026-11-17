@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -74,4 +75,45 @@ export function repoDir(files: Record<string, string>): string {
 		writeFileSync(join(dir, path), content);
 	}
 	return dir;
+}
+
+// git без портов: тесты гоняют настоящий бинарь. stdout; ненулевой код — throw со stderr.
+export function git(dir: string, ...args: string[]): string {
+	const r = spawnSync('git', args, { cwd: dir, encoding: 'utf8' });
+	if (r.status !== 0) throw new Error(`git ${args.join(' ')} failed: ${r.stderr}`);
+	return r.stdout;
+}
+
+// Конфигурация git на время файла тестов: у владельца глобально commit.gpgsign=true, в CI нет идентичности.
+// Возвращает функцию, которая возвращает прежние значения.
+export function isolateGitConfig(): () => void {
+	const dir = mkdtempSync(join(tmpdir(), 'stack-gitconfig-'));
+	const config = join(dir, 'gitconfig');
+	writeFileSync(
+		config,
+		'[user]\n\tname = test\n\temail = test@example.com\n[init]\n\tdefaultBranch = main\n[commit]\n\tgpgsign = false\n',
+	);
+	const savedGlobal = process.env.GIT_CONFIG_GLOBAL;
+	const savedNoSystem = process.env.GIT_CONFIG_NOSYSTEM;
+	process.env.GIT_CONFIG_GLOBAL = config;
+	process.env.GIT_CONFIG_NOSYSTEM = '1';
+	return () => {
+		if (savedGlobal === undefined) delete process.env.GIT_CONFIG_GLOBAL;
+		else process.env.GIT_CONFIG_GLOBAL = savedGlobal;
+		if (savedNoSystem === undefined) delete process.env.GIT_CONFIG_NOSYSTEM;
+		else process.env.GIT_CONFIG_NOSYSTEM = savedNoSystem;
+	};
+}
+
+// repoDir(files) под git: commit всех файлов на main и bare-remote origin с этим commit.
+export function gitRepo(files: Record<string, string>): { dir: string; remote: string } {
+	const dir = repoDir(files);
+	const remote = mkdtempSync(join(tmpdir(), 'stack-remote-'));
+	git(remote, 'init', '--bare');
+	git(dir, 'init', '-b', 'main');
+	git(dir, 'add', '-A');
+	git(dir, 'commit', '-m', 'base');
+	git(dir, 'remote', 'add', 'origin', remote);
+	git(dir, 'push', 'origin', 'main');
+	return { dir, remote };
 }

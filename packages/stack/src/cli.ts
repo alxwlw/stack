@@ -1,13 +1,17 @@
 #!/usr/bin/env bun
+import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 
 import { assertKnownGroups, loadCanon, readCanonSource } from './canon.ts';
-import { checkRepo, syncRepo } from './check.ts';
+import { checkRepo, syncOutput, syncRepo } from './check.ts';
 import { type Profile, PROFILES, readStackConfig, StackConfigError } from './config.ts';
 import { allowedLine, isHeld } from './exceptions.ts';
 import { type Finding, isDrift } from './findings.ts';
+import { ghGitHub } from './gh.ts';
 import { initConfig } from './init.ts';
+import { npmRegistryReader } from './registry.ts';
+import { ownVersion, type RunProcess, SYNC_PR_WAIT, syncPr, withoutGhToken } from './sync-pr.ts';
 
 function fail(message: string): never {
 	console.error(message);
@@ -23,6 +27,8 @@ function parseCliArgs() {
 				repo: { type: 'string' },
 				profile: { type: 'string' },
 				with: { type: 'string', multiple: true },
+				base: { type: 'string' },
+				'no-install': { type: 'boolean' },
 			},
 		});
 	} catch (error) {
@@ -42,6 +48,25 @@ function fixHint(blocking: Finding[]): string {
 	return `${total} finding(s): ${bySync} fixable with: stack sync, ${total - bySync} to fix by hand (see above)`;
 }
 
+// Боевой adapter порта процессов: stdio наследуется, вывод идёт в лог job.
+const runProcess: RunProcess = (cmd, args, { cwd, env }) => {
+	// GH_TOKEN нужен только gh: установка и хук его не получают (скрипты зависимостей читают окружение).
+	const r = spawnSync(cmd, [...args], {
+		cwd,
+		stdio: 'inherit',
+		env: { ...withoutGhToken(process.env), ...env },
+	});
+	if (r.error) {
+		console.error(`sync-pr: ${cmd}: ${r.error.message}`);
+		return 127;
+	}
+	if (r.signal) {
+		console.error(`sync-pr: ${cmd} killed by ${r.signal}`);
+		return 1;
+	}
+	return r.status ?? 1;
+};
+
 const { values, positionals } = parseCliArgs();
 
 const repoRoot = values.repo ?? process.cwd();
@@ -60,12 +85,9 @@ try {
 		console.log(`created ${path}`);
 	} else if (command === 'sync') {
 		const cfg = readStackConfig(repoRoot);
-		const { applied, held } = syncRepo(repoRoot, loadCanon(cfg), cfg.exceptions);
-		for (const f of held) {
-			console.warn(allowedLine(f));
-		}
-		for (const d of applied) console.log(d.fix);
-		console.log(`canon ${applied.length === 0 ? 'already up to date' : 'applied'}`);
+		const { stdout, stderr } = syncOutput(syncRepo(repoRoot, loadCanon(cfg), cfg.exceptions));
+		for (const line of stderr) console.warn(line);
+		for (const line of stdout) console.log(line);
 	} else if (command === 'check') {
 		const cfg = readStackConfig(repoRoot);
 		const findings = checkRepo(repoRoot, loadCanon(cfg), cfg.exceptions);
@@ -77,8 +99,31 @@ try {
 			process.exit(1);
 		}
 		console.log('canon: no drift');
+	} else if (command === 'sync-pr') {
+		const appSlug = process.env.STACK_APP_SLUG;
+		if (!process.env.GH_TOKEN || !appSlug) {
+			fail('sync-pr needs GH_TOKEN and STACK_APP_SLUG in the environment');
+		}
+		process.exit(
+			await syncPr(
+				{
+					repoRoot,
+					version: ownVersion(),
+					base: values.base,
+					appSlug,
+					install: !values['no-install'],
+					wait: SYNC_PR_WAIT,
+				},
+				{
+					run: runProcess,
+					github: ghGitHub(repoRoot),
+					registry: npmRegistryReader(),
+					print: (stream, line) => (stream === 'out' ? console.log(line) : console.error(line)),
+				},
+			),
+		);
 	} else {
-		fail(`unknown command "${command ?? ''}". Available: init, sync, check`);
+		fail(`unknown command "${command ?? ''}". Available: init, sync, check, sync-pr`);
 	}
 } catch (error) {
 	if (error instanceof StackConfigError) fail(error.message);

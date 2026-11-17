@@ -7,7 +7,7 @@ import {
 	checkInlineVersions,
 	checkRenovatePreset,
 } from './deps.ts';
-import { type Exception, type Held, isHeld, resolve } from './exceptions.ts';
+import { allowedLine, type Exception, type Held, isHeld, resolve } from './exceptions.ts';
 import { planFiles } from './files.ts';
 import type { Drift, Finding } from './findings.ts';
 import { checkMoonToolchains } from './moon-toolchains.ts';
@@ -74,4 +74,15 @@ export function syncRepo(repoRoot: string, canon: Canon, exceptions: Exception[]
 		repo.files,
 	);
 	return result;
+}
+
+// Строки вывода sync: удержанные — в stderr, правки и итог — в stdout. Общее для `stack sync` и `stack sync-pr`.
+export function syncOutput(result: SyncResult): { stdout: string[]; stderr: string[] } {
+	return {
+		stderr: result.held.map((h) => allowedLine(h)),
+		stdout: [
+			...result.applied.map((d) => d.fix),
+			`canon ${result.applied.length === 0 ? 'already up to date' : 'applied'}`,
+		],
+	};
 }

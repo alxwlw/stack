@@ -3,19 +3,18 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { afterEach, describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 
 import {
 	checkTag,
-	npmRegistry,
 	publishAll,
-	type Registry,
+	type Publisher,
 	type ReleasePackage,
 	releasePackages,
 	setVersion,
 	stripTagPrefix,
 	WAIT_BUDGET,
-	waitVisible,
+	waitPublished,
 } from './release.ts';
 
 const REPO_ROOT = join(import.meta.dir, '..');
@@ -110,7 +109,7 @@ function fakeRegistry(
 	const present = new Set(opts.present ?? []);
 	const calls: string[] = [];
 	const polls = new Map<string, number>();
-	const registry: Registry = {
+	const registry: Publisher = {
 		has(name, version) {
 			calls.push(`has ${name}@${version}`);
 			if (name === opts.hasFails) return Promise.reject(new Error(`${name}: реестр ответил 500`));
@@ -153,63 +152,7 @@ describe('publishAll', () => {
 	});
 });
 
-describe('waitVisible', () => {
-	const noSleep = (): Promise<void> => Promise.resolve();
-
-	test('всё видно с первой попытки — один опрос на пакет', async () => {
-		const { registry, calls } = fakeRegistry({ present: ['@x/a@1.0.0', '@x/b@1.0.0'] });
-		await waitVisible([pkg('a'), pkg('b')], '1.0.0', registry, {
-			attempts: 5,
-			intervalMs: 1,
-			sleep: noSleep,
-		});
-		expect(calls).toEqual(['has @x/a@1.0.0', 'has @x/b@1.0.0']);
-	});
-
-	test('пакет появился на третьей попытке — видимые не опрашиваются повторно', async () => {
-		const { registry, calls } = fakeRegistry({
-			present: ['@x/a@1.0.0'],
-			visibleAfter: { '@x/b': 3 },
-		});
-		const sleeps: number[] = [];
-		await waitVisible([pkg('a'), pkg('b'), pkg('priv', { published: false })], '1.0.0', registry, {
-			attempts: 5,
-			intervalMs: 7,
-			sleep: (ms) => {
-				sleeps.push(ms);
-				return Promise.resolve();
-			},
-		});
-		expect(calls).toEqual(['has @x/a@1.0.0', 'has @x/b@1.0.0', 'has @x/b@1.0.0', 'has @x/b@1.0.0']);
-		expect(sleeps).toEqual([7, 7]);
-	});
-
-	test('попытки кончились — ошибка перечисляет невидимые', async () => {
-		const { registry, calls } = fakeRegistry({ present: ['@x/a@1.0.0'] });
-		const sleeps: number[] = [];
-		await expect(
-			waitVisible([pkg('a'), pkg('b'), pkg('c')], '1.0.0', registry, {
-				attempts: 3,
-				intervalMs: 5,
-				sleep: (ms) => {
-					sleeps.push(ms);
-					return Promise.resolve();
-				},
-			}),
-		).rejects.toThrow('за 3 попыток в реестре не появилась версия 1.0.0: @x/b @x/c');
-		expect(calls.filter((c) => c === 'has @x/b@1.0.0')).toHaveLength(3);
-		// После последней попытки не спим.
-		expect(sleeps).toEqual([5, 5]);
-	});
-});
-
-describe('waitVisible: боевое ожидание', () => {
-	test('без подставного sleep: версия видна на 2-м опросе — разрешается', async () => {
-		const { registry, calls } = fakeRegistry({ present: [], visibleAfter: { '@x/a': 2 } });
-		await waitVisible([pkg('a')], '1.0.0', registry, { attempts: 3, intervalMs: 1 });
-		expect(calls).toEqual(['has @x/a@1.0.0', 'has @x/a@1.0.0']);
-	});
-
+describe('WAIT_BUDGET', () => {
 	test('бюджет CLI совпадает с docs/release.md', () => {
 		const docs = readFileSync(join(REPO_ROOT, 'docs/release.md'), 'utf8');
 		const m = /waits \((\d+) attempts, (\d+) s apart\)/.exec(docs);
@@ -221,99 +164,16 @@ describe('waitVisible: боевое ожидание', () => {
 	});
 });
 
-describe('waitVisible: сбои реестра', () => {
-	const noSleep = (): Promise<void> => Promise.resolve();
-
-	test('has бросает на первой попытке и отдаёт true на второй — ожидание завершается', async () => {
-		let n = 0;
-		const registry: Registry = {
-			has: () => (++n === 1 ? Promise.reject(new Error('500')) : Promise.resolve(true)),
-			publish: () => Promise.resolve(),
-		};
-		await waitVisible([pkg('a')], '1.0.0', registry, {
-			attempts: 3,
-			intervalMs: 1,
-			sleep: noSleep,
-		});
-		expect(n).toBe(2);
-	});
-
-	test('has бросает всегда — после попыток ошибка перечисляет пакет', async () => {
-		let n = 0;
-		const registry: Registry = {
-			has: () => {
-				n++;
-				return Promise.reject(new Error('500'));
-			},
-			publish: () => Promise.resolve(),
-		};
-		await expect(
-			waitVisible([pkg('a')], '1.0.0', registry, { attempts: 3, intervalMs: 1, sleep: noSleep }),
-		).rejects.toThrow('за 3 попыток в реестре не появилась версия 1.0.0: @x/a');
-		expect(n).toBe(3);
-	});
-});
-
-describe('npmRegistry.has', () => {
-	const realFetch = globalThis.fetch;
-	afterEach(() => {
-		globalThis.fetch = realFetch;
-	});
-	const stub = (res: Response | Error): { urls: string[]; accepts: string[] } => {
-		const seen = { urls: [] as string[], accepts: [] as string[] };
-		globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => {
-			seen.urls.push(String(input));
-			seen.accepts.push(new Headers(init?.headers).get('Accept') ?? '');
-			return res instanceof Error ? Promise.reject(res) : Promise.resolve(res);
-		}) as typeof fetch;
-		return seen;
-	};
-	const reg = npmRegistry('/nowhere/npm-cli.js', REPO_ROOT);
-
-	test('200 с версией — true, 200 без версии — false, 404 — false, 500 — throw', async () => {
-		const doc = JSON.stringify({ versions: { '1.2.3': {} } });
-		const seen = stub(new Response(doc, { status: 200 }));
-		expect(await reg.has('@alxwlw/stack', '1.2.3')).toBe(true);
-		expect(seen.urls).toEqual(['https://registry.npmjs.org/@alxwlw%2fstack']);
-		expect(seen.accepts).toEqual([
-			'application/vnd.npm.install-v1+json; q=1.0, application/json; q=0.8, */*',
-		]);
-		stub(new Response(doc, { status: 200 }));
-		expect(await reg.has('@alxwlw/stack', '9.9.9')).toBe(false);
-		stub(new Response('{}', { status: 404 }));
-		expect(await reg.has('@alxwlw/stack', '1.2.3')).toBe(false);
-		stub(new Response('boom', { status: 500 }));
-		await expect(reg.has('@alxwlw/stack', '1.2.3')).rejects.toThrow('@alxwlw/stack');
-	});
-
-	test('зависший запрос обрывается по таймауту — throw с именем пакета', async () => {
-		// Фейковый fetch не отвечает никогда, но уважает signal — как настоящий. Страховка: без
-		// signal он сам отклоняется через 2 с, и тест краснеет по содержимому, а не виснет.
-		globalThis.fetch = ((_: unknown, init?: RequestInit) =>
-			new Promise((_resolve, reject) => {
-				init?.signal?.addEventListener('abort', () => reject(new Error('aborted')));
-				setTimeout(() => reject(new Error('сигнал не сработал')), 2000);
-			})) as typeof fetch;
-		const e = await npmRegistry('/nowhere/npm-cli.js', REPO_ROOT, 20)
-			.has('@alxwlw/stack', '1.2.3')
-			.then(
-				() => undefined,
-				(x: unknown) => x,
-			);
-		expect(String(e)).toContain('aborted');
-		expect(String(e)).toContain('@alxwlw/stack');
-	});
-
-	test('200 не-JSON — throw с именем пакета, а не голый JSON Parse error', async () => {
-		stub(new Response('<html>', { status: 200 }));
-		await expect(reg.has('@alxwlw/stack', '1.2.3')).rejects.toThrow(
-			/^@alxwlw\/stack: нечитаемый ответ реестра: JSON/,
+describe('waitPublished', () => {
+	test('waitPublished: непубликуемый пакет не опрашивается, публикуемый — с версией релиза', async () => {
+		const { registry, calls } = fakeRegistry({ present: ['@x/a@1.2.3'] });
+		await waitPublished(
+			[pkg('a', { version: '0.0.1' }), pkg('priv', { published: false })],
+			'1.2.3',
+			registry,
+			{ attempts: 1, intervalMs: 0 },
 		);
-	});
-
-	test('сбой сети — throw с именем пакета', async () => {
-		stub(new Error('ECONNRESET'));
-		await expect(reg.has('@alxwlw/stack', '1.2.3')).rejects.toThrow('@alxwlw/stack');
+		expect(calls).toEqual(['has @x/a@1.2.3']);
 	});
 });
 
@@ -555,7 +415,8 @@ describe('связность релиза', () => {
 });
 
 // Job dispatch воркфлоу rollout идёт с install: false (docs/release.md, «Why the rollout job skips install»).
-test('rollout.ts тянет только node:* и release.ts, release.ts — только node:*', () => {
+test('rollout.ts тянет node:* и release.ts, release.ts — node:* и registry.ts пакета, registry.ts — только node:*', () => {
+	const REGISTRY = '../packages/stack/src/registry.ts';
 	const imports = (f: string): string[] =>
 		new Bun.Transpiler({ loader: 'ts' })
 			.scanImports(readFileSync(join(import.meta.dir, f), 'utf8'))
@@ -563,5 +424,7 @@ test('rollout.ts тянет только node:* и release.ts, release.ts — т
 	expect(
 		imports('rollout.ts').filter((p) => !p.startsWith('node:') && p !== './release.ts'),
 	).toEqual([]);
-	expect(imports('release.ts').filter((p) => !p.startsWith('node:'))).toEqual([]);
+	expect(imports('release.ts').filter((p) => !p.startsWith('node:') && p !== REGISTRY)).toEqual([]);
+	expect(imports('release.ts')).toContain(REGISTRY);
+	expect(imports(REGISTRY).filter((p) => !p.startsWith('node:'))).toEqual([]);
 });

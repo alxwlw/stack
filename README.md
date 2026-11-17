@@ -107,8 +107,17 @@ drift that `stack sync` fixes, or a report-only finding to fix by hand (the hint
 each kind; the finding codes say which is which); `2` — a usage error (no `.stack.jsonc` yet, an unknown key or a malformed exception in it, an
 unknown `--profile`, an unknown group in `with` (from `.stack.jsonc` or `--with`), a bad flag).
 There is no `--help`: argument parsing is strict, and `stack init --profile <node|contracts|infra>`
-is the only way to create the config file in the first place. All three commands accept
+is the only way to create the config file in the first place. Every command accepts
 `--repo <path>` to target a repo other than the current directory.
+
+`stack sync-pr [--base <branch>] [--no-install]` is meant for the sync workflow (it commits the whole
+tree and force-pushes) and does what that workflow does after a release, in one command: `stack sync`; when the repo has a root `package.json`, a wait until the `@alxwlw/*`
+entries of the canon's `dev` catalog are visible in the npm registry (skipped with `--no-install`),
+`proto install`, `pnpm install --no-frozen-lockfile` (skipped with `--no-install`) and the
+`stack:post-sync` hook; then the changed files one by one, a commit by the GitHub App's bot on
+`stack/v<version>`, a force-push and a PR (or the open one, reused). The version is the package's own;
+`GH_TOKEN` and `STACK_APP_SLUG` come from the environment. Exit codes: `0` — PR opened or updated, or
+nothing to commit; `1` — a step failed; `2` — a usage or configuration error.
 
 ## Profiles and groups
 
@@ -290,6 +299,8 @@ A release pushes itself out. When `publish` succeeds, the canon dispatches `stac
 repository on its consumer list; that workflow runs `stack sync` for the new version and, if anything
 changed, opens a PR on branch `stack/v<version>`. Re-dispatching the same version force-updates that
 branch and reuses the open PR instead of opening a second one.
+
+The same steps ship in the package as `stack sync-pr`; `sync.yml` still runs them as its own steps.
 
 The work is done by the [`alxwlw-stack-bot`](https://github.com/apps/alxwlw-stack-bot) GitHub App,
 which a consumer installs on its own repositories. It asks for exactly what opening that PR takes —

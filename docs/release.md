@@ -79,8 +79,9 @@ would be `stack/vv1.2.3`, and a stray ref such as `main` would be fanned out to 
 
 `rollout.yml` calls the setup action with `install: false`. The job holds the App private key, so it must
 not run third-party code from `node_modules`; it also starts faster. That is why `scripts/rollout.ts`
-imports only `node:*` modules and `scripts/release.ts`, and `release.ts` imports only `node:*`. A test
-(`scripts/release.test.ts`) keeps that import graph closed.
+imports only `node:*` modules and `scripts/release.ts`; `release.ts` imports only `node:*` and
+`packages/stack/src/registry.ts` (the registry wait, shared with the package), which imports only `node:*`;
+a test in `scripts/release.test.ts` keeps that graph closed.
 
 ## Move the floating v1 tag
 
