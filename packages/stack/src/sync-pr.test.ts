@@ -10,7 +10,6 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-
 import { parse as parseYaml } from 'yaml';
 
 import { loadCanon } from './canon.ts';
