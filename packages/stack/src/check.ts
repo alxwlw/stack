@@ -15,7 +15,8 @@ import { planPackageManager } from './package-manager.ts';
 import { planReleaseAgeExcludes } from './release-age.ts';
 import { loadRepo, type Repo } from './repo.ts';
 
-// План дрейфа: всё, что sync умеет закрыть, в порядке применения — файлы, каталоги, packageManager.
+// План дрейфа: всё, что sync умеет закрыть, в порядке применения — файлы, каталоги, release-age,
+// packageManager. Правки одного файла друг от друга не зависят: sync применяет любое их подмножество.
 export function plan(repo: Repo, canon: Canon): Drift[] {
 	return [
 		...planFiles(repo, canon),
