@@ -50,7 +50,10 @@ function fixHint(blocking: Finding[]): string {
 
 // Боевой adapter порта процессов: stdio наследуется, вывод идёт в лог job.
 const runProcess: RunProcess = (cmd, args, { cwd, env }) => {
-	const r = spawnSync(cmd, [...args], { cwd, stdio: 'inherit', env: { ...process.env, ...env } });
+	// GH_TOKEN нужен только gh: установка и хук его не получают (скрипты зависимостей читают окружение).
+	const base = { ...process.env };
+	delete base.GH_TOKEN;
+	const r = spawnSync(cmd, [...args], { cwd, stdio: 'inherit', env: { ...base, ...env } });
 	if (r.error) {
 		console.error(`sync-pr: ${cmd}: ${r.error.message}`);
 		return 127;
@@ -111,7 +114,7 @@ try {
 				},
 				{
 					run: runProcess,
-					github: ghGitHub(),
+					github: ghGitHub(repoRoot),
 					registry: npmRegistryReader(),
 					print: (stream, line) => (stream === 'out' ? console.log(line) : console.error(line)),
 				},

@@ -5,23 +5,25 @@ import type { GitHub } from './sync-pr.ts';
 export type Exec = (
 	cmd: string,
 	args: readonly string[],
-	input?: string,
-) => { status: number | null; stdout: string; stderr: string };
+	opts: { cwd: string; input?: string },
+) => { status: number | null; stdout: string; stderr: string; signal?: string | null };
 
-// spawnSync с encoding utf8 и input; бинаря нет (error) — status null, stderr = error.message.
-export const spawnExec: Exec = (cmd, args, input) => {
-	const r = spawnSync(cmd, [...args], { encoding: 'utf8', input });
+// spawnSync с encoding utf8, cwd и input; бинаря нет (error) — status null, stderr = error.message.
+// На ENOENT spawnSync оставляет stdout/stderr undefined — эта ветка возвращает строки.
+export const spawnExec: Exec = (cmd, args, { cwd, input }) => {
+	const r = spawnSync(cmd, [...args], { cwd, encoding: 'utf8', input });
 	if (r.error) return { status: null, stdout: '', stderr: r.error.message };
-	return { status: r.status, stdout: r.stdout, stderr: r.stderr };
+	return { status: r.status, signal: r.signal, stdout: r.stdout, stderr: r.stderr };
 };
 
-// Боевой adapter порта GitHub: gh берёт GH_TOKEN из окружения сам.
-export function ghGitHub(exec: Exec = spawnExec): GitHub {
+// Боевой adapter порта GitHub: gh берёт GH_TOKEN из окружения сам и запускается в cwd репозитория —
+// git работает там же, и репозиторий для gh должен быть тем же.
+export function ghGitHub(cwd: string, exec: Exec = spawnExec): GitHub {
 	function gh(args: readonly string[], input?: string): string {
-		const r = exec('gh', args, input);
-		if (r.status !== 0) {
-			throw new Error(`gh ${args[0]} ${args[1]} exited with ${r.status}: ${r.stderr.trim()}`);
-		}
+		const r = exec('gh', args, { cwd, input });
+		const name = `gh ${args[0]} ${args[1]}`;
+		if (r.signal) throw new Error(`${name} killed by ${r.signal}: ${r.stderr.trim()}`);
+		if (r.status !== 0) throw new Error(`${name} exited with ${r.status}: ${r.stderr.trim()}`);
 		return r.stdout;
 	}
 	// Синхронный spawn внутри Promise: throw становится отказом, а не исключением вызова.
@@ -68,7 +70,9 @@ export function ghGitHub(exec: Exec = spawnExec): GitHub {
 				const lines = gh(args, pr.body)
 					.split('\n')
 					.filter((l) => l.trim() !== '');
-				return lines.at(-1) ?? '';
+				const url = lines.at(-1);
+				if (!url) throw new Error('gh pr create printed no PR URL');
+				return url;
 			}),
 	};
 }
