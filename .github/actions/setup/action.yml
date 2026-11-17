@@ -14,7 +14,8 @@ inputs:
     default: ''
   registry-token-var:
     description: >-
-      ИМЯ env-переменной джобы с токеном реестра. В ~/.npmrc пишется ссылка ${ИМЯ}, не значение:
+      ИМЯ env-переменной джобы с токеном реестра. Пусто при непустом registry — берётся
+      STACK_REGISTRY_TOKEN; без registry — ошибка. В ~/.npmrc пишется ссылка ${ИМЯ}, не значение:
       pnpm >= 11.15 игнорирует env-креды в закоммиченном проектном .npmrc.
     default: ''
 runs:
@@ -29,11 +30,13 @@ runs:
       env:
         REGISTRY: ${{ inputs.registry }}
         TOKEN_VAR: ${{ inputs.registry-token-var }}
+        DEFAULT_TOKEN_VAR: STACK_REGISTRY_TOKEN
       run: |
-        if [ -z "$REGISTRY" ] || [ -z "$TOKEN_VAR" ]; then
-          echo "::error::registry и registry-token-var задаются только вместе"
+        if [ -z "$REGISTRY" ]; then
+          echo "::error::registry-token-var задаётся только вместе с registry"
           exit 1
         fi
+        TOKEN_VAR="${TOKEN_VAR:-$DEFAULT_TOKEN_VAR}"
         if ! [[ "$TOKEN_VAR" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
           echo "::error::registry-token-var — имя переменной окружения, получено: $TOKEN_VAR"
           exit 1

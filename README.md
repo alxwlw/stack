@@ -220,8 +220,8 @@ and the exception is now stale, so it gets deleted, not carried forward silently
 `alxwlw/stack/.github/actions/setup@v1` installs the toolchain pinned in `.prototools` (via
 `moonrepo/setup-toolchain`) and runs `pnpm install --frozen-lockfile` unless `install: false`.
 
-For a private npm registry, pass its host and the **name** of the job's env var that holds the
-token. The action writes a reference (`${NODE_AUTH_TOKEN}`), never the value, to the user-level
+For a private npm registry, pass its host and, optionally, the **name** of the job's env var that
+holds the token. The action writes a reference (`${NODE_AUTH_TOKEN}`), never the value, to the user-level
 `~/.npmrc` — pnpm >= 11.15 ignores env-var credentials in a committed project `.npmrc`:
 
 ```yaml
@@ -238,6 +238,10 @@ jobs:
           registry-token-var: NODE_AUTH_TOKEN
 ```
 
+`registry-token-var` may be left out — with `registry` set, the action reads the token from the env
+var `STACK_REGISTRY_TOKEN`, so the job only declares that variable; `registry-token-var` without
+`registry` fails the step.
+
 The project `.npmrc` must still map the scope to the registry (e.g.
 `@acme:registry=https://npm.pkg.github.com`); the action only adds the auth line.
 
@@ -246,8 +250,9 @@ optional `registry` input (host without scheme, default empty) and an optional `
 secret. With `registry` empty they behave as before and `~/.npmrc` is untouched. The canon files
 synced into a consumer wire them to the repository variable `STACK_REGISTRY` and the secret
 `STACK_REGISTRY_TOKEN`, so a repo opts in by setting those two (for `acme/app`: variable
-`STACK_REGISTRY=npm.pkg.github.com`, secret `STACK_REGISTRY_TOKEN`). `renovate.yml` also gives
-Renovate an npm host rule for that host and token.
+`STACK_REGISTRY=npm.pkg.github.com`, secret `STACK_REGISTRY_TOKEN`). `check.yml` and `sync.yml` call
+the action with `registry` only and set `STACK_REGISTRY_TOKEN` in the job env from the
+`registry-token` secret. `renovate.yml` also gives Renovate an npm host rule for that host and token.
 
 The action also exports `ACTIONLINT_BIN` / `SHELLCHECK_BIN` — the real binaries behind the proto
 shims, which race each other when run in parallel — only for those two tools, and only when the

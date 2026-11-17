@@ -27,6 +27,8 @@ type Call = {
 	ref: string | null;
 	with: string[];
 	secrets: string[] | 'inherit';
+	/** `jobs.<job>.env` job, в котором стоит вызов, или `{}`. */
+	env: Record<string, unknown>;
 };
 
 type Contract = {
@@ -43,6 +45,7 @@ type Workflow = {
 		{
 			uses?: string;
 			with?: Record<string, unknown>;
+			env?: Record<string, unknown>;
 			secrets?: Record<string, unknown> | string;
 			steps?: { uses?: string; with?: Record<string, unknown> }[];
 		}
@@ -66,6 +69,7 @@ function callsOf(from: string, text: string): Call[] {
 				ref: m[2] ?? null,
 				with: Object.keys(j.with ?? {}),
 				secrets: typeof j.secrets === 'string' ? 'inherit' : Object.keys(j.secrets ?? {}),
+				env: j.env ?? {},
 			});
 		}
 		for (const [step, s] of (j.steps ?? []).entries()) {
@@ -79,6 +83,7 @@ function callsOf(from: string, text: string): Call[] {
 				ref: am[2] ?? null,
 				with: Object.keys(s.with ?? {}),
 				secrets: [],
+				env: j.env ?? {},
 			});
 		}
 		return calls;
@@ -209,6 +214,39 @@ test('проводка канон-файлов: токен Renovate и базо�
 	]);
 });
 
+test('свой setup с registry без registry-token-var: job несёт переменную умолчания action', () => {
+	const action = parseYaml(readFileSync(join(ROOT, `${ACTIONS}setup/action.yml`), 'utf8')) as {
+		runs?: { steps?: { env?: Record<string, unknown> }[] };
+	};
+	const defaults = (action.runs?.steps ?? []).flatMap((s) =>
+		s.env?.DEFAULT_TOKEN_VAR === undefined ? [] : [s.env.DEFAULT_TOKEN_VAR],
+	);
+	// Умолчание задано в action.yml ровно одним шагом; тест не держит свою копию имени.
+	expect(defaults).toHaveLength(1);
+	const DEFAULT = defaults[0] as string;
+	const rows = calls.filter(
+		(c) =>
+			c.target === `${ACTIONS}setup/action.yml` &&
+			c.with.includes('registry') &&
+			!c.with.includes('registry-token-var'),
+	);
+	const froms = rows.map((c) => c.from);
+	expect(froms).toContain(`${WORKFLOWS}check.yml`);
+	expect(froms).toContain(`${WORKFLOWS}sync.yml`);
+	for (const c of rows) {
+		expect({ from: c.from, has: DEFAULT in c.env }).toStrictEqual({ from: c.from, has: true });
+	}
+	// Умолчание получает секрет, который объявляет сам workflow.
+	for (const c of rows.filter(
+		(r) => r.from === `${WORKFLOWS}check.yml` || r.from === `${WORKFLOWS}sync.yml`,
+	)) {
+		expect({ from: c.from, value: c.env[DEFAULT] }).toStrictEqual({
+			from: c.from,
+			value: '${{ secrets.registry-token }}',
+		});
+	}
+});
+
 test('sync.yml: вход install объявлен — его передают копии канон-файла до 1.12.0', () => {
 	const wf = parseYaml(readFileSync(join(ROOT, WORKFLOWS, 'sync.yml'), 'utf8')) as Workflow;
 	expect(wf.on?.workflow_call?.inputs?.install).toMatchObject({ type: 'boolean', default: true });
@@ -223,6 +261,7 @@ describe('callProblems', () => {
 		ref: null,
 		with: [],
 		secrets: [],
+		env: {},
 	};
 	const contract: Contract = {
 		inputs: { a: { required: true }, b: { required: true, default: 1 }, c: {} },
@@ -286,6 +325,7 @@ describe('callsOf', () => {
 			'  c:',
 			'    uses: other/repo/.github/workflows/check.yml@v1',
 			'  d:',
+			'    env: { T: x }',
 			'    steps:',
 			'      - uses: actions/checkout@v7',
 			'      - uses: alxwlw/stack/.github/actions/setup@v1',
@@ -305,6 +345,7 @@ describe('callsOf', () => {
 				ref: 'main',
 				with: [],
 				secrets: 'inherit',
+				env: {},
 			},
 			{
 				from: 'f',
@@ -314,6 +355,7 @@ describe('callsOf', () => {
 				ref: null,
 				with: ['version'],
 				secrets: [],
+				env: {},
 			},
 			{
 				from: 'f',
@@ -323,6 +365,7 @@ describe('callsOf', () => {
 				ref: 'v1',
 				with: ['install', 'registry'],
 				secrets: [],
+				env: { T: 'x' },
 			},
 			{
 				from: 'f',
@@ -332,6 +375,7 @@ describe('callsOf', () => {
 				ref: null,
 				with: [],
 				secrets: [],
+				env: { T: 'x' },
 			},
 		]);
 	});
