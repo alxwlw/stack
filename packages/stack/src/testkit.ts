@@ -1,11 +1,11 @@
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
 import { stringify } from 'yaml';
 
-import { type Canon, canonFor, readCanonSource } from './canon.ts';
+import { type Canon, canonDir, canonFor, readCanonSource } from './canon.ts';
 import type { Profile } from './config.ts';
 import { STACK_RENOVATE_PRESET } from './deps.ts';
 import { type Read, RENOVATE_CONFIGS, type Repo, repoFromSnapshot } from './repo.ts';
@@ -28,6 +28,68 @@ export function canonFile(dest: string, profile: Profile = 'node'): string {
 	const file = canon.files.find((f) => f.dest === dest);
 	if (!file) throw new Error(`no canon file ${dest} for profile ${profile}`);
 	return file.content;
+}
+
+// Связка (Bundle в GLOSSARY): запись canon/bundles.json.
+export type Bundle = { match: string[]; required: string[]; sameVersion: string[][] };
+
+const BUNDLE_KEYS = ['match', 'required', 'sameVersion'];
+const isStrings = (v: unknown): v is string[] =>
+	Array.isArray(v) && v.length > 0 && v.every((s) => typeof s === 'string' && s !== '');
+
+// Читатель формы bundles.json: опечатка в ключе записи иначе молча сделала бы сверку пустой.
+// Шаблоны читает Bun.Glob, поэтому синтаксис Renovate, который он читает иначе, отклоняется.
+export function parseBundles(text: string, file: string): Record<string, Bundle> {
+	const data: unknown = JSON.parse(text);
+	if (typeof data !== 'object' || data === null || Array.isArray(data)) {
+		throw new Error(`${file}: верх — не объект «имя → запись»`);
+	}
+	const names = Object.keys(data);
+	if (names.length === 0) throw new Error(`${file}: ни одной записи`);
+	const out: Record<string, Bundle> = {};
+	for (const name of names) {
+		const at = `${file}: ${name}`;
+		const entry: unknown = (data as Record<string, unknown>)[name];
+		if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) {
+			throw new Error(`${at}: запись — не объект`);
+		}
+		const rec = entry as Record<string, unknown>;
+		for (const key of Object.keys(rec)) {
+			if (!BUNDLE_KEYS.includes(key)) throw new Error(`${at}: лишний ключ ${key}`);
+		}
+		for (const key of BUNDLE_KEYS) {
+			if (!(key in rec)) throw new Error(`${at}: нет ключа ${key}`);
+		}
+		if (!isStrings(rec.match)) throw new Error(`${at}: match — непустой массив непустых строк`);
+		if (!isStrings(rec.required)) {
+			throw new Error(`${at}: required — непустой массив непустых строк`);
+		}
+		const groups = rec.sameVersion;
+		if (!Array.isArray(groups) || groups.length === 0 || !groups.every(isStrings)) {
+			throw new Error(`${at}: sameVersion — непустой массив непустых массивов непустых строк`);
+		}
+		for (const p of [...rec.match, ...groups.flat()]) {
+			if (p.startsWith('!') || p.startsWith('/')) {
+				throw new Error(
+					`${at}: шаблон ${p} — отрицание или regex Renovate, Bun.Glob читает их иначе`,
+				);
+			}
+		}
+		for (const n of rec.required) {
+			if (/[*?[\]{}!]/.test(n)) throw new Error(`${at}: required ${n} — точное имя, а не шаблон`);
+		}
+		out[name] = { match: rec.match, required: rec.required, sameVersion: groups };
+	}
+	return out;
+}
+
+// Связки читают только тесты, в Canon они не попадают (решение 11 индекса).
+export function canonBundles(): Record<string, Bundle> {
+	return parseBundles(readFileSync(join(canonDir(), 'bundles.json'), 'utf8'), 'canon/bundles.json');
+}
+
+export function matchesAny(patterns: readonly string[], name: string): boolean {
+	return patterns.some((p) => new Bun.Glob(p).match(name));
 }
 
 // Репозиторий, согласованный с каноном: файлы канона, pnpm-workspace.yaml с его каталогами,

@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { expect, spyOn, test } from 'bun:test';
+import { describe, expect, spyOn, test } from 'bun:test';
 import { parse as parseJsonc } from 'jsonc-parser';
 import { parse as parseYaml } from 'yaml';
 
@@ -16,7 +16,7 @@ import {
 } from './canon.ts';
 import { type Profile, PROFILES, type StackConfig, StackConfigError } from './config.ts';
 import { RENOVATE_CONFIGS } from './repo.ts';
-import { canonFile, repoDir } from './testkit.ts';
+import { canonBundles, canonFile, matchesAny, parseBundles, repoDir } from './testkit.ts';
 
 // Не канон-файл: README лежит рядом с пакетом, а не в canon/.
 const README_PATH = join(import.meta.dir, '..', '..', '..', 'README.md');
@@ -527,52 +527,92 @@ test('readCanonSource читает manifest.json и catalogs.json по одно�
 	}
 });
 
-// Связки libs: потребитель, взявший группу целиком, получает одну копию каждого пакета связки.
-const BUNDLES = {
-	nats: ['@nats-io/jetstream', '@nats-io/nats-core', '@nats-io/transport-node'],
-	otel: [
-		'@opentelemetry/api',
-		'@opentelemetry/core',
-		'@opentelemetry/resources',
-		'@opentelemetry/sdk-metrics',
-		'@opentelemetry/context-async-hooks',
-		'@opentelemetry/sdk-node',
-		'@opentelemetry/exporter-trace-otlp-http',
-		'@opentelemetry/exporter-metrics-otlp-http',
-		'@opentelemetry/semantic-conventions',
-		'@opentelemetry/auto-instrumentations-node',
-	],
-	prisma: ['@prisma/client', 'prisma', '@prisma/adapter-pg'],
-} as const;
+const okBundle = { match: ['@x/**'], required: ['@x/a'], sameVersion: [['@x/**']] };
 
-test('libs: связки полные', () => {
-	const libs = readCanonSource().catalogs.libs ?? {};
-	for (const [bundle, names] of Object.entries(BUNDLES)) {
-		const missing = names.filter((n) => libs[n] == null);
-		expect([bundle, missing]).toEqual([bundle, []]);
-	}
+test('parseBundles: правильная запись читается как есть', () => {
+	expect(parseBundles(JSON.stringify({ x: okBundle }), 'b.json')).toStrictEqual({ x: okBundle });
 });
 
-test('libs: связка NATS и связка Prisma — одна версия на связку', () => {
-	const libs = readCanonSource().catalogs.libs ?? {};
-	for (const bundle of ['nats', 'prisma'] as const) {
-		const versions = new Set(BUNDLES[bundle].map((n) => libs[n]));
-		expect([bundle, versions.size]).toEqual([bundle, 1]);
-	}
+// [что сломано, содержимое файла, что обязано быть в сообщении, запись в сообщении]
+const badBundles: [string, unknown, string, boolean][] = [
+	['верх — массив', [okBundle], 'b.json', false],
+	['ни одной записи', {}, 'b.json', false],
+	['лишний ключ', { x: { ...okBundle, sameversion: [] } }, 'sameversion', true],
+	['нет ключа', { x: { match: ['@x/**'], required: ['@x/a'] } }, 'sameVersion', true],
+	['пустой match', { x: { ...okBundle, match: [] } }, 'match', true],
+	['пустая группа sameVersion', { x: { ...okBundle, sameVersion: [[]] } }, 'sameVersion', true],
+	['не строка в required', { x: { ...okBundle, required: [5] } }, 'required', true],
+	['отрицание в match', { x: { ...okBundle, match: ['!@x/b'] } }, '!@x/b', true],
+	['regex в sameVersion', { x: { ...okBundle, sameVersion: [['/^@x\\//']] } }, '/^@x\\//', true],
+	['glob в required', { x: { ...okBundle, required: ['@x/*'] } }, '@x/*', true],
+];
+
+test.each(badBundles)('parseBundles отклоняет: %s', (_what, data, needle, hasEntry) => {
+	const parse = () => parseBundles(JSON.stringify(data), 'b.json');
+	expect(parse).toThrow(needle);
+	expect(parse).toThrow('b.json: ');
+	if (hasEntry) expect(parse).toThrow('b.json: x');
 });
 
-test('libs: связка OpenTelemetry — SDK-пакеты на одной версии, экспортёры на версии sdk-node', () => {
-	const libs = readCanonSource().catalogs.libs ?? {};
-	const sdk = new Set(
-		['core', 'resources', 'sdk-metrics', 'context-async-hooks'].map(
-			(n) => libs[`@opentelemetry/${n}`],
-		),
+// Связки: пакеты, которые пинят друг друга точно и поднимаются одной веткой Renovate (Bundle в GLOSSARY).
+// Состав выводится из каталога по шаблону: новая запись под шаблон связки проверяется без правки данных и тестов.
+const bundles = canonBundles();
+const catalogs = readCanonSource().catalogs;
+const bundleNames = Object.keys(bundles);
+
+describe('связки canon/bundles.json в каталогах канона', () => {
+	test.each(bundleNames)(
+		'%s: required под match и целиком в каждом каталоге с пакетом связки',
+		(name) => {
+			const b = bundles[name]!;
+			expect(b.required.filter((n) => !matchesAny(b.match, n))).toStrictEqual([]);
+			const holders = Object.entries(catalogs).filter(([, entries]) =>
+				Object.keys(entries).some((k) => matchesAny(b.match, k)),
+			);
+			expect(holders.length).toBeGreaterThan(0);
+			for (const [catalog, entries] of holders) {
+				expect([catalog, b.required.filter((n) => entries[n] == null)]).toStrictEqual([
+					catalog,
+					[],
+				]);
+			}
+		},
 	);
-	expect(sdk.size).toBe(1);
-	const experimental = new Set(
-		['sdk-node', 'exporter-trace-otlp-http', 'exporter-metrics-otlp-http'].map(
-			(n) => libs[`@opentelemetry/${n}`],
-		),
-	);
-	expect(experimental.size).toBe(1);
+
+	test.each(bundleNames)('%s: в каждой группе sameVersion одна версия', (name) => {
+		const b = bundles[name]!;
+		for (const g of b.sameVersion) {
+			for (const p of g) {
+				const found = Object.values(catalogs).some((entries) =>
+					Object.keys(entries).some((k) => matchesAny([p], k)),
+				);
+				expect([p, found]).toStrictEqual([p, true]);
+			}
+			for (const [catalog, entries] of Object.entries(catalogs)) {
+				const names = Object.keys(entries).filter((k) => matchesAny(g, k));
+				expect([catalog, names.filter((n) => !matchesAny(b.match, n))]).toStrictEqual([
+					catalog,
+					[],
+				]);
+				const listing = names.map((n) => `${n}@${entries[n]}`);
+				const many = new Set(names.map((n) => entries[n])).size > 1;
+				expect([catalog, g, many ? listing : []]).toStrictEqual([catalog, g, []]);
+			}
+		}
+	});
+
+	test('пакет каталога — не больше чем в одной связке и одной группе версий своей связки', () => {
+		const bad: [string, string, string[]][] = [];
+		for (const [catalog, entries] of Object.entries(catalogs)) {
+			for (const n of Object.keys(entries)) {
+				const hit = bundleNames.filter((k) => matchesAny(bundles[k]!.match, n));
+				if (hit.length > 1) bad.push([catalog, n, hit]);
+				for (const k of hit) {
+					const groups = bundles[k]!.sameVersion.filter((g) => matchesAny(g, n));
+					if (groups.length > 1) bad.push([catalog, n, groups.map((g) => g.join(' '))]);
+				}
+			}
+		}
+		expect(bad).toStrictEqual([]);
+	});
 });

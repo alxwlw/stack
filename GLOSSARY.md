@@ -36,6 +36,10 @@ _Avoid_: version list, lockfile
 One package name with its pinned version inside a catalog; the unit that drifts or is held by an exception.
 _Avoid_: dependency line
 
+**Bundle**:
+A set of catalog entries that pin each other exactly and must move together: this repository's Renovate bumps them in one branch, major and minor alike, and inside each version group they share one version. A bundle is a record of `packages/stack/canon/bundles.json`: `match` (patterns in the syntax of Renovate's `matchPackageNames`), `required` (names every catalog holding the bundle must have) and `sameVersion` (groups of patterns with one version). Only tests read it, against `canon/catalogs.json` and the root `renovate.json5`; it is not part of `Canon`. `canonBundles` in `packages/stack/src/testkit.ts`.
+_Avoid_: group (a **Group** is a slice switched on through `with`), package family
+
 **Pin**:
 A tool version fixed in the consumer's `.prototools` (node, pnpm and the other proto-managed tools); the canon's own pins are in `canon/files/prototools`, and `loadCanon` returns them as `Canon.pins` (`node` and `pnpm` are required).
 _Avoid_: lock, freeze

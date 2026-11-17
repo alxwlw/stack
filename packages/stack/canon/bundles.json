@@ -1,0 +1,36 @@
+{
+	"opentelemetry": {
+		"match": ["@opentelemetry/**"],
+		"required": [
+			"@opentelemetry/api",
+			"@opentelemetry/core",
+			"@opentelemetry/resources",
+			"@opentelemetry/sdk-metrics",
+			"@opentelemetry/context-async-hooks",
+			"@opentelemetry/sdk-node",
+			"@opentelemetry/exporter-trace-otlp-http",
+			"@opentelemetry/exporter-metrics-otlp-http",
+			"@opentelemetry/semantic-conventions",
+			"@opentelemetry/auto-instrumentations-node"
+		],
+		"sameVersion": [
+			[
+				"@opentelemetry/core",
+				"@opentelemetry/resources",
+				"@opentelemetry/sdk-metrics",
+				"@opentelemetry/context-async-hooks"
+			],
+			["@opentelemetry/sdk-node", "@opentelemetry/exporter-*-otlp-*"]
+		]
+	},
+	"nats": {
+		"match": ["@nats-io/**"],
+		"required": ["@nats-io/jetstream", "@nats-io/nats-core", "@nats-io/transport-node"],
+		"sameVersion": [["@nats-io/**"]]
+	},
+	"prisma": {
+		"match": ["@prisma/**", "prisma"],
+		"required": ["@prisma/client", "prisma", "@prisma/adapter-pg"],
+		"sameVersion": [["@prisma/**", "prisma"]]
+	}
+}
