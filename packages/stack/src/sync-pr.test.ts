@@ -228,14 +228,43 @@ describe('publishChanges', () => {
 		}
 	});
 
-	test("git-хуки consumer'а не получают GH_TOKEN", async () => {
-		const { dir } = gitRepo({ 'a.txt': 'a' });
+	test("хуки consumer'а не запускаются — ни из .git/hooks, ни из core.hooksPath", async () => {
+		const { dir, remote } = gitRepo({ 'a.txt': 'a' });
 		const log = join(mkdtempSync(join(tmpdir(), 'stack-hooklog-')), 'hooks.log');
-		for (const hook of ['pre-commit', 'pre-push']) {
-			const path = join(dir, '.git', 'hooks', hook);
-			writeFileSync(path, `#!/bin/sh\necho "token=\${GH_TOKEN-unset}" >> ${log}\n`);
-			chmodSync(path, 0o755);
+		const external = mkdtempSync(join(tmpdir(), 'stack-hooks-'));
+		const hooks = [
+			'pre-commit',
+			'prepare-commit-msg',
+			'commit-msg',
+			'post-commit',
+			'post-checkout',
+			'reference-transaction',
+			'pre-push',
+		];
+		for (const base of [join(dir, '.git', 'hooks'), external]) {
+			mkdirSync(base, { recursive: true });
+			for (const hook of hooks) {
+				const path = join(base, hook);
+				writeFileSync(path, `#!/bin/sh\necho ${hook} >> ${log}\nexit 1\n`);
+				chmodSync(path, 0o755);
+			}
 		}
+		git(dir, 'config', 'core.hooksPath', external);
+		put(dir, 'b.txt', 'b');
+		const { github } = fakeGitHub();
+		const r = await run(opts(dir), github);
+		expect(r.code).toBe(0);
+		expect(existsSync(log)).toBe(false);
+		expect(git(remote, 'log', '-1', '--format=%s', 'stack/v1.2.3')).toBe(
+			'chore(stack): канон 1.2.3\n',
+		);
+	});
+
+	test('filter из .git/config не получает GH_TOKEN', async () => {
+		const { dir } = gitRepo({ 'a.txt': 'a' });
+		const log = join(mkdtempSync(join(tmpdir(), 'stack-filterlog-')), 'filter.log');
+		writeFileSync(join(dir, '.git', 'info', 'attributes'), '*.txt filter=probe\n');
+		git(dir, 'config', 'filter.probe.clean', `echo "token=\${GH_TOKEN-unset}" >> '${log}'; cat`);
 		put(dir, 'b.txt', 'b');
 		const saved = process.env.GH_TOKEN;
 		process.env.GH_TOKEN = 'secret-token';
@@ -246,10 +275,14 @@ describe('publishChanges', () => {
 			if (saved === undefined) delete process.env.GH_TOKEN;
 			else process.env.GH_TOKEN = saved;
 		}
-		expect(readFileSync(log, 'utf8')).toBe('token=unset\ntoken=unset\n');
+		const lines = readFileSync(log, 'utf8')
+			.split('\n')
+			.filter((l) => l !== '');
+		expect(lines.length).toBeGreaterThan(0);
+		for (const l of lines) expect(l).toBe('token=unset');
 	});
 
-	test('prBody — текст sync.yml, список пофайлово', () => {
+	test('prBody — текст описания PR, список пофайлово', () => {
 		expect(prBody('1.2.3', ['a.txt', 'b/c.txt'])).toBe(
 			'Канон `@alxwlw/stack@1.2.3` применён к репозиторию.\n\nИзменённые файлы:\n- a.txt\n- b/c.txt\n\nРелиз: https://github.com/alxwlw/stack/releases/tag/v1.2.3\n',
 		);

@@ -151,6 +151,16 @@ test('проводка канон-файлов: токен Renovate и базо�
 	expect(job('files/workflow-stack-sync.yml', 'sync')?.with?.base).toBe(
 		"${{ vars.STACK_SYNC_BASE || '' }}",
 	);
+	expect(Object.keys(job('files/workflow-stack-sync.yml', 'sync')?.with ?? {}).toSorted()).toEqual([
+		'base',
+		'registry',
+		'version',
+	]);
+});
+
+test('sync.yml: вход install объявлен — его передают копии канон-файла до 1.12.0', () => {
+	const wf = parseYaml(readFileSync(join(ROOT, WORKFLOWS, 'sync.yml'), 'utf8')) as Workflow;
+	expect(wf.on?.workflow_call?.inputs?.install).toMatchObject({ type: 'boolean', default: true });
 });
 
 describe('callProblems', () => {

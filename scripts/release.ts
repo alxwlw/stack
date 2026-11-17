@@ -17,8 +17,9 @@ export const SEMVER_RE = /^\d+\.\d+\.\d+(-[\w.]+)?$/;
 
 /**
  * `github.event.workflow_run.head_branch` для пуша тега — это ИМЯ ТЕГА (`v1.2.3`), не голая
- * версия. `sync.yml` строит из неё `stack/v${VERSION}` — необрезанный префикс даёт `stack/vv1.2.3`
- * (см. docs/release.md, «VERSION arrives with the tag prefix»). Валидирует результат и падает громко на
+ * версия. `sync.yml` ждёт в реестре `@alxwlw/stack@${VERSION}` и зовёт `bunx` с ней же — необрезанный
+ * префикс (`v1.2.3`) такой версии не находит, и каждый потребитель падает (см. docs/release.md,
+ * «VERSION arrives with the tag prefix»). Валидирует результат и падает громко на
  * мусоре, а не молча шлёт его по всем потребителям.
  */
 export function stripTagPrefix(tag: string): string {

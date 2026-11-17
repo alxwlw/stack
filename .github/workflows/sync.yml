@@ -7,7 +7,7 @@ on:
         type: string
         required: true
       install:
-        description: 'запускать ли proto install и pnpm install после sync (false — репозиторий без package.json)'
+        description: 'устарел: его передают копии канон-файла до 1.12.0 (из STACK_SYNC_INSTALL); false — то же, что --no-install; ставить ли тулчейн и зависимости, решает корневой package.json'
         type: boolean
         default: true
       base:
@@ -56,118 +56,38 @@ jobs:
           registry-token-var: ${{ inputs.registry != '' && 'STACK_REGISTRY_TOKEN' || '' }}
       # Основное ожидание — в job publish: он зелёный, только когда все версии видны в реестре, и
       # rollout зовёт sync после этого. Здесь короткая страховка от отставания CDN у раннера
-      # потребителя (в 1.6.0 все sync упали в bunx на «No version matching»). Ждём то, что нужно
-      # sync: stack (bunx) и @alxwlw/*-записи catalogs.json (в 1.7.0 pnpm install упал на tsconfig).
-      # Список — литерал: sync.yml исполняется без checkout стека; его сверяет dogfood.test.ts.
-      # Опрашиваем ту же abbreviated-запись (URL и Accept), которую следом запросят bunx и pnpm.
+      # потребителя (в 1.6.0 все sync упали в bunx на «No version matching»). Ждём только stack: без
+      # него bunx не стартует. @alxwlw/*-записи каталога dev ждёт сама команда (SYNC_PR_WAIT в
+      # packages/stack/src/sync-pr.ts) тем же числом попыток.
+      # Опрашиваем ту же abbreviated-запись (URL и Accept), которую следом запросит bunx.
       - name: дождаться версии в npm
         env:
           VERSION: ${{ inputs.version }}
-          PACKAGES: oxlint-config stack tsconfig
           ATTEMPTS: '12'
           INTERVAL: '10'
         run: |
           accept='application/vnd.npm.install-v1+json; q=1.0, application/json; q=0.8, */*'
-          pending="$PACKAGES"
           for i in $(seq 1 "$ATTEMPTS"); do
-            left=''
-            for p in $pending; do
-              if curl -fsS -H "Accept: $accept" "https://registry.npmjs.org/@alxwlw%2f$p" |
-                node -e 'const d = JSON.parse(require("fs").readFileSync(0, "utf8")); process.exit(d.versions?.[process.env.VERSION] ? 0 : 1)'; then
-                echo "@alxwlw/$p@$VERSION есть в реестре"
-              else
-                left="$left $p"
-              fi
-            done
-            pending="$left"
-            if [ -z "$pending" ]; then exit 0; fi
+            if curl -fsS -H "Accept: $accept" "https://registry.npmjs.org/@alxwlw%2fstack" |
+              node -e 'const d = JSON.parse(require("fs").readFileSync(0, "utf8")); process.exit(d.versions?.[process.env.VERSION] ? 0 : 1)'; then
+              echo "@alxwlw/stack@$VERSION есть в реестре"
+              exit 0
+            fi
             if [ "$i" -lt "$ATTEMPTS" ]; then sleep "$INTERVAL"; fi
           done
-          echo "::error::за $ATTEMPTS попыток в реестре не появилась версия $VERSION:$pending"
+          echo "::error::за $ATTEMPTS попыток в реестре не появилась версия @alxwlw/stack@$VERSION"
           exit 1
-      - env:
-          VERSION: ${{ inputs.version }}
-        run: bunx "@alxwlw/stack@$VERSION" sync
-      # sync мог поднять пины в .prototools: setup ставил тулчейн по старым, а шим proto
-      # отказывается запускать pnpm, пока новая версия не установлена (missing_tool).
-      - if: inputs.install
-        run: proto install
-      - if: inputs.install
-        run: pnpm install --no-frozen-lockfile
-      # Точка вызова репо-своей доводки: скрипт stack:post-sync в корневом package.json. Шаг без if:
-      # хук сам решает, нужны ли ему зависимости (при install: false их нет). Падение хука роняет
-      # джобу: PR без доводки не открывается. proto install стоит ДО чтения package.json: тулчейн
-      # мог отстать от пинов, которые sync только что поднял, и при install: false шим proto
-      # отказывает любому инструменту (node в том числе, missing_tool). Без package.json шаг пуст.
-      - name: доводка репозитория
+      # Команда — пакета той же версии (>= 1.11.0, первый релиз с sync-pr); dispatch более старой версии
+      # падает с ошибкой использования (код 2: версии до 1.11.0 не знают --base) — так задумано. INSTALL приходит только от копий
+      # канон-файла до 1.12.0. GH_TOKEN команда не передаёт ни git, ни proto, ни pnpm.
+      - name: открыть sync-PR
         env:
           VERSION: ${{ inputs.version }}
-        run: |
-          if [ -f package.json ]; then
-            proto install
-            has="$(node -p 'Boolean(require("./package.json").scripts?.["stack:post-sync"])')"
-            if [ "$has" = true ]; then
-              pnpm run stack:post-sync
-            fi
-          fi
-      - name: проверить, есть ли изменения
-        id: diff
-        run: |
-          changed="$(git status --porcelain | cut -c4-)"
-          if [ -z "$changed" ]; then
-            echo "канон уже применён, менять нечего"
-            exit 0
-          fi
-          echo "changed=true" >> "$GITHUB_OUTPUT"
-          {
-            echo "files<<STACK_SYNC_FILES"
-            echo "$changed"
-            echo "STACK_SYNC_FILES"
-          } >> "$GITHUB_OUTPUT"
-      - name: узнать пользователя бота
-        if: steps.diff.outputs.changed == 'true'
-        id: bot-user
-        env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
-        run: echo "id=$(gh api "/users/${APP_SLUG}[bot]" --jq .id)" >> "$GITHUB_OUTPUT"
-      - name: закоммитить и запушить ветку
-        if: steps.diff.outputs.changed == 'true'
-        env:
-          VERSION: ${{ inputs.version }}
-          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
-          BOT_USER_ID: ${{ steps.bot-user.outputs.id }}
-        run: |
-          git config user.name "${APP_SLUG}[bot]"
-          git config user.email "${BOT_USER_ID}+${APP_SLUG}[bot]@users.noreply.github.com"
-          git checkout -B "stack/v${VERSION}"
-          git add -A
-          git commit -m "chore(stack): канон ${VERSION}"
-          git push --force origin "stack/v${VERSION}"
-      - name: открыть pull request
-        if: steps.diff.outputs.changed == 'true'
-        env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          VERSION: ${{ inputs.version }}
-          CHANGED_FILES: ${{ steps.diff.outputs.files }}
           BASE: ${{ inputs.base }}
+          INSTALL: ${{ inputs.install }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          STACK_APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
         run: |
-          {
-            echo "Канон \`@alxwlw/stack@${VERSION}\` применён к репозиторию."
-            echo
-            echo "Изменённые файлы:"
-            while IFS= read -r file; do
-              printf -- '- %s\n' "$file"
-            done <<<"$CHANGED_FILES"
-            echo
-            echo "Релиз: https://github.com/alxwlw/stack/releases/tag/v${VERSION}"
-          } >"$RUNNER_TEMP/stack-sync-pr-body.md"
-          if [ "$(gh pr list --head "stack/v${VERSION}" --json number --jq length)" = "0" ]; then
-            gh pr create \
-              --title "chore(stack): канон ${VERSION}" \
-              --body-file "$RUNNER_TEMP/stack-sync-pr-body.md" \
-              --head "stack/v${VERSION}" \
-              ${BASE:+--base "$BASE"}
-          else
-            echo "PR для stack/v${VERSION} уже открыт, ветка обновлена force-push"
-          fi
+          args=(sync-pr "--base=$BASE")
+          if [ "$INSTALL" = false ]; then args+=(--no-install); fi
+          bunx "@alxwlw/stack@$VERSION" "${args[@]}"

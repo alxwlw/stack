@@ -111,11 +111,14 @@ is the only way to create the config file in the first place. Every command acce
 `--repo <path>` to target a repo other than the current directory.
 
 `stack sync-pr [--base <branch>] [--no-install]` is meant for the sync workflow (it commits the whole
-tree and force-pushes) and does what that workflow does after a release, in one command: `stack sync`; when the repo has a root `package.json`, a wait until the `@alxwlw/*`
-entries of the canon's `dev` catalog are visible in the npm registry (skipped with `--no-install`),
+tree and force-pushes) and does the whole consumer side of a release in one command: `stack sync`;
+when the repo has a root `package.json`, a wait until the `@alxwlw/*` entries of the canon's `dev`
+catalog are visible in the npm registry (skipped with `--no-install`),
 `proto install`, `pnpm install --no-frozen-lockfile` (skipped with `--no-install`) and the
 `stack:post-sync` hook; then the changed files one by one, a commit by the GitHub App's bot on
-`stack/v<version>`, a force-push and a PR (or the open one, reused). The version is the package's own;
+`stack/v<version>`, a force-push and a PR (or the open one, reused). The bot's git commands run
+without the repository's git hooks (`core.hooksPath` points at `/dev/null`, so neither `.git/hooks` nor a hooks path set by husky or
+lefthook runs); the consumer's CI on the PR checks the result. The version is the package's own;
 `GH_TOKEN` and `STACK_APP_SLUG` come from the environment. Exit codes: `0` — PR opened or updated, or
 nothing to commit; `1` — a step failed; `2` — a usage or configuration error.
 
@@ -296,11 +299,15 @@ below carries the new pins out.
 ### Rollout to consumers
 
 A release pushes itself out. When `publish` succeeds, the canon dispatches `stack-sync.yml` in every
-repository on its consumer list; that workflow runs `stack sync` for the new version and, if anything
-changed, opens a PR on branch `stack/v<version>`. Re-dispatching the same version force-updates that
+repository on its consumer list; that workflow runs `stack sync-pr` for the new version
+(`bunx @alxwlw/stack@<version> sync-pr`) and, if anything changed, opens a PR on branch
+`stack/v<version>`. Re-dispatching the same version force-updates that
 branch and reuses the open PR instead of opening a second one.
 
-The same steps ship in the package as `stack sync-pr`; `sync.yml` still runs them as its own steps.
+`sync.yml` keeps only the App token, the checkout, the setup action and a short wait until
+`@alxwlw/stack@<version>` is visible in the npm registry; everything after that is `stack sync-pr`. It
+needs a version that has the command, 1.11.0 or later: re-dispatching an older version fails with a
+usage error (exit code 2).
 
 The work is done by the [`alxwlw-stack-bot`](https://github.com/apps/alxwlw-stack-bot) GitHub App,
 which a consumer installs on its own repositories. It asks for exactly what opening that PR takes —
@@ -313,21 +320,23 @@ A repository joins the list after its first sync lands: the dispatch target
 yourself with `stack init` and `stack sync`.
 
 The consumer list is the `STACK_CONSUMERS` secret of this repository (`owner/repo`, one per line).
-A consumer tunes its sync with two repository variables: `STACK_SYNC_BASE` opens the PR against that
-branch instead of the default one (for a repo whose default branch only takes merges from another),
-and `STACK_SYNC_INSTALL=false` skips `pnpm install` for a repo without a `package.json`. After
-`stack sync` the workflow runs `proto install`, so pins the sync just raised are installed before
-`pnpm install`.
+A consumer tunes its sync with one repository variable: `STACK_SYNC_BASE` opens the PR against that
+branch instead of the default one (for a repo whose default branch only takes merges from another).
+`STACK_SYNC_INSTALL` is no longer read: the repository decides itself — a root `package.json` means the
+registry wait, `proto install` and `pnpm install`. A consumer's copy of that workflow made before 1.12.0 still passes
+the variable as the `install` input on its first sync (`false` becomes `--no-install`), and that sync PR
+replaces the copy.
 
 A consumer can add a repo-owned finishing step: a `stack:post-sync` script in the root
-`package.json`. After `stack sync` and its install, before the workflow looks for changes, a repo
-with a `package.json` gets `proto install` (the pins the sync just raised, node included, must be
-installed before anything reads `package.json`), then `pnpm run stack:post-sync` if the script
-exists, so regenerated files land in the same sync PR. The script gets `VERSION` (the stack version,
-without `v`) in its environment. The step runs whatever `STACK_SYNC_INSTALL` says, so the hook
-decides itself whether it needs dependencies. A failing `proto install` or hook, or an unreadable
+`package.json`. A repo with a `package.json` gets, in this order, `proto install` (the pins the sync
+just raised must be installed first), `pnpm install` (unless `--no-install`) and then
+`pnpm run stack:post-sync` if the script exists, so regenerated files land in the same sync PR. Only
+after the hook does the command look for changed files. The script gets `VERSION` (the stack version,
+without `v`) in its environment. The hook runs with or without `--no-install`, so it decides itself
+whether it needs dependencies. A failing `proto install`, install or hook, or an unreadable
 `package.json`, fails the job: no commit and no PR, rather than a PR without the finishing. Without
-the script the step only runs `proto install`; without a `package.json` it does nothing.
+the script the command only runs `proto install` and the install; without a `package.json` it does
+nothing of that.
 
 ## License
 

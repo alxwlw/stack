@@ -41,15 +41,18 @@ interface GitResult {
 }
 
 // Окружение дочернего процесса без GH_TOKEN: токен нужен только gh. git-хуки и скрипты зависимостей
-// consumer'а исполняют чужой код и токена не получают (sync.yml даёт его одним шагам gh).
+// consumer'а исполняют чужой код и токена не получают (sync.yml даёт его одному шагу вызова, а команда не передаёт ни git, ни proto, ни pnpm, ни хуку).
 export function withoutGhToken(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 	const rest = { ...env };
 	delete rest.GH_TOKEN;
 	return rest;
 }
 
+// Хуки consumer'а (их ставит `pnpm install`) не роняют и не блокируют sync-PR: результат проверяет CI
+// consumer'а на PR. `-c` из командной строки сильнее `core.hooksPath` из `.git/config`, а `.git/hooks`
+// при заданном hooksPath не читается вовсе.
 function runGit(cwd: string, args: readonly string[]): GitResult {
-	const r = spawnSync('git', args, {
+	const r = spawnSync('git', ['-c', 'core.hooksPath=/dev/null', ...args], {
 		cwd,
 		encoding: 'utf8',
 		maxBuffer: 1 << 30,
@@ -80,7 +83,7 @@ function changedFiles(repoRoot: string): string[] {
 const message = (error: unknown): string =>
 	error instanceof Error ? error.message : String(error);
 
-// Шаги sync.yml:113-173 после установки и хука: список файлов, пользователь бота, ветка, commit, force-push, PR.
+// Всё после установки и хука: список изменённых файлов, пользователь бота, ветка, commit, force-push, PR.
 export async function publishChanges(
 	opts: PublishOptions,
 	github: GitHub,

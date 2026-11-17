@@ -1,13 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import {
-	chmodSync,
-	existsSync,
-	mkdirSync,
-	mkdtempSync,
-	readFileSync,
-	rmSync,
-	writeFileSync,
-} from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -15,7 +7,6 @@ import { expect, test } from 'bun:test';
 import JSON5 from 'json5';
 import { parse as parseYaml } from 'yaml';
 
-import { releasePackages } from '../../../scripts/release.ts';
 import { loadCanon, readCanonSource } from './canon.ts';
 import { canonFile } from './testkit.ts';
 
@@ -168,10 +159,16 @@ test('renovate.yml: host rule приватного реестра только �
 	expect(rules).toMatch(/\|\| '\[\]' \}\}$/);
 });
 
-// sync.yml ждёт версию в реестре до bunx: rollout стартует сразу после publish, и в 1.6.0 все
-// sync упали на «No version matching»; в 1.7.0 — pnpm install на tsconfig, опубликованной позже
-// stack. Шаг гоняется в bash с curl-заглушкой, отдающей тело по имени пакета, а не сверяется текстом.
-type SyncStep = { name?: string; run?: string; env?: Record<string, string> };
+// sync.yml ждёт версию stack в реестре до bunx: rollout стартует сразу после publish, и в 1.6.0 все
+// sync упали на «No version matching». Шаг гоняется в bash с curl-заглушкой, а не сверяется текстом.
+type SyncStep = {
+	name?: string;
+	uses?: string;
+	id?: string;
+	if?: string;
+	run?: string;
+	env?: Record<string, string>;
+};
 const syncSteps = (
 	parseYaml(readFileSync(join(ROOT, '.github', 'workflows', 'sync.yml'), 'utf8')) as {
 		jobs?: Record<string, { steps?: SyncStep[] }>;
@@ -179,97 +176,156 @@ const syncSteps = (
 ).jobs?.sync?.steps;
 const waitIdx = syncSteps?.findIndex((s) => s.name === 'дождаться версии в npm') ?? -1;
 const waitStep = syncSteps?.[waitIdx];
+const callIdx = syncSteps?.findIndex((s) => s.name === 'открыть sync-PR') ?? -1;
+const callStep = syncSteps?.[callIdx];
 
-// Пакеты, без которых sync не обойдётся: stack (bunx) и @alxwlw/*-записи каталога (pnpm install).
-// Остальные опубликованные (repo-rules) sync не тянет; их ожидание живёт в job publish.
-const catalogNames = new Set(
-	Object.values(readCanonSource().catalogs).flatMap((group) =>
-		Object.keys(group).filter((n) => n.startsWith('@alxwlw/')),
-	),
-);
-const NEEDED = [
-	...new Set([
-		'stack',
-		...releasePackages(ROOT)
-			.filter((p) => catalogNames.has(p.name))
-			.map((p) => p.dir),
-	]),
-].toSorted();
-
-/** `bodies` — тело ответа реестра по имени пакета без скоупа; пакета нет в карте — curl падает. */
+/** `body` — тело ответа реестра для stack; `undefined` — curl падает, как `curl -f` на 404/5xx. */
 function runWait(
-	bodies: Record<string, string>,
+	body: string | undefined,
 	attempts: string,
-): { status: number | null; calls: string[]; out: string } {
+	interval = '0',
+): { status: number | null; calls: string[]; out: string; sleeps: string[] } {
 	const dir = mkdtempSync(join(tmpdir(), 'sync-wait-'));
 	const calls = join(dir, 'calls');
-	for (const [p, body] of Object.entries(bodies)) writeFileSync(join(dir, `${p}.json`), body);
+	const reply = body === undefined ? 'exit 22' : `cat '${join(dir, 'body.json')}'`;
+	if (body !== undefined) writeFileSync(join(dir, 'body.json'), body);
 	writeFileSync(
 		join(dir, 'curl'),
-		`#!/usr/bin/env bash\np="\${!#}"; p="\${p##*%2f}"\necho "$p" >> '${calls}'\ncat '${dir}'/"$p.json"\n`,
+		`#!/usr/bin/env bash\np="\${!#}"; p="\${p##*%2f}"\necho "$p" >> '${calls}'\n${reply}\n`,
 	);
 	chmodSync(join(dir, 'curl'), 0o755);
-	const res = spawnSync('bash', ['-eo', 'pipefail', '-c', waitStep?.run ?? 'exit 99'], {
+	// Заглушка sleep пишет аргумент и не спит: паузы проверяются значением, а не временем.
+	const sleeps = join(dir, 'sleeps');
+	writeFileSync(join(dir, 'sleep'), `#!/usr/bin/env bash\necho "$1" >> '${sleeps}'\n`);
+	chmodSync(join(dir, 'sleep'), 0o755);
+	// Как раннер GitHub без `shell:`: `bash -e {0}`, без pipefail.
+	const res = spawnSync('bash', ['-e', '-c', waitStep?.run ?? 'exit 99'], {
 		env: {
 			...process.env,
 			PATH: `${dir}:${process.env.PATH}`,
 			VERSION: '1.2.3',
-			PACKAGES: waitStep?.env?.PACKAGES ?? '',
 			ATTEMPTS: attempts,
-			INTERVAL: '0',
+			INTERVAL: interval,
 		},
 		encoding: 'utf8',
 	});
 	const n = existsSync(calls) ? readFileSync(calls, 'utf8').split('\n').filter(Boolean) : [];
+	const slept = existsSync(sleeps) ? readFileSync(sleeps, 'utf8').split('\n').filter(Boolean) : [];
 	rmSync(dir, { recursive: true, force: true });
-	return { status: res.status, calls: n, out: res.stdout };
+	return { status: res.status, calls: n, out: res.stdout, sleeps: slept };
+}
+
+/** Шаг вызова с заглушкой bunx: аргументы пишутся в файл по строке, код выхода — `exit`. */
+function runCall(
+	env: { INSTALL: string; BASE: string },
+	exit = 0,
+): { status: number | null; args: string[] } {
+	const dir = mkdtempSync(join(tmpdir(), 'sync-call-'));
+	const argsFile = join(dir, 'args');
+	writeFileSync(
+		join(dir, 'bunx'),
+		`#!/usr/bin/env bash\nprintf '%s\\n' "$@" > '${argsFile}'\nexit ${exit}\n`,
+	);
+	chmodSync(join(dir, 'bunx'), 0o755);
+	const res = spawnSync('bash', ['-e', '-c', callStep?.run ?? 'exit 99'], {
+		env: {
+			...process.env,
+			PATH: `${dir}:${process.env.PATH}`,
+			VERSION: '1.2.3',
+			GH_TOKEN: 't',
+			STACK_APP_SLUG: 'app',
+			...env,
+		},
+		encoding: 'utf8',
+	});
+	const args = existsSync(argsFile) ? readFileSync(argsFile, 'utf8').split('\n').slice(0, -1) : [];
+	rmSync(dir, { recursive: true, force: true });
+	return { status: res.status, args };
 }
 
 const has = '{"versions":{"1.2.2":{},"1.2.3":{}}}';
 // dist-tags с той же строкой не должны сойти за версию.
 const lacks = '{"dist-tags":{"latest":"1.2.3"},"versions":{"1.2.2":{}}}';
-const all = (body: string) => Object.fromEntries(NEEDED.map((p) => [p, body]));
 
-test('sync.yml ждёт версию в npm до bunx и с тем же VERSION', () => {
-	expect(waitIdx).toBeGreaterThanOrEqual(0);
-	const bunxIdx =
-		syncSteps?.findIndex((s) => s.run?.includes('bunx "@alxwlw/stack@$VERSION"')) ?? -1;
-	expect(bunxIdx).toBeGreaterThan(waitIdx);
-	expect(waitStep?.env?.VERSION).toBe(syncSteps?.[bunxIdx]?.env?.VERSION);
-	expect(waitStep?.env?.VERSION).toBe('${{ inputs.version }}');
+test('sync.yml: токен приложения, checkout, setup, ожидание stack, вызов sync-pr — и ничего больше', () => {
+	expect(syncSteps).toHaveLength(5);
+	expect(syncSteps?.map((s) => s.uses?.replace(/@.*$/, '') ?? s.name)).toStrictEqual([
+		'actions/create-github-app-token',
+		'actions/checkout',
+		'alxwlw/stack/.github/actions/setup',
+		'дождаться версии в npm',
+		'открыть sync-PR',
+	]);
 });
 
-test('шаг ожидания ждёт stack и пакеты каталога, а не все опубликованные', () => {
-	expect(NEEDED.length).toBeGreaterThan(1);
-	expect((waitStep?.env?.PACKAGES ?? '').split(' ').toSorted()).toEqual(NEEDED);
-	expect(NEEDED).not.toContain('repo-rules');
+test('sync.yml: в run нет git, gh и чтения package.json', () => {
+	for (const s of (syncSteps ?? []).filter((x) => x.run !== undefined)) {
+		expect(s.run).not.toMatch(/\b(git|gh)\b/);
+		expect(s.run).not.toContain('package.json');
+	}
+});
+
+test('шаг вызова: окружение — версия, base, install, токен и slug приложения', () => {
+	expect(callStep?.env).toEqual({
+		VERSION: '${{ inputs.version }}',
+		BASE: '${{ inputs.base }}',
+		INSTALL: '${{ inputs.install }}',
+		GH_TOKEN: '${{ steps.app-token.outputs.token }}',
+		STACK_APP_SLUG: '${{ steps.app-token.outputs.app-slug }}',
+	});
+	expect(callStep?.if).toBeUndefined();
+});
+
+test('sync.yml ждёт версию stack до bunx и с тем же VERSION', () => {
+	expect(waitIdx).toBeGreaterThanOrEqual(0);
+	expect(callIdx).toBeGreaterThan(waitIdx);
+	expect(waitStep?.env?.VERSION).toBe('${{ inputs.version }}');
+	expect(callStep?.env?.VERSION).toBe('${{ inputs.version }}');
 });
 
 test('шаг ожидания — короткая страховка: ATTEMPTS 12', () => {
 	expect(waitStep?.env?.ATTEMPTS).toBe('12');
 });
 
-test('шаг ожидания выходит на первой попытке, когда все версии уже в реестре', () => {
-	const r = runWait(all(has), '3');
+test('шаг ожидания выходит на первой попытке, когда версия stack уже в реестре', () => {
+	const r = runWait(has, '3');
 	expect(r.status).toBe(0);
-	expect(r.calls.toSorted()).toEqual(NEEDED);
+	expect(r.calls).toEqual(['stack']);
+	expect(r.sleeps).toEqual([]);
 });
 
-test('шаг ожидания падает после ATTEMPTS попыток и называет пакет, которого нет', () => {
-	const r = runWait({ ...all(has), tsconfig: lacks }, '3');
+test('шаг ожидания спит INTERVAL только между попытками', () => {
+	const r = runWait(lacks, '3', '7');
 	expect(r.status).toBe(1);
-	// Найденные пакеты не опрашиваются повторно: первый круг — все, дальше — только tsconfig.
-	expect(r.calls.filter((p) => p === 'tsconfig')).toHaveLength(3);
-	expect(r.calls).toHaveLength(NEEDED.length + 2);
-	expect(r.out).toContain('tsconfig');
+	expect(r.sleeps).toEqual(['7', '7']);
+});
+
+test('шаг ожидания падает после ATTEMPTS попыток и называет версию', () => {
+	const r = runWait(lacks, '3');
+	expect(r.status).toBe(1);
+	expect(r.calls).toEqual(['stack', 'stack', 'stack']);
+	expect(r.out).toContain('@alxwlw/stack@1.2.3');
 });
 
 test('шаг ожидания не принимает упавший запрос к реестру за наличие версии', () => {
-	// Тела для oxlint-config нет — заглушка curl выходит с ошибкой, как curl -f на 404/5xx.
-	const { 'oxlint-config': _, ...rest } = all(has);
-	const r = runWait(rest, '2');
+	const r = runWait(undefined, '2');
 	expect(r.status).toBe(1);
-	expect(r.out).toContain('oxlint-config');
+	expect(r.calls).toHaveLength(2);
+});
+
+test('шаг вызова: base пустой, install true — bunx @alxwlw/stack@1.2.3 sync-pr --base=', () => {
+	const r = runCall({ INSTALL: 'true', BASE: '' });
+	expect(r.status).toBe(0);
+	expect(r.args).toEqual(['@alxwlw/stack@1.2.3', 'sync-pr', '--base=']);
+});
+
+test('шаг вызова: install false от старой копии канон-файла — --no-install', () => {
+	const r = runCall({ INSTALL: 'false', BASE: 'staging' });
+	expect(r.args).toEqual(['@alxwlw/stack@1.2.3', 'sync-pr', '--base=staging', '--no-install']);
+});
+
+test('шаг вызова: bunx вышел с 2 — шаг вышел с 2', () => {
+	expect(runCall({ INSTALL: 'true', BASE: '' }, 2).status).toBe(2);
 });
 
 // Renovate самого стека двигает пины канона. Пресет канона он подключать не должен: тот выключает
@@ -393,99 +449,4 @@ test('renovate.json5: typescript не поднимается на ночные �
 	const night = new RegExp(m?.[1] ?? '');
 	expect(night.test('7.1.0-dev.20261104.1')).toBe(true);
 	for (const v of ['7.1.0-beta', '7.1.0-rc', '7.1.0', '7.1.1']) expect(night.test(v)).toBe(false);
-});
-
-// Шаг доводки: репо-свой скрипт stack:post-sync. bash шага гоняется в каталоге «потребителя» с
-// заглушками proto и pnpm в PATH (порядок вызовов пишется в один файл); node настоящий.
-const postIdx = syncSteps?.findIndex((s) => s.name === 'доводка репозитория') ?? -1;
-const postStep = syncSteps?.[postIdx] as (SyncStep & { if?: string }) | undefined;
-
-function runPostSync(
-	pkg: object | string | null,
-	failing?: 'proto' | 'pnpm',
-): { status: number | null; calls: string[] } {
-	const dir = mkdtempSync(join(tmpdir(), 'sync-post-'));
-	const stubs = join(dir, 'bin');
-	const work = join(dir, 'repo');
-	const calls = join(dir, 'calls');
-	mkdirSync(stubs);
-	mkdirSync(work);
-	if (pkg !== null) {
-		writeFileSync(join(work, 'package.json'), typeof pkg === 'string' ? pkg : JSON.stringify(pkg));
-	}
-	// Шим proto отказывает node (missing_tool), пока proto install не отработал: заглушка node
-	// повторяет это и пускает настоящий node только после метки, которую ставит заглушка proto.
-	const marker = join(dir, 'installed');
-	// Не Bun.which('node'): на раннере это шим proto, а не настоящий node. Тест-раннер сам bun, и его
-	// `-p` исполняет то же выражение, что шаг отдаёт `node -p`.
-	const realNode = process.execPath;
-	for (const tool of ['proto', 'pnpm']) {
-		const touch = tool === 'proto' ? `touch '${marker}'\n` : '';
-		writeFileSync(
-			join(stubs, tool),
-			`#!/usr/bin/env bash\necho "${tool} $*|$VERSION" >> '${calls}'\n${touch}${failing === tool ? 'exit 1' : 'exit 0'}\n`,
-		);
-		chmodSync(join(stubs, tool), 0o755);
-	}
-	writeFileSync(
-		join(stubs, 'node'),
-		`#!/usr/bin/env bash\nif [ ! -f '${marker}' ]; then echo missing_tool >&2; exit 1; fi\nexec '${realNode}' "$@"\n`,
-	);
-	chmodSync(join(stubs, 'node'), 0o755);
-	const res = spawnSync('bash', ['-eo', 'pipefail', '-c', postStep?.run ?? 'exit 99'], {
-		cwd: work,
-		env: { ...process.env, PATH: `${stubs}:${process.env.PATH}`, VERSION: '1.2.3' },
-		encoding: 'utf8',
-	});
-	const n = existsSync(calls) ? readFileSync(calls, 'utf8').split('\n').filter(Boolean) : [];
-	rmSync(dir, { recursive: true, force: true });
-	return { status: res.status, calls: n };
-}
-
-test('sync.yml: шаг доводки стоит после pnpm install и до проверки изменений', () => {
-	const installIdx =
-		syncSteps?.findIndex((s) => s.run?.includes('pnpm install --no-frozen-lockfile')) ?? -1;
-	const diffIdx = syncSteps?.findIndex((s) => (s as { id?: string }).id === 'diff') ?? -1;
-	expect(installIdx).toBeGreaterThanOrEqual(0);
-	expect(postIdx).toBeGreaterThan(installIdx);
-	expect(diffIdx).toBeGreaterThan(postIdx);
-	expect(postStep?.if).toBeUndefined();
-	expect(postStep?.env?.VERSION).toBe('${{ inputs.version }}');
-});
-
-test('шаг доводки: proto install, затем pnpm run stack:post-sync с VERSION, когда скрипт есть', () => {
-	const r = runPostSync({ scripts: { 'stack:post-sync': 'echo hi' } });
-	expect(r.status).toBe(0);
-	expect(r.calls).toEqual(['proto install|1.2.3', 'pnpm run stack:post-sync|1.2.3']);
-});
-
-test('шаг доводки без скрипта: хук не зовётся, статус 0', () => {
-	for (const pkg of [{ scripts: { build: 'x' } }, {}]) {
-		const r = runPostSync(pkg);
-		expect(r.status).toBe(0);
-		expect(r.calls).toEqual(['proto install|1.2.3']);
-	}
-});
-
-test('шаг доводки без package.json пуст: ни proto, ни pnpm', () => {
-	const r = runPostSync(null);
-	expect(r.status).toBe(0);
-	expect(r.calls).toEqual([]);
-});
-
-test('битый package.json роняет шаг, хук не зовётся', () => {
-	const r = runPostSync('{');
-	expect(r.status).not.toBe(0);
-	expect(r.calls).toEqual(['proto install|1.2.3']);
-});
-
-test('падение хука роняет шаг', () => {
-	const r = runPostSync({ scripts: { 'stack:post-sync': 'x' } }, 'pnpm');
-	expect(r.status).not.toBe(0);
-});
-
-test('падение proto install роняет шаг до хука', () => {
-	const r = runPostSync({ scripts: { 'stack:post-sync': 'x' } }, 'proto');
-	expect(r.status).not.toBe(0);
-	expect(r.calls).toEqual(['proto install|1.2.3']);
 });
