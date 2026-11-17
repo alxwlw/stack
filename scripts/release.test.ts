@@ -420,7 +420,7 @@ describe('связность релиза', () => {
 	});
 
 	/**
-	 * Шаг publish job с заглушками: `npm root -g` печатает каталог, где лежит npm/bin/npm-cli.js, другие вызовы npm
+	 * Шаг publish job с заглушками: `npm root -g` печатает каталог, с установленным npm-cli.js (в подкаталогах npm, bin), другие вызовы npm
 	 * пишутся в installs; `node` на любой вызов печатает `version`; `bun` пишет аргументы в bun и выходит с 0.
 	 * Как раннер GitHub без `shell:`: `bash -e -c`.
 	 */
