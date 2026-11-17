@@ -11,6 +11,8 @@ import { dirname, join } from 'node:path';
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 
+import { parse as parseYaml } from 'yaml';
+
 import { loadCanon } from './canon.ts';
 import {
 	type GitHub,
@@ -20,6 +22,7 @@ import {
 	publishChanges,
 	type PublishOptions,
 	type RunProcess,
+	SYNC_PR_WAIT,
 	syncPr,
 	type SyncPrOptions,
 } from './sync-pr.ts';
@@ -226,6 +229,27 @@ describe('publishChanges', () => {
 		}
 	});
 
+	test("git-хуки consumer'а не получают GH_TOKEN", async () => {
+		const { dir } = gitRepo({ 'a.txt': 'a' });
+		const log = join(mkdtempSync(join(tmpdir(), 'stack-hooklog-')), 'hooks.log');
+		for (const hook of ['pre-commit', 'pre-push']) {
+			const path = join(dir, '.git', 'hooks', hook);
+			writeFileSync(path, `#!/bin/sh\necho "token=\${GH_TOKEN-unset}" >> ${log}\n`);
+			chmodSync(path, 0o755);
+		}
+		put(dir, 'b.txt', 'b');
+		const saved = process.env.GH_TOKEN;
+		process.env.GH_TOKEN = 'secret-token';
+		try {
+			const { github } = fakeGitHub();
+			expect((await run(opts(dir), github)).code).toBe(0);
+		} finally {
+			if (saved === undefined) delete process.env.GH_TOKEN;
+			else process.env.GH_TOKEN = saved;
+		}
+		expect(readFileSync(log, 'utf8')).toBe('token=unset\ntoken=unset\n');
+	});
+
 	test('prBody — текст sync.yml, список пофайлово', () => {
 		expect(prBody('1.2.3', ['a.txt', 'b/c.txt'])).toBe(
 			'Канон `@alxwlw/stack@1.2.3` применён к репозиторию.\n\nИзменённые файлы:\n- a.txt\n- b/c.txt\n\nРелиз: https://github.com/alxwlw/stack/releases/tag/v1.2.3\n',
@@ -367,6 +391,33 @@ async function runSyncPr(
 }
 
 describe('syncPr', () => {
+	test('удержанные sync строки — в stderr, не в stdout', async () => {
+		const { dir } = gitRepo({
+			'.stack.jsonc':
+				'{ "profile": "node", "with": [], "exceptions": [{ "file": ".editorconfig", "reason": "свой отступ" }] }',
+			'.editorconfig': 'свой\n',
+		});
+		const r = await runSyncPr(dir);
+		expect(r.err.join('\n')).toContain('allowed (свой отступ): .editorconfig');
+		expect(r.out.join('\n')).not.toContain('allowed (');
+	});
+
+	test('SYNC_PR_WAIT — те же ATTEMPTS и INTERVAL, что у шага ожидания sync.yml', () => {
+		const wf = parseYaml(
+			readFileSync(
+				join(import.meta.dir, '..', '..', '..', '.github', 'workflows', 'sync.yml'),
+				'utf8',
+			),
+		) as { jobs?: Record<string, { steps?: { name?: string; env?: Record<string, string> }[] }> };
+		const step = Object.values(wf.jobs ?? {})
+			.flatMap((j) => j.steps ?? [])
+			.find((x) => x.name === 'дождаться версии в npm');
+		expect(SYNC_PR_WAIT).toEqual({
+			attempts: Number(step?.env?.ATTEMPTS),
+			intervalMs: Number(step?.env?.INTERVAL) * 1000,
+		});
+	});
+
 	test('порядок шагов: sync, ожидание реестра, proto install, pnpm install, хук с VERSION, публикация', async () => {
 		const { dir } = gitRepo({ '.stack.jsonc': '{ "profile": "node" }', 'package.json': NODE_PKG });
 		const r = await runSyncPr(dir);

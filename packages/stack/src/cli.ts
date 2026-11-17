@@ -11,7 +11,7 @@ import { type Finding, isDrift } from './findings.ts';
 import { ghGitHub } from './gh.ts';
 import { initConfig } from './init.ts';
 import { npmRegistryReader } from './registry.ts';
-import { ownVersion, type RunProcess, SYNC_PR_WAIT, syncPr } from './sync-pr.ts';
+import { ownVersion, type RunProcess, SYNC_PR_WAIT, syncPr, withoutGhToken } from './sync-pr.ts';
 
 function fail(message: string): never {
 	console.error(message);
@@ -51,9 +51,11 @@ function fixHint(blocking: Finding[]): string {
 // Боевой adapter порта процессов: stdio наследуется, вывод идёт в лог job.
 const runProcess: RunProcess = (cmd, args, { cwd, env }) => {
 	// GH_TOKEN нужен только gh: установка и хук его не получают (скрипты зависимостей читают окружение).
-	const base = { ...process.env };
-	delete base.GH_TOKEN;
-	const r = spawnSync(cmd, [...args], { cwd, stdio: 'inherit', env: { ...base, ...env } });
+	const r = spawnSync(cmd, [...args], {
+		cwd,
+		stdio: 'inherit',
+		env: { ...withoutGhToken(process.env), ...env },
+	});
 	if (r.error) {
 		console.error(`sync-pr: ${cmd}: ${r.error.message}`);
 		return 127;

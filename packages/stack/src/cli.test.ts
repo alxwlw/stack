@@ -157,9 +157,11 @@ describe('sync-pr через настоящий cli', () => {
 	test('--no-install: pnpm не зовётся', async () => {
 		const log = join(mkdtempSync(join(tmpdir(), 'stack-log-')), 'pnpm.log');
 		const bin = fakeBin({ proto: 'exit 0', pnpm: `echo "$@" >> ${log}` });
-		const r = await run(['sync-pr', '--no-install'], repoDir(NODE_REPO), {
+		const dir = repoDir(NODE_REPO);
+		const r = await run(['sync-pr', '--no-install'], dir, {
 			...TOKEN_ENV,
 			...bin.env,
+			GIT_CEILING_DIRECTORIES: dirname(dir), // репозиторий не git, даже если TMPDIR внутри чужого
 		});
 		expect(r.code).toBe(1); // дальше шага установки репозиторий не git: падает publishChanges
 		expect(existsSync(log)).toBe(false);
@@ -176,7 +178,11 @@ describe('sync-pr через настоящий cli', () => {
 			'package.json':
 				'{ "name": "r", "engines": { "node": ">=26.8.1" }, "scripts": { "stack:post-sync": "x" } }',
 		});
-		await run(['sync-pr', '--no-install'], dir, { ...TOKEN_ENV, ...bin.env });
+		await run(['sync-pr', '--no-install'], dir, {
+			...TOKEN_ENV,
+			...bin.env,
+			GIT_CEILING_DIRECTORIES: dirname(dir),
+		});
 		expect(readFileSync(log, 'utf8').trim()).toBe(
 			`run stack:post-sync version=${ownVersion()} token=unset`,
 		);

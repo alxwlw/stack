@@ -110,8 +110,8 @@ There is no `--help`: argument parsing is strict, and `stack init --profile <nod
 is the only way to create the config file in the first place. Every command accepts
 `--repo <path>` to target a repo other than the current directory.
 
-`stack sync-pr [--base <branch>] [--no-install]` does what the sync workflow does after a release, in
-one command: `stack sync`; when the repo has a root `package.json`, a wait until the `@alxwlw/*`
+`stack sync-pr [--base <branch>] [--no-install]` is meant for the sync workflow (it commits the whole
+tree and force-pushes) and does what that workflow does after a release, in one command: `stack sync`; when the repo has a root `package.json`, a wait until the `@alxwlw/*`
 entries of the canon's `dev` catalog are visible in the npm registry (skipped with `--no-install`),
 `proto install`, `pnpm install --no-frozen-lockfile` (skipped with `--no-install`) and the
 `stack:post-sync` hook; then the changed files one by one, a commit by the GitHub App's bot on

@@ -40,8 +40,21 @@ interface GitResult {
 	stderr: string;
 }
 
+// Окружение дочернего процесса без GH_TOKEN: токен нужен только gh. git-хуки и скрипты зависимостей
+// consumer'а исполняют чужой код и токена не получают (sync.yml даёт его одним шагам gh).
+export function withoutGhToken(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+	const rest = { ...env };
+	delete rest.GH_TOKEN;
+	return rest;
+}
+
 function runGit(cwd: string, args: readonly string[]): GitResult {
-	const r = spawnSync('git', args, { cwd, encoding: 'utf8', maxBuffer: 1 << 30 });
+	const r = spawnSync('git', args, {
+		cwd,
+		encoding: 'utf8',
+		maxBuffer: 1 << 30,
+		env: withoutGhToken(process.env),
+	});
 	const stderr = r.error ? r.error.message : r.stderr;
 	return { ok: r.status === 0 && !r.error, stdout: r.stdout, stderr: stderr.trimEnd() };
 }
