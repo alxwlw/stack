@@ -13,31 +13,13 @@ import {
 	knownGroups,
 	loadCanon,
 	readCanonSource,
-	selectEntries,
 } from './canon.ts';
 import { type Profile, PROFILES, type StackConfig, StackConfigError } from './config.ts';
 import { RENOVATE_CONFIGS } from './repo.ts';
-import { canonFile } from './testkit.ts';
+import { canonFile, repoDir } from './testkit.ts';
 
 // Не канон-файл: README лежит рядом с пакетом, а не в canon/.
 const README_PATH = join(import.meta.dir, '..', '..', '..', 'README.md');
-
-// Ruling 33: выбор записей только фильтрует список канон-файлов — оно не замечает, если два
-// файла манифеста целят в один и тот же dest внутри одного профиля. planFiles() в этом случае
-// планирует оба, applyChanges пишет файл один раз — с последней записью, и следующий план вечно
-// видит дрейф по проигравшей записи. Гвард включает все with-группы разом, чтобы поймать дубликат,
-// который проявляется только при определённой комбинации опциональных групп.
-test('canon manifest: ни один профиль не получает два файла с одинаковым dest', () => {
-	const source = readCanonSource();
-	const allGroups = source.groups.files;
-	for (const profile of PROFILES) {
-		const dests = selectEntries(source, { profile, with: allGroups, exceptions: [] }).map(
-			(f) => f.dest,
-		);
-		const duplicates = dests.filter((dest, i) => dests.indexOf(dest) !== i);
-		expect(duplicates).toEqual([]);
-	}
-});
 
 const cfg = (over: Partial<StackConfig> = {}): StackConfig => ({
 	profile: 'node',
@@ -200,6 +182,107 @@ test('readCanonSource на настоящем canon/: все записи ман
 	expect(entries.find((e) => e.src === 'files/prototools')?.content).toBe(
 		readFileSync(join(canonDir(), 'files', 'prototools'), 'utf8'),
 	);
+});
+
+// Литеральный canon/ на диске: manifest из записей, каталог только dev, два src-файла.
+const literalCanon = (files: unknown): string =>
+	repoDir({
+		'manifest.json': JSON.stringify({ files }),
+		'catalogs.json': '{ "dev": {} }',
+		'files/a': 'A',
+		'files/b': 'B',
+	});
+
+const entry = (over: Record<string, unknown> = {}): Record<string, unknown> => ({
+	src: 'files/a',
+	dest: 'a.txt',
+	appliesTo: ['node'],
+	...over,
+});
+
+test('readCanonSource: литеральный manifest без нарушений читается', () => {
+	const { entries } = readCanonSource(
+		literalCanon([
+			entry(),
+			// Один dest в разных Profile — законно: у профиля своя версия файла.
+			entry({ src: 'files/b', appliesTo: ['contracts', 'infra'] }),
+			entry({ dest: 'seed.txt', strategy: 'create-if-absent', satisfiedBy: ['seed.json'] }),
+			entry({ dest: 'v.txt', strategy: 'verbatim', group: 'g' }),
+		]),
+	);
+	expect(entries.map((e) => [e.dest, e.content])).toEqual([
+		['a.txt', 'A'],
+		['a.txt', 'B'],
+		['seed.txt', 'A'],
+		['v.txt', 'A'],
+	]);
+});
+
+const AT = /^canon manifest: entry 0 \(a\.txt\): /.source;
+const badManifests: [string, unknown, RegExp][] = [
+	['опечатка в appliesTo', [entry({ appliesTo: ['nod'] })], new RegExp(`${AT}.*appliesTo.*nod`)],
+	['пустой appliesTo', [entry({ appliesTo: [] })], new RegExp(`${AT}.*appliesTo`)],
+	['appliesTo — строка', [entry({ appliesTo: 'node' })], new RegExp(`${AT}.*appliesTo`)],
+	[
+		'повтор профиля в appliesTo',
+		[entry({ appliesTo: ['node', 'node'] })],
+		new RegExp(`${AT}.*appliesTo`),
+	],
+	[
+		'опечатка в strategy',
+		[entry({ strategy: 'create-if-absnt' })],
+		new RegExp(`${AT}.*strategy.*create-if-absnt`),
+	],
+	[
+		'satisfiedBy без strategy',
+		[entry({ satisfiedBy: ['b.txt'] })],
+		new RegExp(`${AT}.*satisfiedBy`),
+	],
+	[
+		'satisfiedBy у verbatim',
+		[entry({ strategy: 'verbatim', satisfiedBy: ['b.txt'] })],
+		new RegExp(`${AT}.*satisfiedBy`),
+	],
+	[
+		'satisfiedBy — строка',
+		[entry({ strategy: 'create-if-absent', satisfiedBy: 'b.txt' })],
+		new RegExp(`${AT}.*satisfiedBy`),
+	],
+	['неизвестный ключ записи', [entry({ stratgy: 'verbatim' })], new RegExp(`${AT}.*stratgy`)],
+	['нет src', [{ dest: 'a.txt', appliesTo: ['node'] }], new RegExp(`${AT}.*src`)],
+	['group — число', [entry({ group: 1 })], new RegExp(`${AT}.*group`)],
+	['пустой dest', [entry({ dest: '' })], /^canon manifest: entry 0: .*dest/],
+	['запись — не объект', ['files/a'], /^canon manifest: entry 0: /],
+	['files — не массив', 'files/a', /^canon manifest: "files" must be an array$/],
+	[
+		'dest дважды в одном Profile',
+		[entry(), entry({ src: 'files/b', appliesTo: ['contracts', 'node'] })],
+		/^canon manifest: dest "a\.txt" is listed twice for profile node$/,
+	],
+	[
+		// Группы выбирает потребитель: две группы с одним dest рано или поздно включат вместе.
+		'dest дважды в одном Profile при разных group',
+		[entry({ group: 'g' }), entry({ src: 'files/b', group: 'h' })],
+		/^canon manifest: dest "a\.txt" is listed twice for profile node$/,
+	],
+];
+
+test.each(badManifests)('readCanonSource отклоняет manifest: %s', (_name, files, message) => {
+	expect(() => readCanonSource(literalCanon(files))).toThrow(message);
+});
+
+test('нарушение manifest — обычная ошибка, не StackConfigError, и раньше чтения src', () => {
+	// src не существует: без проверки manifest чтение упало бы на ENOENT.
+	const dir = literalCanon([entry({ src: 'files/missing', appliesTo: ['nod'] })]);
+	let error: unknown;
+	try {
+		readCanonSource(dir);
+	} catch (caught) {
+		error = caught;
+	}
+	expect(error).toBeInstanceOf(Error);
+	expect(error).not.toBeInstanceOf(StackConfigError);
+	expect((error as Error).message).toMatch(/^canon manifest: entry 0 \(a\.txt\): .*appliesTo/);
 });
 
 // canonFile — вход тестов в канон: файла нет в профиле (или вообще нет) — ошибка с dest и профилем, а не пустая строка.
