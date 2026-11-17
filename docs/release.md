@@ -23,11 +23,9 @@ package and nothing is published; and `rollout.yml` would dispatch any successfu
 2. Run `bun scripts/release.ts version X.Y.Z`. It writes `version` into every `packages/*/package.json`
    and the same version into each `@alxwlw/*` entry of `canon/catalogs.json`. `release.ts` finds every
    `packages/*` directory with a `package.json` by itself, and the `publish` job publishes whatever it
-   finds, so a new package needs no workflow edit. One list stays explicit: the `PACKAGES` of the wait
-   step in `.github/workflows/sync.yml`. It is a literal because `sync.yml` runs in a consumer without a
-   checkout of this repository, and it holds `stack` plus every package whose `@alxwlw/*` name is an entry
-   of `canon/catalogs.json`. When a new package lands in `catalogs.json`, add its directory name there;
-   until it is, `packages/stack/src/dogfood.test.ts` fails.
+   finds, so a new package needs no workflow edit. Nothing else lists the packages: the consumer-side wait
+   covers only `@alxwlw/stack`, and `stack sync-pr` waits for the `@alxwlw/*` entries of
+   `canon/catalogs.json` itself.
 3. Run the repository gates: `bun test`, `pnpm exec oxlint --type-aware`, `pnpm exec oxfmt --check .`,
    `pnpm exec tsc --build`, `proto run actionlint -- -color`.
 4. Open a PR titled `chore(release): X.Y.Z` and merge it.
@@ -65,8 +63,10 @@ secret (`owner/repo`, one per line); the App credentials are `STACK_BOT_APP_ID` 
 This repository is public, so the log carries counters only: `dispatched: N, failed: M`. A failed
 dispatch is counted and its message is dropped, because it can name the consumer.
 
-On the consumer side the reusable `sync.yml` keeps a short safety wait (12 attempts) for the packages it
-needs, in case the consumer's runner sees the registry later than the publisher did, and only then runs `bunx @alxwlw/stack@X.Y.Z sync` and opens the PR.
+On the consumer side the reusable `sync.yml` keeps a short safety wait (12 attempts) only for
+`@alxwlw/stack@X.Y.Z`, which `bunx` needs, in case the consumer's runner sees the registry later than the
+publisher did, then runs `bunx @alxwlw/stack@X.Y.Z sync-pr`; the command waits for the `@alxwlw/*` entries
+of the canon's `dev` catalog (12 attempts) before `pnpm install`, then opens the PR.
 
 ### VERSION arrives with the tag prefix
 
@@ -105,6 +105,10 @@ since you read it.
 
 Sync PRs dispatched before the move run the previous `sync.yml` with an explicit version. That is
 intended: the version comes from the dispatch input, not from the tag.
+
+`sync.yml` at `v1` runs `stack sync-pr`, so it needs `@alxwlw/stack` 1.11.0 or later; a dispatch of an
+older version fails with exit code 2. The first release whose `sync.yml` changed is rolled out by the
+previous `sync.yml`: the rollout runs before the tag moves.
 
 ## A new major
 

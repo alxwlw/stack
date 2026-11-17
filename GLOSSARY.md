@@ -75,7 +75,7 @@ The git tag `v1`, moved to the latest `v1.x.y` release so consumers can pin the 
 _Avoid_: latest tag, alias tag
 
 **Rollout**:
-The push of a release out to consumers: after publish, the sync workflow is dispatched in each consumer, which runs `stack sync` and opens a PR. The consumer half ships in the package as `stack sync-pr` (`packages/stack/src/sync-pr.ts`); the sync workflow still runs the same steps itself. `scripts/rollout.ts`, `.github/workflows/rollout.yml`.
+The push of a release out to consumers: after publish, the sync workflow is dispatched in each consumer, which runs `stack sync` and opens a PR. The consumer half ships in the package as `stack sync-pr` (`packages/stack/src/sync-pr.ts`); the sync workflow only waits for that package version and calls it. `scripts/rollout.ts`, `.github/workflows/rollout.yml`.
 _Avoid_: deploy, propagation
 
 ### Tests of the canon

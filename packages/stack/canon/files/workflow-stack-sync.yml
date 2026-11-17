@@ -10,7 +10,6 @@ jobs:
     uses: alxwlw/stack/.github/workflows/sync.yml@v1
     with:
       version: ${{ inputs.version }}
-      install: ${{ vars.STACK_SYNC_INSTALL != 'false' }}
       base: ${{ vars.STACK_SYNC_BASE || '' }}
       registry: ${{ vars.STACK_REGISTRY || '' }}
     secrets:
