@@ -529,6 +529,12 @@ test('readCanonSource читает manifest.json и catalogs.json по одно�
 
 const okBundle = { match: ['@x/**'], required: ['@x/a'], sameVersion: [['@x/**']] };
 
+// JSON.stringify не пишет собственный ключ __proto__ из литерала, поэтому текст файла задан строкой.
+test('parseBundles отклоняет: запись с именем __proto__', () => {
+	const text = '{"__proto__":{"match":["@x/**"],"required":["@x/a"],"sameVersion":[["@x/**"]]}}';
+	expect(() => parseBundles(text, 'b.json')).toThrow('b.json: __proto__: ');
+});
+
 test('parseBundles: правильная запись читается как есть', () => {
 	expect(parseBundles(JSON.stringify({ x: okBundle }), 'b.json')).toStrictEqual({ x: okBundle });
 });
@@ -571,7 +577,7 @@ describe('связки canon/bundles.json в каталогах канона', (
 			);
 			expect(holders.length).toBeGreaterThan(0);
 			for (const [catalog, entries] of holders) {
-				expect([catalog, b.required.filter((n) => entries[n] == null)]).toStrictEqual([
+				expect([catalog, b.required.filter((n) => !Object.hasOwn(entries, n))]).toStrictEqual([
 					catalog,
 					[],
 				]);

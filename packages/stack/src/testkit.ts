@@ -49,6 +49,8 @@ export function parseBundles(text: string, file: string): Record<string, Bundle>
 	const out: Record<string, Bundle> = {};
 	for (const name of names) {
 		const at = `${file}: ${name}`;
+		// out[name] с именем __proto__ задаёт прототип out, и запись молча выпала бы из всех сверок.
+		if (name === '__proto__') throw new Error(`${at}: имя записи занято прототипом объекта`);
 		const entry: unknown = (data as Record<string, unknown>)[name];
 		if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) {
 			throw new Error(`${at}: запись — не объект`);
