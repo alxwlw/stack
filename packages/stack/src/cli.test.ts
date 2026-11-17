@@ -76,6 +76,17 @@ test('.stack.jsonc с синтаксической ошибкой — check и s
 	expect((await run(['sync'], dir)).code).toBe(2);
 });
 
+test('.stack.jsonc с неизвестным ключом — check и sync код 2, одна строка, sync ничего не пишет', async () => {
+	const dir = repoDir(BARE);
+	writeFileSync(join(dir, '.stack.jsonc'), '{ "profile": "node", "wiht": ["libs"] }');
+	const checked = await run(['check'], dir);
+	expect(checked.code).toBe(2);
+	expect(checked.err).toContain('unknown key "wiht"');
+	expect(checked.err.trim().split('\n')).toHaveLength(1);
+	expect((await run(['sync'], dir)).code).toBe(2);
+	expect(existsSync(join(dir, '.editorconfig'))).toBe(false);
+});
+
 test('повторный sync — без изменений, код 0', async () => {
 	const dir = repoDir(BARE);
 	await run(['init', '--profile', 'node'], dir);

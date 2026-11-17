@@ -2,9 +2,10 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { type Profile, type StackConfig, StackConfigError } from './config.ts';
+import { type Profile, PROFILES, type StackConfig, StackConfigError } from './config.ts';
 
-export type SyncStrategy = 'verbatim' | 'create-if-absent';
+export const SYNC_STRATEGIES = ['verbatim', 'create-if-absent'] as const;
+export type SyncStrategy = (typeof SYNC_STRATEGIES)[number];
 
 export interface CanonFile {
 	src: string;
@@ -15,6 +16,100 @@ export interface CanonFile {
 	group?: string;
 	/** Для create-if-absent: другие пути, любой из которых тоже закрывает засев (у конфига несколько законных имён). */
 	satisfiedBy?: string[];
+}
+
+// Ключи записи manifest: Record<keyof CanonFile, true> не даёт полю без ключа и ключу без поля пройти tsc.
+const ENTRY_KEYS: Record<keyof CanonFile, true> = {
+	src: true,
+	dest: true,
+	appliesTo: true,
+	strategy: true,
+	group: true,
+	satisfiedBy: true,
+};
+
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+	typeof v === 'object' && v !== null && !Array.isArray(v);
+
+const isNonEmptyString = (v: unknown): v is string => typeof v === 'string' && v !== '';
+
+const isProfile = (v: unknown): v is Profile => PROFILES.some((known) => known === v);
+const isStrategy = (v: unknown): v is SyncStrategy => SYNC_STRATEGIES.some((known) => known === v);
+
+// Нарушение manifest — дефект пакета, а не потребителя: обычная Error, не StackConfigError.
+function checkEntry(raw: unknown, index: number): CanonFile {
+	if (!isRecord(raw)) throw new Error(`canon manifest: entry ${index}: must be an object`);
+	const at = isNonEmptyString(raw.dest) ? `entry ${index} (${raw.dest})` : `entry ${index}`;
+	function bad(what: string): never {
+		throw new Error(`canon manifest: ${at}: ${what}`);
+	}
+	for (const key of Object.keys(raw)) {
+		if (!Object.hasOwn(ENTRY_KEYS, key)) bad(`unknown key ${JSON.stringify(key)}`);
+	}
+	const { src, dest, appliesTo, strategy, group, satisfiedBy } = raw;
+	if (!isNonEmptyString(dest)) return bad('"dest" must be a non-empty string');
+	if (!isNonEmptyString(src)) return bad('"src" must be a non-empty string');
+	if (!Array.isArray(appliesTo) || appliesTo.length === 0) {
+		return bad(
+			`"appliesTo" must be a non-empty array of profiles, got ${JSON.stringify(appliesTo)}`,
+		);
+	}
+	const profiles: Profile[] = [];
+	for (const p of appliesTo as unknown[]) {
+		if (!isProfile(p) || profiles.includes(p)) {
+			return bad(
+				`"appliesTo" has ${JSON.stringify(p)}: expected each of ${PROFILES.join(', ')} at most once`,
+			);
+		}
+		profiles.push(p);
+	}
+	const file: CanonFile = { src, dest, appliesTo: profiles };
+	if (strategy !== undefined) {
+		if (!isStrategy(strategy)) {
+			return bad(
+				`"strategy" is ${JSON.stringify(strategy)}, expected one of ${SYNC_STRATEGIES.join(', ')}`,
+			);
+		}
+		file.strategy = strategy;
+	}
+	if (group !== undefined) {
+		if (!isNonEmptyString(group)) return bad('"group" must be a non-empty string');
+		file.group = group;
+	}
+	if (satisfiedBy !== undefined) {
+		if (strategy !== 'create-if-absent')
+			return bad('"satisfiedBy" needs strategy "create-if-absent"');
+		if (
+			!Array.isArray(satisfiedBy) ||
+			satisfiedBy.length === 0 ||
+			!satisfiedBy.every(isNonEmptyString)
+		) {
+			return bad('"satisfiedBy" must be a non-empty array of non-empty strings');
+		}
+		file.satisfiedBy = satisfiedBy;
+	}
+	return file;
+}
+
+// Manifest целиком, до чтения первого src. Среди записей одного Profile dest не повторяется
+// (group не учитывается: группы выбирает потребитель, любые две рано или поздно включат вместе).
+function checkManifest(raw: unknown): CanonFile[] {
+	const files = isRecord(raw) ? raw.files : undefined;
+	if (!Array.isArray(files)) throw new Error('canon manifest: "files" must be an array');
+	const entries = (files as unknown[]).map(checkEntry);
+	// Ruling 33: план напишет оба файла, применитель оставит последний, и следующий план вечно
+	// видит дрейф по проигравшей записи.
+	for (const profile of PROFILES) {
+		const seen = new Set<string>();
+		for (const e of entries) {
+			if (!e.appliesTo.includes(profile)) continue;
+			if (seen.has(e.dest)) {
+				throw new Error(`canon manifest: dest "${e.dest}" is listed twice for profile ${profile}`);
+			}
+			seen.add(e.dest);
+		}
+	}
+	return entries;
 }
 
 export type CanonCatalogs = Record<string, Record<string, string>>;
@@ -58,11 +153,9 @@ export interface CanonSource {
 // Единственное место, где canon/ читается с диска: manifest.json и catalogs.json по разу, каждый src по разу.
 // Имена групп: файловые — поле group манифеста, каталожные — ключи catalogs.json кроме dev.
 export function readCanonSource(dir: string = canonDir()): CanonSource {
-	const manifest = JSON.parse(readFileSync(join(dir, 'manifest.json'), 'utf8')) as {
-		files: CanonFile[];
-	};
+	const manifest = checkManifest(JSON.parse(readFileSync(join(dir, 'manifest.json'), 'utf8')));
 	const catalogs = JSON.parse(readFileSync(join(dir, 'catalogs.json'), 'utf8')) as CanonCatalogs;
-	const entries = manifest.files.map((f) => ({
+	const entries = manifest.map((f) => ({
 		...f,
 		content: readFileSync(join(dir, f.src), 'utf8'),
 	}));
@@ -74,9 +167,13 @@ export function readCanonSource(dir: string = canonDir()): CanonSource {
 	return { entries, catalogs, groups };
 }
 
+// Все имена, допустимые в `with`: файловые, каталожные и устаревшие — без повторов, по алфавиту.
+export function knownGroups(g: CanonGroups): string[] {
+	return [...new Set([...g.files, ...g.catalogs, ...g.deprecated])].sort();
+}
+
 export function assertKnownGroups(groups: readonly string[], source: CanonSource): void {
-	const g = source.groups;
-	const known = [...g.files, ...g.catalogs, ...g.deprecated].sort();
+	const known = knownGroups(source.groups);
 	for (const name of groups) {
 		if (!known.includes(name)) {
 			throw new StackConfigError(

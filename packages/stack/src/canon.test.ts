@@ -10,33 +10,16 @@ import {
 	canonDir,
 	canonFor,
 	type CanonSource,
+	knownGroups,
 	loadCanon,
 	readCanonSource,
-	selectEntries,
 } from './canon.ts';
 import { type Profile, PROFILES, type StackConfig, StackConfigError } from './config.ts';
 import { RENOVATE_CONFIGS } from './repo.ts';
-import { canonFile, SCHEMA_PATH } from './testkit.ts';
+import { canonFile, repoDir } from './testkit.ts';
 
 // Не канон-файл: README лежит рядом с пакетом, а не в canon/.
 const README_PATH = join(import.meta.dir, '..', '..', '..', 'README.md');
-
-// Ruling 33: выбор записей только фильтрует список канон-файлов — оно не замечает, если два
-// файла манифеста целят в один и тот же dest внутри одного профиля. planFiles() в этом случае
-// планирует оба, applyChanges пишет файл один раз — с последней записью, и следующий план вечно
-// видит дрейф по проигравшей записи. Гвард включает все with-группы разом, чтобы поймать дубликат,
-// который проявляется только при определённой комбинации опциональных групп.
-test('canon manifest: ни один профиль не получает два файла с одинаковым dest', () => {
-	const source = readCanonSource();
-	const allGroups = source.groups.files;
-	for (const profile of PROFILES) {
-		const dests = selectEntries(source, { profile, with: allGroups, exceptions: [] }).map(
-			(f) => f.dest,
-		);
-		const duplicates = dests.filter((dest, i) => dests.indexOf(dest) !== i);
-		expect(duplicates).toEqual([]);
-	}
-});
 
 const cfg = (over: Partial<StackConfig> = {}): StackConfig => ({
 	profile: 'node',
@@ -201,6 +184,131 @@ test('readCanonSource на настоящем canon/: все записи ман
 	);
 });
 
+// Литеральный canon/ на диске: manifest из записей, каталог только dev, два src-файла.
+const literalCanon = (files: unknown): string =>
+	repoDir({
+		'manifest.json': JSON.stringify({ files }),
+		'catalogs.json': '{ "dev": {} }',
+		'files/a': 'A',
+		'files/b': 'B',
+	});
+
+const entry = (over: Record<string, unknown> = {}): Record<string, unknown> => ({
+	src: 'files/a',
+	dest: 'a.txt',
+	appliesTo: ['node'],
+	...over,
+});
+
+test('readCanonSource: литеральный manifest без нарушений читается', () => {
+	const { entries } = readCanonSource(
+		literalCanon([
+			entry(),
+			// Один dest в разных Profile — законно: у профиля своя версия файла.
+			entry({ src: 'files/b', appliesTo: ['contracts', 'infra'] }),
+			entry({ dest: 'seed.txt', strategy: 'create-if-absent', satisfiedBy: ['seed.json'] }),
+			entry({ dest: 'v.txt', strategy: 'verbatim', group: 'g' }),
+		]),
+	);
+	expect(entries.map((e) => [e.dest, e.content])).toEqual([
+		['a.txt', 'A'],
+		['a.txt', 'B'],
+		['seed.txt', 'A'],
+		['v.txt', 'A'],
+	]);
+});
+
+const AT = /^canon manifest: entry 0 \(a\.txt\): /.source;
+const badManifests: [string, unknown, RegExp][] = [
+	['опечатка в appliesTo', [entry({ appliesTo: ['nod'] })], new RegExp(`${AT}.*appliesTo.*nod`)],
+	['пустой appliesTo', [entry({ appliesTo: [] })], new RegExp(`${AT}.*appliesTo`)],
+	['appliesTo — строка', [entry({ appliesTo: 'node' })], new RegExp(`${AT}.*appliesTo`)],
+	[
+		'повтор профиля в appliesTo',
+		[entry({ appliesTo: ['node', 'node'] })],
+		new RegExp(`${AT}.*appliesTo`),
+	],
+	[
+		'опечатка в strategy',
+		[entry({ strategy: 'create-if-absnt' })],
+		new RegExp(`${AT}.*strategy.*create-if-absnt`),
+	],
+	[
+		'satisfiedBy без strategy',
+		[entry({ satisfiedBy: ['b.txt'] })],
+		new RegExp(`${AT}.*satisfiedBy`),
+	],
+	[
+		'satisfiedBy у verbatim',
+		[entry({ strategy: 'verbatim', satisfiedBy: ['b.txt'] })],
+		new RegExp(`${AT}.*satisfiedBy`),
+	],
+	[
+		'satisfiedBy — строка',
+		[entry({ strategy: 'create-if-absent', satisfiedBy: 'b.txt' })],
+		new RegExp(`${AT}.*satisfiedBy`),
+	],
+	['неизвестный ключ записи', [entry({ stratgy: 'verbatim' })], new RegExp(`${AT}.*stratgy`)],
+	['нет src', [{ dest: 'a.txt', appliesTo: ['node'] }], new RegExp(`${AT}.*src`)],
+	['group — число', [entry({ group: 1 })], new RegExp(`${AT}.*group`)],
+	['пустой src', [entry({ src: '' })], new RegExp(`${AT}.*src`)],
+	['пустой group', [entry({ group: '' })], new RegExp(`${AT}.*group`)],
+	[
+		// Пустой satisfiedBy не закрывает ни одного имени: в manifest это ошибка.
+		'satisfiedBy — пустой массив',
+		[entry({ strategy: 'create-if-absent', satisfiedBy: [] })],
+		new RegExp(`${AT}.*satisfiedBy`),
+	],
+	[
+		'satisfiedBy — не строка в массиве',
+		[entry({ strategy: 'create-if-absent', satisfiedBy: [1] })],
+		new RegExp(`${AT}.*satisfiedBy`),
+	],
+	// Унаследованное имя не ключ записи: `in` пропустил бы его.
+	[
+		'унаследованное имя как ключ записи',
+		[entry({ constructor: 'x' })],
+		new RegExp(`${AT}.*constructor`),
+	],
+	['пустой dest', [entry({ dest: '' })], /^canon manifest: entry 0: .*dest/],
+	['запись — не объект', ['files/a'], /^canon manifest: entry 0: /],
+	['files — не массив', 'files/a', /^canon manifest: "files" must be an array$/],
+	[
+		'dest дважды в одном Profile',
+		[entry(), entry({ src: 'files/b', appliesTo: ['contracts', 'node'] })],
+		/^canon manifest: dest "a\.txt" is listed twice for profile node$/,
+	],
+	[
+		// Группы выбирает потребитель: две группы с одним dest рано или поздно включат вместе.
+		'dest дважды в одном Profile при разных group',
+		[entry({ group: 'g' }), entry({ src: 'files/b', group: 'h' })],
+		/^canon manifest: dest "a\.txt" is listed twice for profile node$/,
+	],
+];
+
+test.each(badManifests)('readCanonSource отклоняет manifest: %s', (_name, files, message) => {
+	expect(() => readCanonSource(literalCanon(files))).toThrow(message);
+});
+
+test('manifest.json с текстом null — files не массив', () => {
+	const dir = repoDir({ 'manifest.json': 'null', 'catalogs.json': '{ "dev": {} }' });
+	expect(() => readCanonSource(dir)).toThrow(/^canon manifest: "files" must be an array$/);
+});
+
+test('нарушение manifest — обычная ошибка, не StackConfigError, и раньше чтения src', () => {
+	// src не существует: без проверки manifest чтение упало бы на ENOENT.
+	const dir = literalCanon([entry({ src: 'files/missing', appliesTo: ['nod'] })]);
+	let error: unknown;
+	try {
+		readCanonSource(dir);
+	} catch (caught) {
+		error = caught;
+	}
+	expect(error).toBeInstanceOf(Error);
+	expect(error).not.toBeInstanceOf(StackConfigError);
+	expect((error as Error).message).toMatch(/^canon manifest: entry 0 \(a\.txt\): .*appliesTo/);
+});
+
 // canonFile — вход тестов в канон: файла нет в профиле (или вообще нет) — ошибка с dest и профилем, а не пустая строка.
 test('canonFile: файла нет в профиле — ошибка с dest и профилем', () => {
 	expect(() => canonFile('.oxfmtrc.jsonc', 'infra')).toThrow(
@@ -294,18 +402,14 @@ test('канон Renovate: засев конфига подключает пре
 	expect(seed).toContain("'config:recommended'");
 });
 
-// `init` пишет `$schema` в .stack.jsonc, редактор валидирует против него: enum групп в schema.json
-// должен покрывать все group из манифеста, каталоги кроме dev и устаревшие группы.
-test('schema.json: enum групп with = группы манифеста ∪ каталоги (кроме dev) ∪ устаревшие', () => {
-	const g = readCanonSource().groups;
-	const expectedGroups = [...g.files, ...g.catalogs, ...g.deprecated].sort();
-
-	const schema = JSON.parse(readFileSync(SCHEMA_PATH, 'utf8')) as {
-		properties?: { with?: { items?: { enum?: string[] } } };
-	};
-	const schemaEnum = schema.properties?.with?.items?.enum;
-	expect(schemaEnum).toBeDefined();
-	expect((schemaEnum ?? []).sort()).toEqual(expectedGroups);
+test('knownGroups: файловые, каталожные и устаревшие группы — без повторов, по алфавиту', () => {
+	expect(
+		knownGroups({
+			files: ['knip', 'moon-tasks'],
+			catalogs: ['libs', 'knip'],
+			deprecated: ['renovate'],
+		}),
+	).toEqual(['knip', 'libs', 'moon-tasks', 'renovate']);
 });
 
 // Строки таблицы «Group» в README: имя группы (текст между обратными кавычками первой ячейки) → вторая ячейка.
@@ -325,9 +429,7 @@ function readmeGroupRows(): Map<string, string> {
 
 test('README: таблица групп перечисляет ровно группы канона', () => {
 	const g = readCanonSource().groups;
-	expect([...readmeGroupRows().keys()].sort()).toEqual(
-		[...g.files, ...g.catalogs, ...g.deprecated].sort(),
-	);
+	expect([...readmeGroupRows().keys()].sort()).toEqual(knownGroups(g));
 });
 
 // «Seeds» в README обещает засев: файл принадлежит репозиторию, sync его не перезаписывает.

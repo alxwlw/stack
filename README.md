@@ -70,6 +70,10 @@ a helpful message.
 }
 ```
 
+These four keys are the whole file. Any other top-level key, and any key of an exception other than `file`,
+`catalog`, `name` and `reason`, is a configuration error: a typo such as `"wiht"` stops `check` and `sync`
+with exit code `2` instead of silently switching the groups off.
+
 `sync` seeds or updates every canon file that applies to the chosen profile and groups, and pins the
 canon's dependency versions into `pnpm-workspace.yaml#catalogs`. Some files are synced **verbatim**
 (canon owns the content forever, e.g. `.prototools`, `.oxfmtrc.jsonc`); others are **seeded once**
@@ -100,7 +104,7 @@ npx stack check
 
 `check` never writes anything. Exit codes: `0` — nothing has drifted; `1` — it found something:
 drift that `stack sync` fixes, or a report-only finding to fix by hand (the hint under the list counts
-each kind; the finding codes say which is which); `2` — a usage error (no `.stack.jsonc` yet, an
+each kind; the finding codes say which is which); `2` — a usage error (no `.stack.jsonc` yet, an unknown key or a malformed exception in it, an
 unknown `--profile`, an unknown group in `with` (from `.stack.jsonc` or `--with`), a bad flag).
 There is no `--help`: argument parsing is strict, and `stack init --profile <node|contracts|infra>`
 is the only way to create the config file in the first place. All three commands accept

@@ -1,7 +1,10 @@
+import { readFileSync } from 'node:fs';
+
 import { expect, test } from 'bun:test';
 
-import { readStackConfig, StackConfigError } from './config.ts';
-import { repoDir } from './testkit.ts';
+import { knownGroups, readCanonSource } from './canon.ts';
+import { readStackConfig, StackConfigError, stackConfigSchema } from './config.ts';
+import { repoDir, SCHEMA_PATH } from './testkit.ts';
 
 test('читает профиль, группы и исключения, не спотыкаясь о комментарии', () => {
 	const dir = repoDir({
@@ -129,4 +132,118 @@ test('исключение: только name, без file и catalog — оши
 		'.stack.jsonc': '{ "profile": "node", "exceptions": [{ "name": "oxlint", "reason": "r" }] }',
 	});
 	expect(() => readStackConfig(dir)).toThrow(StackConfigError);
+});
+
+function configError(text: string): Error {
+	try {
+		readStackConfig(repoDir({ '.stack.jsonc': text }));
+	} catch (error) {
+		return error as Error;
+	}
+	throw new Error('readStackConfig не бросил');
+}
+
+const KEYS = '$schema, profile, with, exceptions';
+// Каждая строка — вход, который schema.json запрещает: читатель обязан отклонить его тем же правилом.
+const rejected: [string, string, string][] = [
+	[
+		'опечатка в ключе верхнего уровня',
+		'{ "profile": "node", "wiht": ["libs"], "extra": 1 }',
+		`.stack.jsonc: unknown key "wiht", expected one of: ${KEYS}`,
+	],
+	[
+		'ключ отличается регистром',
+		'{ "Profile": "node" }',
+		`.stack.jsonc: unknown key "Profile", expected one of: ${KEYS}`,
+	],
+	[
+		// parse из jsonc-parser пишет obj['__proto__'] = value: объект подменяет прототип, скаляр теряется.
+		'ключ __proto__ с объектом',
+		'{ "profile": "node", "__proto__": { "with": ["libs"] } }',
+		`.stack.jsonc: unknown key "__proto__", expected one of: ${KEYS}`,
+	],
+	[
+		'ключ __proto__ со скаляром',
+		'{ "profile": "node", "__proto__": 5 }',
+		`.stack.jsonc: unknown key "__proto__", expected one of: ${KEYS}`,
+	],
+	[
+		'__proto__ — единственный ключ',
+		'{ "__proto__": { "profile": "node" } }',
+		`.stack.jsonc: unknown key "__proto__", expected one of: ${KEYS}`,
+	],
+	[
+		'ключ с переводом строки остаётся в одной строке сообщения',
+		'{ "profile": "node", "a\\nb": 1 }',
+		`.stack.jsonc: unknown key "a\\nb", expected one of: ${KEYS}`,
+	],
+	[
+		'исключение с ключом __proto__',
+		'{ "profile": "node", "exceptions": [{ "file": "a", "reason": "r", "__proto__": {} }] }',
+		'.stack.jsonc: exception has unknown key "__proto__", expected one of: file, catalog, name, reason: {"file":"a","reason":"r","__proto__":{}}',
+	],
+	[
+		'исключение с лишним ключом',
+		'{ "profile": "node", "exceptions": [{ "file": "a", "reason": "r", "note": "x" }] }',
+		'.stack.jsonc: exception has unknown key "note", expected one of: file, catalog, name, reason: {"file":"a","reason":"r","note":"x"}',
+	],
+	[
+		'причина — число',
+		'{ "profile": "node", "exceptions": [{ "file": "a", "reason": 5 }] }',
+		'.stack.jsonc: exception "reason" must be a non-empty string: {"file":"a","reason":5}',
+	],
+	[
+		'$schema — не строка',
+		'{ "$schema": 1, "profile": "node" }',
+		'.stack.jsonc: "$schema" must be a string',
+	],
+	[
+		'верхний уровень — массив',
+		'[{ "profile": "node" }]',
+		'.stack.jsonc: top level must be an object',
+	],
+	['верхний уровень — строка', '"node"', '.stack.jsonc: top level must be an object'],
+	['верхний уровень — null', 'null', '.stack.jsonc: top level must be an object'],
+	[
+		'исключение — строка',
+		'{ "profile": "node", "exceptions": ["a"] }',
+		'.stack.jsonc: exception must be an object: "a"',
+	],
+	[
+		'with — null',
+		'{ "profile": "node", "with": null }',
+		'.stack.jsonc: "with" must be an array of strings',
+	],
+	[
+		'exceptions — null',
+		'{ "profile": "node", "exceptions": null }',
+		'.stack.jsonc: "exceptions" must be an array',
+	],
+];
+
+test.each(rejected)('читатель отклоняет: %s', (_name, text, message) => {
+	const error = configError(text);
+	expect(error).toBeInstanceOf(StackConfigError);
+	expect(error.message).toBe(message);
+});
+
+test('$schema-строка принимается и в конфигурацию не попадает', () => {
+	const dir = repoDir({
+		'.stack.jsonc': '{ "$schema": "./node_modules/@alxwlw/stack/schema.json", "profile": "node" }',
+	});
+	expect(readStackConfig(dir)).toEqual({ profile: 'node', with: [], exceptions: [] });
+});
+
+// schema.json читает редактор по `$schema`, который пишет init; CLI его не читает. Файл — производный:
+// форму заявляют PROFILES, CONFIG_KEYS, EXCEPTION_SHAPES и группы канона, схема строится из них.
+test('schema.json равен схеме, построенной из констант читателя и групп канона', () => {
+	const built = stackConfigSchema(knownGroups(readCanonSource().groups));
+	expect(JSON.parse(readFileSync(SCHEMA_PATH, 'utf8'))).toEqual(built);
+});
+
+test('stackConfigSchema: enum групп — переданный список как есть', () => {
+	const schema = stackConfigSchema(['b', 'a']) as {
+		properties: { with: { items: { enum: string[] } } };
+	};
+	expect(schema.properties.with.items.enum).toEqual(['b', 'a']);
 });

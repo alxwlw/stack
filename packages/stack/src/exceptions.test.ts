@@ -1,17 +1,7 @@
-import { readFileSync } from 'node:fs';
-
 import { expect, test } from 'bun:test';
 
-import {
-	addressOf,
-	allowedLine,
-	type Exception,
-	EXCEPTION_SHAPES,
-	exceptionProblem,
-	resolve,
-} from './exceptions.ts';
+import { addressOf, allowedLine, type Exception, exceptionProblem, resolve } from './exceptions.ts';
 import type { Finding } from './findings.ts';
-import { SCHEMA_PATH } from './testkit.ts';
 
 const drift: Finding = {
 	code: 'file-drift',
@@ -202,38 +192,6 @@ test('stale-exception не гасится ничем: сама находка о
 	expect(r.stale.map((f) => f.target)).toEqual(['.prototools']);
 });
 
-interface SchemaBranch {
-	required: string[];
-	not?: { required?: string[]; anyOf?: { required: string[] }[] };
-}
-
-const exceptionBranches = (): SchemaBranch[] =>
-	(
-		JSON.parse(readFileSync(SCHEMA_PATH, 'utf8')) as {
-			properties: { exceptions: { items: { oneOf: SchemaBranch[] } } };
-		}
-	).properties.exceptions.items.oneOf;
-
-test('schema.json: oneOf исключения — ровно формы EXCEPTION_SHAPES', () => {
-	const shapes = exceptionBranches().map((b) => [...b.required].sort());
-	expect(shapes).toEqual(EXCEPTION_SHAPES.map((s) => [...s].sort()));
-});
-
-// Исключительность формы держит `not`: ветка запрещает адресные ключи чужих форм. Проверяем
-// структурно (валидатор JSON Schema не подключён): запрещённые ключи ветки — ровно адресные ключи
-// EXCEPTION_SHAPES минус ключи её формы. Без этого `not` можно удалить, а тест остаётся зелёным.
-test('schema.json: not каждой ветки oneOf запрещает ровно адресные ключи чужих форм', () => {
-	const addressKeys = [...new Set(EXCEPTION_SHAPES.flat())];
-	for (const branch of exceptionBranches()) {
-		const not = branch.not ?? {};
-		const forbidden = (
-			not.anyOf ? not.anyOf.flatMap((n) => n.required) : (not.required ?? [])
-		).sort();
-		const others = addressKeys.filter((k) => !branch.required.includes(k)).sort();
-		expect(forbidden).toEqual(others);
-	}
-});
-
 // Каждая строка — одна форма записи: допустима ли она. Пары «да» и «нет» стоят рядом, чтобы правило
 // нельзя было выполнить, просто приняв всё или отвергнув всё.
 const shapeTable: [string, unknown, boolean][] = [
@@ -249,15 +207,36 @@ const shapeTable: [string, unknown, boolean][] = [
 		false,
 	],
 	['без адреса — недопустима', { reason: 'r' }, false],
+	['лишний ключ — недопустима', { file: 'a', reason: 'r', note: 'x' }, false],
+	['причина-число — недопустима', { file: 'a', reason: 5 }, false],
+	['причина — пустая строка — недопустима', { file: 'a', reason: '' }, false],
+	['строка вместо записи — недопустима', 'file', false],
+	['массив вместо записи — недопустима', [], false],
 ];
 
 test.each(shapeTable)('форма исключения: %s', (_name, raw, ok) => {
 	expect(exceptionProblem(raw) === undefined).toBe(ok);
 });
 
-test('запись без причины и запись с неверной формой — разные тексты, причина первая', () => {
-	expect(exceptionProblem(null)).toBe('exception is missing "reason": null');
+test('тексты проблем записи: не объект, неизвестный ключ, причина, форма — в этом порядке', () => {
+	expect(exceptionProblem(null)).toBe('exception must be an object: null');
+	expect(exceptionProblem('file')).toBe('exception must be an object: "file"');
+	expect(exceptionProblem(['a'])).toBe('exception must be an object: ["a"]');
+	// Опечатка в самом reason: называем неизвестный ключ, а не отсутствие причины.
+	expect(exceptionProblem({ file: 'a', reson: 'r' })).toBe(
+		'exception has unknown key "reson", expected one of: file, catalog, name, reason: {"file":"a","reson":"r"}',
+	);
 	expect(exceptionProblem({ file: 'a' })).toBe('exception is missing "reason": {"file":"a"}');
+	expect(exceptionProblem({ file: 'a', reason: 5 })).toBe(
+		'exception "reason" must be a non-empty string: {"file":"a","reason":5}',
+	);
+	expect(exceptionProblem({ file: 'a', reason: '' })).toBe(
+		'exception "reason" must be a non-empty string: {"file":"a","reason":""}',
+	);
+	// Причина раньше формы.
+	expect(exceptionProblem({ file: 'a', name: 'x' })).toBe(
+		'exception is missing "reason": {"file":"a","name":"x"}',
+	);
 	expect(exceptionProblem({ file: 'a', reason: 'r', name: 'x' })).toBe(
 		'an exception must address either "file" or a "catalog"+"name" pair: {"file":"a","reason":"r","name":"x"}',
 	);

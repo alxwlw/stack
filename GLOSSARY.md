@@ -11,7 +11,7 @@ The one shared set of toolchain files and pinned dependency versions, shipped in
 _Avoid_: template, boilerplate, preset
 
 **Consumer**:
-A repository that adopts the canon and is kept in line with it by `stack sync` and `stack check` (for example `acme/app`). It states how in its `.stack.jsonc` (`readStackConfig`, `packages/stack/src/config.ts`). Loaded once per command as a value by `loadRepo` (`packages/stack/src/repo.ts`): the content of the files it could read, and which paths exist. An unreadable or unparsable `package.json` (root or nested), `pnpm-workspace.yaml`, Renovate config or moon's toolchain config becomes exactly one `unreadable-file` finding; the rules are pure functions of that value and the canon.
+A repository that adopts the canon and is kept in line with it by `stack sync` and `stack check` (for example `acme/app`). It states how in its `.stack.jsonc` (`readStackConfig`, `packages/stack/src/config.ts`). Loaded once per command as a value by `loadRepo` (`packages/stack/src/repo.ts`): the content of the files it could read, and which paths exist. An unreadable or unparsable `package.json` (root or nested), `pnpm-workspace.yaml`, Renovate config or moon's toolchain config becomes exactly one `unreadable-file` finding; the rules are pure functions of that value and the canon. The shape of that file is declared once, by `CONFIG_KEYS`, `PROFILES`, `EXCEPTION_SHAPES` and the canon's group names (`knownGroups`): `readStackConfig` rejects any other key or shape, `canonFor` rejects an unknown group, and `packages/stack/schema.json` must equal what `stackConfigSchema` builds from them.
 _Avoid_: client, downstream, target repo
 
 **Profile**:
@@ -19,13 +19,13 @@ The kind of repository a consumer declares, `node`, `contracts` or `infra`; it d
 _Avoid_: preset, flavour, template
 
 **Group**:
-A named opt-in slice of the canon, switched on through `with` in `.stack.jsonc`. There are three kinds: a **file group** (the `group` field of a manifest entry), a **catalog group** (a key of `canon/catalogs.json` other than `dev`, which every consumer gets) and a **deprecated group** (accepted for old configs, enables nothing). Names come from `readCanonSource().groups` in `packages/stack/src/canon.ts`.
+A named opt-in slice of the canon, switched on through `with` in `.stack.jsonc`. There are three kinds: a **file group** (the `group` field of a manifest entry), a **catalog group** (a key of `canon/catalogs.json` other than `dev`, which every consumer gets) and a **deprecated group** (accepted for old configs, enables nothing). Names come from `readCanonSource().groups` in `packages/stack/src/canon.ts`; `knownGroups` lists all three kinds.
 _Avoid_: feature, module, flag
 
 ### What the canon holds
 
 **Canon file**:
-A file the canon places at a path (`dest`) in a consumer, listed in `canon/manifest.json` and stored under `canon/files/`. Its strategy is either **verbatim** (the consumer's copy must equal the canon's byte for byte) or **seed** (`create-if-absent`: written once, then owned by the consumer, and only its absence is drift; not the seed of a **Fixture**, which holds no canon file). A seed may name `satisfiedBy` paths, other legitimate names that already close the seeding. `CanonFile`, `SyncStrategy` in `packages/stack/src/canon.ts`; `planFiles` in `packages/stack/src/files.ts`.
+A file the canon places at a path (`dest`) in a consumer, listed in `canon/manifest.json` and stored under `canon/files/`. Its strategy is either **verbatim** (the consumer's copy must equal the canon's byte for byte) or **seed** (`create-if-absent`: written once, then owned by the consumer, and only its absence is drift; not the seed of a **Fixture**, which holds no canon file). A seed may name `satisfiedBy` paths, other legitimate names that already close the seeding. The manifest is checked where it is read (`readCanonSource`): a profile outside `PROFILES`, a strategy outside `SYNC_STRATEGIES`, `satisfiedBy` on a verbatim file, an unknown key of an entry, or a `dest` listed twice for one profile is an error of the package, not a finding. `CanonFile`, `SyncStrategy`, `SYNC_STRATEGIES` in `packages/stack/src/canon.ts`; `planFiles` in `packages/stack/src/files.ts`.
 _Avoid_: template (for a verbatim file), config file
 
 **Catalog**:
@@ -51,7 +51,7 @@ A finding that `stack sync` can close, because it carries a `Change` (an edit of
 _Avoid_: diff, mismatch
 
 **Exception**:
-A recorded reason, in `.stack.jsonc`, why a consumer deliberately differs from the canon. It names an **address** (a `file`, or a `catalog` plus `name`) and covers the findings at that address; a covered finding is **held** (reported as suppressed, and left unapplied by `sync`). An exception that covers nothing any more is itself a `stale-exception` finding. An exception on a `catalog` plus `name` also holds the `inline-version` finding of the same package in any `package.json` (the knip case in `fixtures/node`). `Exception`, `EXCEPTION_SHAPES`, `exceptionProblem`, `covers`, `resolve`, `allowedLine` in `packages/stack/src/exceptions.ts`; `held` in `SyncResult`, `packages/stack/src/check.ts`.
+A recorded reason, in `.stack.jsonc`, why a consumer deliberately differs from the canon. It names an **address** (a `file`, or a `catalog` plus `name`) and covers the findings at that address; a covered finding is **held** (reported as suppressed, and left unapplied by `sync`). An exception that covers nothing any more is itself a `stale-exception` finding. An exception on a `catalog` plus `name` also holds the `inline-version` finding of the same package in any `package.json` (the knip case in `fixtures/node`). `Exception`, `EXCEPTION_SHAPES`, `EXCEPTION_KEYS`, `exceptionProblem`, `exceptionSchema`, `covers`, `resolve`, `allowedLine` in `packages/stack/src/exceptions.ts`; `held` in `SyncResult`, `packages/stack/src/check.ts`.
 _Avoid_: ignore, override, waiver
 
 ### Commands
