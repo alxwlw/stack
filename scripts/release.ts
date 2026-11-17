@@ -1,9 +1,17 @@
-// Модуль релиза: форма версии, lockstep-версия пакетов и проверка тега. Импортирует только `node:*`:
+// Модуль релиза: форма версии, lockstep-версия пакетов и проверка тега. Импортирует только `node:*` и
+// registry.ts пакета (тот сам — только `node:*`):
 // job dispatch воркфлоу rollout идёт с `install: false` (docs/release.md, «Why the rollout job skips install»),
 // а rollout.ts тянет отсюда stripTagPrefix.
 import { spawnSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+
+import {
+	npmRegistryReader,
+	type Registry,
+	type WaitOptions,
+	waitVisible,
+} from '../packages/stack/src/registry.ts';
 
 export const SEMVER_RE = /^\d+\.\d+\.\d+(-[\w.]+)?$/;
 
@@ -53,43 +61,15 @@ export function releasePackages(root: string): ReleasePackage[] {
 		});
 }
 
-/** Порт реестра: боевой — npm, в тестах — фейк. */
-export interface Registry {
-	has(name: string, version: string): Promise<boolean>;
+/** Порт реестра с публикацией: чтение — из пакета, `publish` — npm. В тестах — фейк. */
+export interface Publisher extends Registry {
 	publish(dir: string): Promise<void>;
 }
 
-// Abbreviated-документ: те же заголовки, что у шага ожидания в sync.yml.
-const ACCEPT = 'application/vnd.npm.install-v1+json; q=1.0, application/json; q=0.8, */*';
-
-export function npmRegistry(npm: string, root: string, timeoutMs = 30_000): Registry {
+export function npmRegistry(npm: string, root: string, timeoutMs = 30_000): Publisher {
+	const reader = npmRegistryReader(timeoutMs);
 	return {
-		async has(name, version) {
-			let res: Response;
-			try {
-				res = await fetch(`https://registry.npmjs.org/${name.replace('/', '%2f')}`, {
-					headers: { Accept: ACCEPT },
-					// Зависшее соединение иначе держит job релиза вечно.
-					signal: AbortSignal.timeout(timeoutMs),
-				});
-			} catch (e) {
-				throw new Error(
-					`${name}: реестр недоступен: ${e instanceof Error ? e.message : String(e)}`,
-				);
-			}
-			if (res.status === 404) return false;
-			if (!res.ok) throw new Error(`${name}: реестр ответил ${res.status}`);
-			let doc: { versions?: Record<string, unknown> };
-			try {
-				doc = (await res.json()) as { versions?: Record<string, unknown> };
-			} catch (e) {
-				// Не-JSON 200 или тело, оборванное abort'ом: без имени пакета лог не скажет, что чинить.
-				throw new Error(
-					`${name}: нечитаемый ответ реестра: ${e instanceof Error ? e.message : String(e)}`,
-				);
-			}
-			return doc.versions?.[version] !== undefined;
-		},
+		has: (name, version) => reader.has(name, version),
 		publish(dir) {
 			const r = spawnSync('node', [npm, 'publish', '--provenance', '--access', 'public'], {
 				cwd: join(root, 'packages', dir),
@@ -105,7 +85,7 @@ export function npmRegistry(npm: string, root: string, timeoutMs = 30_000): Regi
 /** Публикует `published`-пакеты по порядку; уже лежащую в реестре версию пропускает (повторный запуск тега). */
 export async function publishAll(
 	pkgs: ReleasePackage[],
-	registry: Registry,
+	registry: Publisher,
 ): Promise<{ published: string[]; skipped: string[] }> {
 	const published: string[] = [];
 	const skipped: string[] = [];
@@ -124,30 +104,15 @@ export async function publishAll(
 /** Бюджет ожидания реестра после публикации; docs/release.md («60 attempts, 10 s apart») сверяется тестом. */
 export const WAIT_BUDGET = { attempts: 60, intervalMs: 10_000 };
 
-/** Ждёт, пока все `published`-пакеты появятся в реестре с версией; видимые повторно не опрашивает. */
-export async function waitVisible(
+/** Ждёт, пока все `published`-пакеты появятся в реестре с версией релиза. */
+export function waitPublished(
 	pkgs: ReleasePackage[],
 	version: string,
 	registry: Registry,
-	opts: { attempts: number; intervalMs: number; sleep?: (ms: number) => Promise<void> },
+	opts: WaitOptions,
 ): Promise<void> {
-	const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
-	let pending = pkgs.filter((p) => p.published);
-	for (let i = 1; i <= opts.attempts; i++) {
-		const left: ReleasePackage[] = [];
-		for (const pkg of pending) {
-			// Сбой реестра (5xx, сеть) — «ещё не видно» на этой попытке, как в старом шаге sync.yml.
-			const visible = await registry.has(pkg.name, version).catch(() => false);
-			if (visible) console.log(`${pkg.name}@${version} есть в реестре`);
-			else left.push(pkg);
-		}
-		pending = left;
-		if (pending.length === 0) return;
-		if (i < opts.attempts) await sleep(opts.intervalMs);
-	}
-	throw new Error(
-		`за ${opts.attempts} попыток в реестре не появилась версия ${version}: ${pending.map((p) => p.name).join(' ')}`,
-	);
+	const wanted = pkgs.filter((p) => p.published).map((p) => ({ name: p.name, version }));
+	return waitVisible(wanted, registry, opts);
 }
 
 /**
@@ -215,7 +180,7 @@ if (import.meta.main) {
 			const version = lockstepVersion(pkgs);
 			const registry = npmRegistry(npm, process.cwd());
 			await publishAll(pkgs, registry);
-			await waitVisible(pkgs, version, registry, WAIT_BUDGET);
+			await waitPublished(pkgs, version, registry, WAIT_BUDGET);
 		} catch (e) {
 			console.error(e instanceof Error ? e.message : String(e));
 			process.exit(1);
