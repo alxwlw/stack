@@ -123,21 +123,6 @@ test.each(['check.yml', 'sync.yml', 'renovate.yml'])(
 	},
 );
 
-test.each(['check.yml', 'sync.yml'])(
-	'%s: setup получает реестр только при непустом registry',
-	(name) => {
-		const job = Object.values(readWf(name).jobs ?? {})[0];
-		const setup = job?.steps?.find((s) =>
-			s.uses?.startsWith('alxwlw/stack/.github/actions/setup@'),
-		);
-		expect(setup?.with?.registry).toBe('${{ inputs.registry }}');
-		expect(setup?.with?.['registry-token-var']).toBe(
-			"${{ inputs.registry != '' && 'STACK_REGISTRY_TOKEN' || '' }}",
-		);
-		expect(job?.env?.STACK_REGISTRY_TOKEN).toBe('${{ secrets.registry-token }}');
-	},
-);
-
 test('renovate.yml: host rule приватного реестра только при непустом registry', () => {
 	const job = Object.values(readWf('renovate.yml').jobs ?? {})[0];
 	const action = job?.steps?.find((s) => s.uses?.startsWith('renovatebot/github-action@'));

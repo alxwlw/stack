@@ -21,6 +21,7 @@ jobs:
     runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
     env:
       TEST_TOKEN: not-a-real-token
+      STACK_REGISTRY_TOKEN: not-a-real-token
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
@@ -33,6 +34,8 @@ jobs:
           # shellcheck disable=SC2016 # ${TEST_TOKEN} должен остаться литералом
           grep -qxF '//npm.pkg.github.com/:_authToken=${TEST_TOKEN}' "$HOME/.npmrc"
           if grep -qF 'not-a-real-token' "$HOME/.npmrc"; then exit 1; fi
+          # умолчание не вмешалось: строка с токеном одна
+          test "$(grep -c '^//npm.pkg.github.com/:_authToken=' "$HOME/.npmrc")" = 1
       - name: пути к бинарникам экспортированы
         run: test -x "$ACTIONLINT_BIN" && test -x "$SHELLCHECK_BIN"
       - name: повторный вызов
@@ -45,6 +48,23 @@ jobs:
         run: |
           # shellcheck disable=SC2016
           test "$(grep -cxF '//npm.pkg.github.com/:_authToken=${TEST_TOKEN}' "$HOME/.npmrc")" = 1
+      - name: только registry — умолчание имени переменной
+        uses: ./.github/actions/setup
+        with:
+          install: false
+          registry: npm.example.com
+      - name: повторный вызов только с registry
+        uses: ./.github/actions/setup
+        with:
+          install: false
+          registry: npm.example.com
+      - name: в ~/.npmrc ссылка на STACK_REGISTRY_TOKEN, одна строка, значения нет
+        run: |
+          # shellcheck disable=SC2016 # ${STACK_REGISTRY_TOKEN} должен остаться литералом
+          grep -qxF '//npm.example.com/:_authToken=${STACK_REGISTRY_TOKEN}' "$HOME/.npmrc"
+          # shellcheck disable=SC2016
+          test "$(grep -cxF '//npm.example.com/:_authToken=${STACK_REGISTRY_TOKEN}' "$HOME/.npmrc")" = 1
+          if grep -qF 'not-a-real-token' "$HOME/.npmrc"; then exit 1; fi
       - id: bad-var
         continue-on-error: true
         uses: ./.github/actions/setup
@@ -52,19 +72,19 @@ jobs:
           install: false
           registry: npm.pkg.github.com
           registry-token-var: 'X; touch /tmp/pwned'
-      - id: half
+      - id: var-only
         continue-on-error: true
         uses: ./.github/actions/setup
         with:
           install: false
-          registry: npm.pkg.github.com
+          registry-token-var: TEST_TOKEN
       - name: неверные входы отклонены, инъекции не было
         env:
           BAD_VAR: ${{ steps.bad-var.outcome }}
-          HALF: ${{ steps.half.outcome }}
+          VAR_ONLY: ${{ steps.var-only.outcome }}
         run: |
           test "$BAD_VAR" = failure
-          test "$HALF" = failure
+          test "$VAR_ONLY" = failure
           test ! -e /tmp/pwned
 
   setup-action-bare:
