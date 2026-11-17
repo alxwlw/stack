@@ -72,8 +72,9 @@ of the canon's `dev` catalog (12 attempts) before `pnpm install`, then opens the
 
 For a tag push, `github.event.workflow_run.head_branch` is the tag name (`v1.2.3`), not the bare
 version. `rollout.yml` passes it as `VERSION`, and `stripTagPrefix` in `scripts/release.ts` removes the
-leading `v` and throws on anything that is not a semver version. Without that, the branch of the sync PR
-would be `stack/vv1.2.3`, and a stray ref such as `main` would be fanned out to every consumer.
+leading `v` and throws on anything that is not a semver version. Without that, the consumer's `sync.yml`
+would wait for, and `bunx` would ask for, `@alxwlw/stack@v1.2.3`, a version that does not exist, so every
+consumer would fail; and a stray ref such as `main` would be fanned out to every consumer.
 
 ### Why the rollout job skips install
 

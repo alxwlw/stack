@@ -282,7 +282,7 @@ describe('publishChanges', () => {
 		for (const l of lines) expect(l).toBe('token=unset');
 	});
 
-	test('prBody — текст sync.yml, список пофайлово', () => {
+	test('prBody — текст описания PR, список пофайлово', () => {
 		expect(prBody('1.2.3', ['a.txt', 'b/c.txt'])).toBe(
 			'Канон `@alxwlw/stack@1.2.3` применён к репозиторию.\n\nИзменённые файлы:\n- a.txt\n- b/c.txt\n\nРелиз: https://github.com/alxwlw/stack/releases/tag/v1.2.3\n',
 		);

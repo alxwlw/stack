@@ -41,7 +41,7 @@ interface GitResult {
 }
 
 // Окружение дочернего процесса без GH_TOKEN: токен нужен только gh. git-хуки и скрипты зависимостей
-// consumer'а исполняют чужой код и токена не получают (sync.yml даёт его одним шагам gh).
+// consumer'а исполняют чужой код и токена не получают (sync.yml даёт его одному шагу вызова, а команда не передаёт ни git, ни proto, ни pnpm, ни хуку).
 export function withoutGhToken(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 	const rest = { ...env };
 	delete rest.GH_TOKEN;
@@ -83,7 +83,7 @@ function changedFiles(repoRoot: string): string[] {
 const message = (error: unknown): string =>
 	error instanceof Error ? error.message : String(error);
 
-// Шаги sync.yml:113-173 после установки и хука: список файлов, пользователь бота, ветка, commit, force-push, PR.
+// Всё после установки и хука: список изменённых файлов, пользователь бота, ветка, commit, force-push, PR.
 export async function publishChanges(
 	opts: PublishOptions,
 	github: GitHub,

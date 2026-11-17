@@ -216,6 +216,33 @@ esac`,
 		expect(realpathSync(cwd ?? '')).toBe(realpathSync(dir));
 		expect(args).toContain('--base staging');
 	});
+
+	test('пустой --base= (потребитель без STACK_SYNC_BASE) — gh pr create без --base', async () => {
+		const { dir } = gitRepo(NODE_REPO_NO_PKG);
+		const log = join(mkdtempSync(join(tmpdir(), 'stack-log-')), 'gh.log');
+		const bin = fakeBin({
+			gh: `case "$1 $2" in
+"api /users/acme-bot[bot]") echo 42;;
+"pr list") echo;;
+"pr create") echo "$*" >> ${log}; cat >/dev/null; echo https://github.com/acme/app/pull/9;;
+*) echo "unexpected $*" >&2; exit 9;;
+esac`,
+		});
+		const proc = Bun.spawn(['bun', CLI, 'sync-pr', '--base=', '--no-install', '--repo', dir], {
+			stdout: 'pipe',
+			stderr: 'pipe',
+			env: { ...process.env, ...TOKEN_ENV, ...bin.env },
+		});
+		const [out, err] = await Promise.all([
+			new Response(proc.stdout).text(),
+			new Response(proc.stderr).text(),
+		]);
+		expect({ code: await proc.exited, err }).toEqual({ code: 0, err: '' });
+		expect(out).toContain('opened PR https://github.com/acme/app/pull/9');
+		const args = readFileSync(log, 'utf8').trim();
+		expect(args).toContain('pr create');
+		expect(args).not.toContain('--base');
+	});
 });
 
 test('init без --profile — код 2', async () => {

@@ -183,7 +183,8 @@ const callStep = syncSteps?.[callIdx];
 function runWait(
 	body: string | undefined,
 	attempts: string,
-): { status: number | null; calls: string[]; out: string } {
+	interval = '0',
+): { status: number | null; calls: string[]; out: string; sleeps: string[] } {
 	const dir = mkdtempSync(join(tmpdir(), 'sync-wait-'));
 	const calls = join(dir, 'calls');
 	const reply = body === undefined ? 'exit 22' : `cat '${join(dir, 'body.json')}'`;
@@ -193,19 +194,25 @@ function runWait(
 		`#!/usr/bin/env bash\np="\${!#}"; p="\${p##*%2f}"\necho "$p" >> '${calls}'\n${reply}\n`,
 	);
 	chmodSync(join(dir, 'curl'), 0o755);
-	const res = spawnSync('bash', ['-eo', 'pipefail', '-c', waitStep?.run ?? 'exit 99'], {
+	// Заглушка sleep пишет аргумент и не спит: паузы проверяются значением, а не временем.
+	const sleeps = join(dir, 'sleeps');
+	writeFileSync(join(dir, 'sleep'), `#!/usr/bin/env bash\necho "$1" >> '${sleeps}'\n`);
+	chmodSync(join(dir, 'sleep'), 0o755);
+	// Как раннер GitHub без `shell:`: `bash -e {0}`, без pipefail.
+	const res = spawnSync('bash', ['-e', '-c', waitStep?.run ?? 'exit 99'], {
 		env: {
 			...process.env,
 			PATH: `${dir}:${process.env.PATH}`,
 			VERSION: '1.2.3',
 			ATTEMPTS: attempts,
-			INTERVAL: '0',
+			INTERVAL: interval,
 		},
 		encoding: 'utf8',
 	});
 	const n = existsSync(calls) ? readFileSync(calls, 'utf8').split('\n').filter(Boolean) : [];
+	const slept = existsSync(sleeps) ? readFileSync(sleeps, 'utf8').split('\n').filter(Boolean) : [];
 	rmSync(dir, { recursive: true, force: true });
-	return { status: res.status, calls: n, out: res.stdout };
+	return { status: res.status, calls: n, out: res.stdout, sleeps: slept };
 }
 
 /** Шаг вызова с заглушкой bunx: аргументы пишутся в файл по строке, код выхода — `exit`. */
@@ -220,7 +227,7 @@ function runCall(
 		`#!/usr/bin/env bash\nprintf '%s\\n' "$@" > '${argsFile}'\nexit ${exit}\n`,
 	);
 	chmodSync(join(dir, 'bunx'), 0o755);
-	const res = spawnSync('bash', ['-eo', 'pipefail', '-c', callStep?.run ?? 'exit 99'], {
+	const res = spawnSync('bash', ['-e', '-c', callStep?.run ?? 'exit 99'], {
 		env: {
 			...process.env,
 			PATH: `${dir}:${process.env.PATH}`,
@@ -241,7 +248,8 @@ const has = '{"versions":{"1.2.2":{},"1.2.3":{}}}';
 const lacks = '{"dist-tags":{"latest":"1.2.3"},"versions":{"1.2.2":{}}}';
 
 test('sync.yml: токен приложения, checkout, setup, ожидание stack, вызов sync-pr — и ничего больше', () => {
-	expect(syncSteps?.map((s) => s.uses?.replace(/@.*$/, '') ?? s.name)).toEqual([
+	expect(syncSteps).toHaveLength(5);
+	expect(syncSteps?.map((s) => s.uses?.replace(/@.*$/, '') ?? s.name)).toStrictEqual([
 		'actions/create-github-app-token',
 		'actions/checkout',
 		'alxwlw/stack/.github/actions/setup',
@@ -283,6 +291,13 @@ test('шаг ожидания выходит на первой попытке, �
 	const r = runWait(has, '3');
 	expect(r.status).toBe(0);
 	expect(r.calls).toEqual(['stack']);
+	expect(r.sleeps).toEqual([]);
+});
+
+test('шаг ожидания спит INTERVAL только между попытками', () => {
+	const r = runWait(lacks, '3', '7');
+	expect(r.status).toBe(1);
+	expect(r.sleeps).toEqual(['7', '7']);
 });
 
 test('шаг ожидания падает после ATTEMPTS попыток и называет версию', () => {
