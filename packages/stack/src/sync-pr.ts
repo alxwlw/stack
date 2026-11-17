@@ -48,8 +48,11 @@ export function withoutGhToken(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 	return rest;
 }
 
+// Хуки consumer'а (их ставит `pnpm install`) не роняют и не блокируют sync-PR: результат проверяет CI
+// consumer'а на PR. `-c` из командной строки сильнее `core.hooksPath` из `.git/config`, а `.git/hooks`
+// при заданном hooksPath не читается вовсе.
 function runGit(cwd: string, args: readonly string[]): GitResult {
-	const r = spawnSync('git', args, {
+	const r = spawnSync('git', ['-c', 'core.hooksPath=/dev/null', ...args], {
 		cwd,
 		encoding: 'utf8',
 		maxBuffer: 1 << 30,

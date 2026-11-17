@@ -115,7 +115,9 @@ tree and force-pushes) and does what that workflow does after a release, in one 
 entries of the canon's `dev` catalog are visible in the npm registry (skipped with `--no-install`),
 `proto install`, `pnpm install --no-frozen-lockfile` (skipped with `--no-install`) and the
 `stack:post-sync` hook; then the changed files one by one, a commit by the GitHub App's bot on
-`stack/v<version>`, a force-push and a PR (or the open one, reused). The version is the package's own;
+`stack/v<version>`, a force-push and a PR (or the open one, reused). The bot's git commands run without the repository's git
+hooks (`core.hooksPath` points at `/dev/null`, so neither `.git/hooks` nor a hooks path set by husky or
+lefthook runs); the consumer's CI on the PR checks the result. The version is the package's own;
 `GH_TOKEN` and `STACK_APP_SLUG` come from the environment. Exit codes: `0` — PR opened or updated, or
 nothing to commit; `1` — a step failed; `2` — a usage or configuration error.
 
