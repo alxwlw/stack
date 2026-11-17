@@ -283,3 +283,9 @@ test('minimumReleaseAgeExclude — alias на последовательност
 	expect(drift(text)).toEqual([]);
 	expect(rendered(text)).toBe(text);
 });
+
+test('ключ без значения с комментарием — комментарий остаётся', () => {
+	const out = rendered(ws(`${AGE}${KEY}: # держим\n`));
+	expect(list(out)).toEqual(['@alxwlw/stack@1.10.0']);
+	expect(out).toContain('# держим');
+});

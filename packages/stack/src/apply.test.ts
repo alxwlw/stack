@@ -135,6 +135,15 @@ test('yaml-append: существующая последовательность
 	expect(out).toContain("  - '@scope/b@2'\n");
 });
 
+test.each([
+	['в строке ключа', 'list: # держим\nnext: 1\n', '# держим'],
+	['под ключом', 'list:\n  # потом\nnext: 1\n', '# потом'],
+])('yaml-append: ключ без значения — комментарий %s остаётся', (_, current, comment) => {
+	const out = render(current, [append('a@1')]);
+	expect(js(out)).toEqual({ list: ['a@1'], next: 1 });
+	expect(out).toContain(comment);
+});
+
 test('yaml-append: нестроковые элементы последовательности остаются на месте', () => {
 	const out = render('list:\n  - 5\n  - { a: b }\n  -\n', [append('a@1')]);
 	expect(js(out).list).toEqual([5, { a: 'b' }, null, 'a@1']);

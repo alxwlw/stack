@@ -29,7 +29,11 @@ function renderFile(file: string, current: string | undefined, changes: Change[]
 				const node = doc.getIn(c.path, true);
 				if (isSeq(node)) node.add(doc.createNode(c.value));
 				else if (node === undefined || (isScalar(node) && node.value === null)) {
-					doc.setIn(c.path, doc.createNode([c.value]));
+					// yaml держит комментарии пустого ключа на null-скаляре: переносим на новую последовательность.
+					const seq = doc.createNode([c.value]);
+					if (node?.comment) seq.comment = node.comment;
+					if (node?.commentBefore) seq.commentBefore = node.commentBefore;
+					doc.setIn(c.path, seq);
 				} else throw new Error(`${file}: ${c.path.join('.')} is not a sequence`);
 			}
 		}
