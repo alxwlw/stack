@@ -15,6 +15,7 @@ import { dirname, join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { parse as parseJsonc } from 'jsonc-parser';
 
+import { ownVersion } from './sync-pr.ts';
 import { gitRepo, isolateGitConfig, repoDir } from './testkit.ts';
 
 const CLI = join(import.meta.dir, 'cli.ts');
@@ -162,6 +163,23 @@ describe('sync-pr через настоящий cli', () => {
 		});
 		expect(r.code).toBe(1); // дальше шага установки репозиторий не git: падает publishChanges
 		expect(existsSync(log)).toBe(false);
+	});
+
+	test('хук stack:post-sync получает VERSION пакета и не получает GH_TOKEN', async () => {
+		const log = join(mkdtempSync(join(tmpdir(), 'stack-log-')), 'hook.log');
+		const bin = fakeBin({
+			proto: 'exit 0',
+			pnpm: `echo "$1 $2 version=$VERSION token=\${GH_TOKEN-unset}" >> ${log}`,
+		});
+		const dir = repoDir({
+			...NODE_REPO,
+			'package.json':
+				'{ "name": "r", "engines": { "node": ">=26.8.1" }, "scripts": { "stack:post-sync": "x" } }',
+		});
+		await run(['sync-pr', '--no-install'], dir, { ...TOKEN_ENV, ...bin.env });
+		expect(readFileSync(log, 'utf8').trim()).toBe(
+			`run stack:post-sync version=${ownVersion()} token=unset`,
+		);
 	});
 
 	test('gh идёт в каталог --repo, --base доходит до gh pr create, out и err разведены', async () => {
