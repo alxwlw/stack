@@ -13,6 +13,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { parse as parseYaml } from 'yaml';
 
 import { loadCanon } from './canon.ts';
+import type { Served } from './registry.ts';
 import {
 	type GitHub,
 	type NewPr,
@@ -385,7 +386,7 @@ async function runSyncPr(
 	over: Partial<SyncPrOptions> = {},
 	handlers: {
 		run?: (line: string) => number | undefined;
-		served?: boolean;
+		served?: Served;
 		github?: GitHub;
 	} = {},
 ) {
@@ -417,7 +418,7 @@ async function runSyncPr(
 				},
 				served: async (name, version) => {
 					journal.push(`served ${name}@${version}`);
-					return handlers.served ?? true;
+					return handlers.served ?? 'served';
 				},
 			},
 			print: (stream, line) => (stream === 'out' ? out : err).push(line),
@@ -549,7 +550,7 @@ describe('syncPr', () => {
 
 	test('реестр не показал версию — код 1, процессов нет', async () => {
 		const { dir } = gitRepo({ '.stack.jsonc': '{ "profile": "node" }', 'package.json': NODE_PKG });
-		const r = await runSyncPr(dir, {}, { served: false });
+		const r = await runSyncPr(dir, {}, { served: 'unlisted' });
 		expect(r.code).toBe(1);
 		expect(r.err.at(-1)).toStartWith('sync-pr: за 2 попыток в реестре не появились версии:');
 		expect(r.journal.every((l) => l.startsWith('served '))).toBe(true);

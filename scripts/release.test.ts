@@ -114,7 +114,7 @@ const pkg = (dir: string, over: Partial<ReleasePackage> = {}): ReleasePackage =>
 
 /**
  * Фейковый реестр: `has` читает `present` («опубликовано» — версия в packument) и `hasFails`,
- * `served` — отдельное множество `served` («tarball отдаётся») и `visibleAfter` — сколько опросов пакет «не виден».
+ * `served` — отдельное множество `served` («tarball отдаётся», состояние `'served'`, иначе `'unlisted'`) и `visibleAfter` — сколько опросов пакет «не виден».
  */
 function fakeRegistry(
 	opts: {
@@ -140,7 +140,9 @@ function fakeRegistry(
 			polls.set(name, n);
 			const after = opts.visibleAfter?.[name];
 			return Promise.resolve(
-				served.has(`${name}@${version}`) || (after !== undefined && n >= after),
+				served.has(`${name}@${version}`) || (after !== undefined && n >= after)
+					? 'served'
+					: 'unlisted',
 			);
 		},
 		publish(dir) {
@@ -503,26 +505,29 @@ describe('связность релиза', () => {
 		return { status: res.status, out: res.stdout + res.stderr, installs, bun };
 	}
 
-	// [версия npm, код шага]
-	const npmVersions: [string, number][] = [
-		['10.9.2', 1],
-		['11.5.0', 1],
-		['11.5.1', 0],
-		['11.10.0', 0],
-		['12.0.0', 0],
+	// [вывод npm --version, код шага, фрагмент вывода]
+	const npmVersions: [string, number, string][] = [
+		['10.9.2', 1, 'npm 10.9.2 < 11.5.1'],
+		['11.5.0', 1, 'npm 11.5.0 < 11.5.1'],
+		['11.5.1', 0, 'npm 11.5.1 ok'],
+		['11.10.0', 0, 'npm 11.10.0 ok'],
+		['12.0.0', 0, 'npm 12.0.0 ok'],
+		['abc', 1, 'npm --version вернул «abc» — не версия'],
+		['v11.6.0', 1, 'npm --version вернул «v11.6.0» — не версия'],
+		['', 1, 'npm --version вернул «» — не версия'],
+		['12', 1, 'npm --version вернул «12» — не версия'],
 	];
 
 	test.each(npmVersions)(
-		'шаг publish: npm %s — код %d, сообщение и сравнение на 11.5.1',
-		(version, status) => {
+		'шаг publish: npm «%s» — код %d, в выводе «%s»',
+		(version, status, message) => {
 			const r = runPublishStep(version);
 			expect(r.status).toBe(status);
 			expect(r.installs).toStrictEqual(['i -g npm@^11.5.1']);
+			expect(r.out).toContain(message);
 			if (status === 0) {
-				expect(r.out).toContain(`npm ${version} ok`);
 				expect(r.bun).toStrictEqual(['scripts/release.ts publish']);
 			} else {
-				expect(r.out).toContain(`npm ${version} < 11.5.1`);
 				expect(r.bun).toStrictEqual([]);
 			}
 		},

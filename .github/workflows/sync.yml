@@ -61,7 +61,7 @@ jobs:
       # Опрашиваем ту же abbreviated-запись (URL и Accept), которую следом запросит bunx. Версия в
       # packument ещё не значит, что tarball отдаётся (rollout 1.12.0: tarball 404 при видимом
       # packument), поэтому ждём и tarball: HEAD на dist.tarball из packument, тот URL, который
-      # следом скачает bunx.
+      # следом скачает bunx. В ::error:: идёт причина последней попытки.
       - name: дождаться версии в npm
         env:
           VERSION: ${{ inputs.version }}
@@ -70,15 +70,19 @@ jobs:
         run: |
           accept='application/vnd.npm.install-v1+json; q=1.0, application/json; q=0.8, */*'
           for i in $(seq 1 "$ATTEMPTS"); do
-            if url=$(curl -fsS --max-time 30 -H "Accept: $accept" "https://registry.npmjs.org/@alxwlw%2fstack" |
-              node -e 'const t = JSON.parse(require("fs").readFileSync(0, "utf8")).versions?.[process.env.VERSION]?.dist?.tarball; if (typeof t !== "string") process.exit(1); console.log(t)') &&
-              curl -fsS --max-time 30 -I "$url" >/dev/null; then
+            if ! doc=$(curl -fsS --max-time 30 -H "Accept: $accept" "https://registry.npmjs.org/@alxwlw%2fstack"); then
+              why='реестр не ответил'
+            elif ! url=$(printf '%s' "$doc" | node -e 'const t = JSON.parse(require("fs").readFileSync(0, "utf8")).versions?.[process.env.VERSION]?.dist?.tarball; if (typeof t !== "string") process.exit(1); console.log(t)'); then
+              why='нет в packument'
+            elif ! curl -fsS --max-time 30 -I "$url" >/dev/null; then
+              why='в packument есть, tarball не отдаётся'
+            else
               echo "@alxwlw/stack@$VERSION есть в реестре, tarball отдаётся"
               exit 0
             fi
             if [ "$i" -lt "$ATTEMPTS" ]; then sleep "$INTERVAL"; fi
           done
-          echo "::error::за $ATTEMPTS попыток в реестре не появилась версия @alxwlw/stack@$VERSION"
+          echo "::error::за $ATTEMPTS попыток в реестре не появилась версия @alxwlw/stack@$VERSION ($why)"
           exit 1
       # Команда — пакета той же версии (>= 1.11.0, первый релиз с sync-pr); dispatch более старой версии
       # падает с ошибкой использования (код 2: версии до 1.11.0 не знают --base) — так задумано. INSTALL приходит только от копий

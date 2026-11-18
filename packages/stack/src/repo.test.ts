@@ -40,6 +40,13 @@ test('битый корневой package.json — одна unreadable-file, с 
 	}
 });
 
+test('битый package.json — причина из message SyntaxError, без имени класса', () => {
+	const repo = fromTexts(new Map([['package.json', '{']]));
+	expect(repo.unreadable[0]?.message).toBe(
+		`package.json does not parse: JSON Parse error: Expected '}'`,
+	);
+});
+
 test('битый вложенный package.json — одна находка на файл, соседний разобран', () => {
 	const repo = fromTexts(
 		new Map([
@@ -313,6 +320,20 @@ test('битый pnpm-workspace.yaml — в находке только перв
 		'pnpm-workspace.yaml does not parse: Flow sequence in block collection must be sufficiently indented and end with a ] at line 2, column 1:',
 	);
 	expect(message).not.toContain('\n');
+});
+
+test('битый moon toolchains — в находке первая строка ошибки yaml', () => {
+	const repo = fromTexts(new Map([[MOON_TOOLCHAINS, 'a: [\n']]));
+	expect(repo.unreadable.map((f) => f.message)).toEqual([
+		`${MOON_TOOLCHAINS} does not parse: Flow sequence in block collection must be sufficiently indented and end with a ] at line 2, column 1:`,
+	]);
+});
+
+test('битый moon workspace — в находке первая строка ошибки yaml', () => {
+	const repo = fromTexts(new Map([['.moon/workspace.yml', 'a: [\n']]));
+	expect(repo.unreadable.map((f) => f.message)).toEqual([
+		'.moon/workspace.yml does not parse: Flow sequence in block collection must be sufficiently indented and end with a ] at line 2, column 1:',
+	]);
 });
 
 test('paths: ключи files и существующие нечитаемые пути; missing пути не даёт', () => {

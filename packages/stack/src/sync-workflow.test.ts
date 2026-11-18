@@ -180,12 +180,18 @@ test('версия в packument, tarball 404 — ждёт и падает пос
 		`${HEAD} ${TARBALL}`,
 	]);
 	expect(r.out).toContain('@alxwlw/stack@1.2.3');
+	expect(r.out).toContain(
+		'::error::за 3 попыток в реестре не появилась версия @alxwlw/stack@1.2.3 (в packument есть, tarball не отдаётся)',
+	);
 });
 
 test('версия без dist.tarball — HEAD не уходит', () => {
 	const r = runWait(noTarball, '2');
 	expect(r.status).toBe(1);
 	expect(r.calls).toStrictEqual([PACKUMENT, PACKUMENT]);
+	expect(r.out).toContain(
+		'::error::за 2 попыток в реестре не появилась версия @alxwlw/stack@1.2.3 (нет в packument)',
+	);
 });
 
 test('шаг ожидания спит INTERVAL только между попытками', () => {
@@ -199,12 +205,18 @@ test('шаг ожидания падает после ATTEMPTS попыток и
 	expect(r.status).toBe(1);
 	expect(r.calls).toEqual([PACKUMENT, PACKUMENT, PACKUMENT]);
 	expect(r.out).toContain('@alxwlw/stack@1.2.3');
+	expect(r.out).toContain(
+		'::error::за 3 попыток в реестре не появилась версия @alxwlw/stack@1.2.3 (нет в packument)',
+	);
 });
 
 test('шаг ожидания не принимает упавший запрос к реестру за наличие версии', () => {
 	const r = runWait(undefined, '2');
 	expect(r.status).toBe(1);
 	expect(r.calls).toHaveLength(2);
+	expect(r.out).toContain(
+		'::error::за 2 попыток в реестре не появилась версия @alxwlw/stack@1.2.3 (реестр не ответил)',
+	);
 });
 
 test('шаг вызова: base пустой, install true — bunx @alxwlw/stack@1.2.3 sync-pr --base=', () => {
