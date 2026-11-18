@@ -502,6 +502,23 @@ describe('check с группой peers через настоящий cli', () =
 			'peers-unavailable: pnpm peers check — pnpm peers check did not start: Executable not found in $PATH: "pnpm"\n',
 		);
 	}, 30_000);
+
+	test('check с группой peers: pnpm зовётся в корне --repo с аргументами гейта и без GH_TOKEN', async () => {
+		const bin = fakeBin({ pnpm: 'echo "cwd=$PWD args=$* token=${GH_TOKEN-unset}" >&2; exit 2' });
+		const dir = await peersRepo(UNMET_PEER_LOCK);
+		const elsewhere = mkdtempSync(join(tmpdir(), 'stack-cwd-'));
+		const proc = Bun.spawn(['bun', CLI, 'check', '--repo', dir], {
+			cwd: elsewhere,
+			stdout: 'pipe',
+			stderr: 'pipe',
+			env: { ...process.env, ...bin.env, GH_TOKEN: 'secret-token' },
+		});
+		const err = await new Response(proc.stderr).text();
+		expect(await proc.exited).toBe(1);
+		expect(err).toContain(
+			`pnpm peers check exited with 2: cwd=${realpathSync(dir)} args=peers check --lockfile-only --json token=unset\n`,
+		);
+	}, 30_000);
 });
 
 test('init и check отвергают опечатку в with одной и той же строкой', async () => {
