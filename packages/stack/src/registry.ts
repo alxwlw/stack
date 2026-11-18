@@ -117,6 +117,7 @@ export async function waitVisible(
 		const left: Pending[] = [];
 		for (const w of pending) {
 			// Сбой реестра (5xx, сеть) — «ещё не видно» на этой попытке, как в старом шаге sync.yml; его message — причина.
+			// Читатель бросает только Error, поэтому приведение `as Error` верно.
 			let why: string;
 			try {
 				const state = await registry.served(w.name, w.version);
@@ -126,7 +127,7 @@ export async function waitVisible(
 				}
 				why = state === 'unlisted' ? 'нет в packument' : 'в packument есть, tarball не отдаётся';
 			} catch (e) {
-				why = e instanceof Error ? e.message : String(e);
+				why = (e as Error).message;
 			}
 			left.push({ ...w, why });
 		}

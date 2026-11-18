@@ -505,7 +505,7 @@ describe('связность релиза', () => {
 		return { status: res.status, out: res.stdout + res.stderr, installs, bun };
 	}
 
-	// [версия npm, код шага]
+	// [вывод npm --version, код шага, фрагмент вывода]
 	const npmVersions: [string, number, string][] = [
 		['10.9.2', 1, 'npm 10.9.2 < 11.5.1'],
 		['11.5.0', 1, 'npm 11.5.0 < 11.5.1'],
@@ -515,6 +515,7 @@ describe('связность релиза', () => {
 		['abc', 1, 'npm --version вернул «abc» — не версия'],
 		['v11.6.0', 1, 'npm --version вернул «v11.6.0» — не версия'],
 		['', 1, 'npm --version вернул «» — не версия'],
+		['12', 1, 'npm --version вернул «12» — не версия'],
 	];
 
 	test.each(npmVersions)(

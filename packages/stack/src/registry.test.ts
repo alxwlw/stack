@@ -251,8 +251,8 @@ describe('npmRegistryReader.has', () => {
 		);
 	});
 
-	test('200 с телом null или [] — has и served бросают с именем пакета, HEAD не уходит', async () => {
-		for (const body of ['null', '[]']) {
+	test('200 с телом не объект (null, [], 7, "x") — has и served бросают с именем пакета, HEAD не уходит', async () => {
+		for (const body of ['null', '[]', '7', '"x"']) {
 			const msg = '@alxwlw/stack: нечитаемый ответ реестра: не объект';
 			stub(new Response(body, { status: 200 }));
 			await expect(reg.has('@alxwlw/stack', '1.2.3')).rejects.toThrow(msg);
