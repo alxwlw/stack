@@ -231,8 +231,10 @@ describe('npmRegistryReader.served', () => {
 		const log: string[] = [];
 		globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => {
 			const url = String(input);
-			// Метка «+headers»: проба не должна нести своих заголовков (кэш-заголовки ломают смысл замера).
-			log.push(`${init?.method ?? 'GET'} ${url}${init?.headers ? ' +headers' : ''}`);
+			// Метка «+headers» на HEAD: проба не должна нести своих заголовков (кэш-заголовки ломают смысл замера).
+			log.push(
+				`${init?.method ?? 'GET'} ${url}${init?.method === 'HEAD' && init.headers ? ' +headers' : ''}`,
+			);
 			if (url === PACKUMENT_URL) {
 				return Promise.resolve(opts.packument ?? new Response(withTarball, { status: 200 }));
 			}
