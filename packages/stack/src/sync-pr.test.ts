@@ -373,10 +373,10 @@ describe('publishChanges', () => {
 const HOOK = 'pnpm run stack:post-sync|VERSION=1.2.3';
 
 // Ожидаемые обращения к реестру — из канона, а не литералом.
-const wantedHas = loadCanon({ profile: 'node', with: [], exceptions: [] }).catalogs.dev;
-const HAS = Object.entries(wantedHas ?? {})
+const wantedServed = loadCanon({ profile: 'node', with: [], exceptions: [] }).catalogs.dev;
+const SERVED = Object.entries(wantedServed ?? {})
 	.filter(([name]) => name.startsWith('@alxwlw/'))
-	.map(([name, v]) => `has ${name}@${v}`);
+	.map(([name, v]) => `served ${name}@${v}`);
 
 const NODE_PKG = JSON.stringify({ name: 'app', scripts: { 'stack:post-sync': 'true' } });
 
@@ -385,7 +385,7 @@ async function runSyncPr(
 	over: Partial<SyncPrOptions> = {},
 	handlers: {
 		run?: (line: string) => number | undefined;
-		has?: boolean;
+		served?: boolean;
 		github?: GitHub;
 	} = {},
 ) {
@@ -413,7 +413,11 @@ async function runSyncPr(
 			registry: {
 				has: async (name, version) => {
 					journal.push(`has ${name}@${version}`);
-					return handlers.has ?? true;
+					return true;
+				},
+				served: async (name, version) => {
+					journal.push(`served ${name}@${version}`);
+					return handlers.served ?? true;
 				},
 			},
 			print: (stream, line) => (stream === 'out' ? out : err).push(line),
@@ -454,7 +458,12 @@ describe('syncPr', () => {
 		const { dir } = gitRepo({ '.stack.jsonc': '{ "profile": "node" }', 'package.json': NODE_PKG });
 		const r = await runSyncPr(dir);
 		expect(r.code).toBe(0);
-		expect(r.journal).toEqual([...HAS, 'proto install', 'pnpm install --no-frozen-lockfile', HOOK]);
+		expect(r.journal).toEqual([
+			...SERVED,
+			'proto install',
+			'pnpm install --no-frozen-lockfile',
+			HOOK,
+		]);
 		expect(r.github.created).toHaveLength(1);
 		expect(r.out.indexOf('canon applied')).toBeGreaterThanOrEqual(0);
 		expect(r.out.indexOf('canon applied')).toBeLessThan(r.out.indexOf('pushed stack/v1.2.3'));
@@ -497,7 +506,7 @@ describe('syncPr', () => {
 			'package.json': JSON.stringify({ name: 'app' }),
 		});
 		const r = await runSyncPr(dir);
-		expect(r.journal).toEqual([...HAS, 'proto install', 'pnpm install --no-frozen-lockfile']);
+		expect(r.journal).toEqual([...SERVED, 'proto install', 'pnpm install --no-frozen-lockfile']);
 	});
 
 	test('хук упал — код 1, публикации нет', async () => {
@@ -522,7 +531,7 @@ describe('syncPr', () => {
 		const { dir } = gitRepo({ '.stack.jsonc': '{ "profile": "node" }', 'package.json': NODE_PKG });
 		const r = await runSyncPr(dir, {}, { run: (l) => (l === 'proto install' ? 1 : 0) });
 		expect(r.code).toBe(1);
-		expect(r.journal).toEqual([...HAS, 'proto install']);
+		expect(r.journal).toEqual([...SERVED, 'proto install']);
 		expect(r.err.at(-1)).toBe('sync-pr: `proto install` exited with 1');
 	});
 
@@ -534,16 +543,16 @@ describe('syncPr', () => {
 			{ run: (l) => (l === 'pnpm install --no-frozen-lockfile' ? 1 : 0) },
 		);
 		expect(r.code).toBe(1);
-		expect(r.journal).toEqual([...HAS, 'proto install', 'pnpm install --no-frozen-lockfile']);
+		expect(r.journal).toEqual([...SERVED, 'proto install', 'pnpm install --no-frozen-lockfile']);
 		expect(r.err.at(-1)).toBe('sync-pr: `pnpm install --no-frozen-lockfile` exited with 1');
 	});
 
 	test('реестр не показал версию — код 1, процессов нет', async () => {
 		const { dir } = gitRepo({ '.stack.jsonc': '{ "profile": "node" }', 'package.json': NODE_PKG });
-		const r = await runSyncPr(dir, {}, { has: false });
+		const r = await runSyncPr(dir, {}, { served: false });
 		expect(r.code).toBe(1);
 		expect(r.err.at(-1)).toStartWith('sync-pr: за 2 попыток в реестре не появились версии:');
-		expect(r.journal.every((l) => l.startsWith('has '))).toBe(true);
+		expect(r.journal.every((l) => l.startsWith('served '))).toBe(true);
 		expect(r.journal.length).toBeGreaterThan(0);
 	});
 

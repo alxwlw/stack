@@ -49,12 +49,14 @@ package and nothing is published; and `rollout.yml` would dispatch any successfu
    npm token). A version that is already in the registry is skipped, so a re-run after a partial publish
    finishes the rest. When the registry answers a 5xx or the network fails during that «already
    published» check, the script does not publish blindly: the job fails naming the package, and a re-run
-   is safe for the same reason. After publishing, the job waits (60 attempts, 10 s apart) until every
-   published version is visible in the registry, and goes green only then.
+   is safe for the same reason. After publishing, the job waits (60 attempts, 10 s apart) until the registry
+   lists every published version and a HEAD request on its tarball (`dist.tarball`) answers 200, and goes
+   green only then: a version in the packument whose tarball still answers 404 is not ready (the 1.12.0
+   rollout).
 
 ## Rollout
 
-When `publish` succeeds, which means every version is already visible in the registry, `rollout.yml` runs `bun scripts/rollout.ts`. It signs a JWT for the GitHub App,
+When `publish` succeeds, which means every tarball is already served, `rollout.yml` runs `bun scripts/rollout.ts`. It signs a JWT for the GitHub App,
 takes the App's installation token for each consumer's owner, and dispatches the `stack-sync` workflow on the
 consumer's `main` with the version as input. The consumers are the lines of the `STACK_CONSUMERS`
 secret (`owner/repo`, one per line); the App credentials are `STACK_BOT_APP_ID` and

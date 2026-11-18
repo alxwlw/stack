@@ -2,7 +2,10 @@ import { afterEach, describe, expect, test } from 'bun:test';
 
 import { npmRegistryReader, type Registry, waitVisible } from './registry.ts';
 
-/** Фейковый реестр: `has` читает множество пар имя и версия, `visibleAfter` — сколько опросов запись «не видна». */
+/**
+ * Фейковый реестр: `served` читает множество пар имя и версия, `visibleAfter` — сколько опросов запись «не видна».
+ * `has` waitVisible звать не должен: он пишет в журнал, и точный список журнала это ловит.
+ */
 function fakeRegistry(opts: { present?: string[]; visibleAfter?: Record<string, number> } = {}) {
 	const present = new Set(opts.present ?? []);
 	const calls: string[] = [];
@@ -10,6 +13,10 @@ function fakeRegistry(opts: { present?: string[]; visibleAfter?: Record<string, 
 	const registry: Registry = {
 		has(name, version) {
 			calls.push(`has ${name}@${version}`);
+			return Promise.resolve(true);
+		},
+		served(name, version) {
+			calls.push(`served ${name}@${version}`);
 			const n = (polls.get(name) ?? 0) + 1;
 			polls.set(name, n);
 			const after = opts.visibleAfter?.[name];
@@ -28,7 +35,10 @@ describe('waitVisible', () => {
 
 	test('пустой список — разрешается без опроса и без sleep', async () => {
 		const calls: string[] = [];
-		const registry: Registry = { has: async (n, v) => (calls.push(`${n}@${v}`), true) };
+		const registry: Registry = {
+			has: () => Promise.resolve(false),
+			served: async (n, v) => (calls.push(`${n}@${v}`), true),
+		};
 		let slept = 0;
 		await waitVisible([], registry, {
 			attempts: 3,
@@ -41,7 +51,10 @@ describe('waitVisible', () => {
 
 	test('каждая запись опрашивается своей версией', async () => {
 		const calls: string[] = [];
-		const registry: Registry = { has: async (n, v) => (calls.push(`${n}@${v}`), true) };
+		const registry: Registry = {
+			has: () => Promise.resolve(false),
+			served: async (n, v) => (calls.push(`${n}@${v}`), true),
+		};
 		await waitVisible(
 			[
 				{ name: '@acme/a', version: '1.0.0' },
@@ -55,7 +68,10 @@ describe('waitVisible', () => {
 
 	test('попытки кончились — ошибка называет имя@версию каждой невидимой записи, sleep между попытками', async () => {
 		let slept = 0;
-		const registry: Registry = { has: async (n) => n === '@acme/a' };
+		const registry: Registry = {
+			has: () => Promise.resolve(false),
+			served: async (n) => n === '@acme/a',
+		};
 		await expect(
 			waitVisible(
 				[
@@ -77,7 +93,7 @@ describe('waitVisible', () => {
 			intervalMs: 1,
 			sleep: noSleep,
 		});
-		expect(calls).toEqual(['has @x/a@1.0.0', 'has @x/b@1.0.0']);
+		expect(calls).toEqual(['served @x/a@1.0.0', 'served @x/b@1.0.0']);
 	});
 
 	test('пакет появился на третьей попытке — видимые не опрашиваются повторно', async () => {
@@ -94,33 +110,40 @@ describe('waitVisible', () => {
 				return Promise.resolve();
 			},
 		});
-		expect(calls).toEqual(['has @x/a@1.0.0', 'has @x/b@1.0.0', 'has @x/b@1.0.0', 'has @x/b@1.0.0']);
+		expect(calls).toEqual([
+			'served @x/a@1.0.0',
+			'served @x/b@1.0.0',
+			'served @x/b@1.0.0',
+			'served @x/b@1.0.0',
+		]);
 		expect(sleeps).toEqual([7, 7]);
 	});
 
 	test('без подставного sleep: версия видна на 2-м опросе — разрешается', async () => {
 		const { registry, calls } = fakeRegistry({ visibleAfter: { '@x/a': 2 } });
 		await waitVisible(wanted('@x/a'), registry, { attempts: 3, intervalMs: 1 });
-		expect(calls).toEqual(['has @x/a@1.0.0', 'has @x/a@1.0.0']);
+		expect(calls).toEqual(['served @x/a@1.0.0', 'served @x/a@1.0.0']);
 	});
 });
 
 describe('waitVisible: сбои реестра', () => {
 	const noSleep = (): Promise<void> => Promise.resolve();
 
-	test('has бросает на первой попытке и отдаёт true на второй — ожидание завершается', async () => {
+	test('served бросает на первой попытке и отдаёт true на второй — ожидание завершается', async () => {
 		let n = 0;
 		const registry: Registry = {
-			has: () => (++n === 1 ? Promise.reject(new Error('500')) : Promise.resolve(true)),
+			has: () => Promise.resolve(false),
+			served: () => (++n === 1 ? Promise.reject(new Error('500')) : Promise.resolve(true)),
 		};
 		await waitVisible(wanted('@x/a'), registry, { attempts: 3, intervalMs: 1, sleep: noSleep });
 		expect(n).toBe(2);
 	});
 
-	test('has бросает всегда — после попыток ошибка перечисляет запись', async () => {
+	test('served бросает всегда — после попыток ошибка перечисляет запись', async () => {
 		let n = 0;
 		const registry: Registry = {
-			has: () => {
+			has: () => Promise.resolve(false),
+			served: () => {
 				n++;
 				return Promise.reject(new Error('500'));
 			},
@@ -192,5 +215,105 @@ describe('npmRegistryReader.has', () => {
 	test('сбой сети — throw с именем пакета', async () => {
 		stub(new Error('ECONNRESET'));
 		await expect(reg.has('@alxwlw/stack', '1.2.3')).rejects.toThrow('@alxwlw/stack');
+	});
+});
+
+describe('npmRegistryReader.served', () => {
+	const realFetch = globalThis.fetch;
+	afterEach(() => {
+		globalThis.fetch = realFetch;
+	});
+	const PACKUMENT_URL = 'https://registry.npmjs.org/@alxwlw%2fstack';
+	const TARBALL = 'https://registry.npmjs.org/@alxwlw/stack/-/stack-1.2.3.tgz';
+	const withTarball = JSON.stringify({ versions: { '1.2.3': { dist: { tarball: TARBALL } } } });
+	/** `fetch` различает запрос по URL: packument — JSON, tarball — заданный ответ; журнал `МЕТОД url`. */
+	const stub = (opts: { packument?: Response; tarball?: Response | Error }): string[] => {
+		const log: string[] = [];
+		globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => {
+			const url = String(input);
+			// Метка «+headers» на HEAD: проба не должна нести своих заголовков (кэш-заголовки ломают смысл замера).
+			log.push(
+				`${init?.method ?? 'GET'} ${url}${init?.method === 'HEAD' && init.headers ? ' +headers' : ''}`,
+			);
+			if (url === PACKUMENT_URL) {
+				return Promise.resolve(opts.packument ?? new Response(withTarball, { status: 200 }));
+			}
+			if (url === TARBALL) {
+				const t = opts.tarball ?? new Response(null, { status: 200 });
+				return t instanceof Error ? Promise.reject(t) : Promise.resolve(t);
+			}
+			return Promise.reject(new Error(`неожиданный запрос ${url}`));
+		}) as typeof fetch;
+		return log;
+	};
+	const reg = npmRegistryReader();
+
+	test('версия в packument, tarball 200 — true; HEAD уходит ровно на dist.tarball', async () => {
+		const log = stub({ tarball: new Response(null, { status: 200 }) });
+		expect(await reg.served('@alxwlw/stack', '1.2.3')).toBe(true);
+		expect(log).toStrictEqual([`GET ${PACKUMENT_URL}`, `HEAD ${TARBALL}`]);
+	});
+
+	test('tarball 404 — false', async () => {
+		stub({ tarball: new Response(null, { status: 404 }) });
+		expect(await reg.served('@alxwlw/stack', '1.2.3')).toBe(false);
+	});
+
+	test('версии нет в packument — false, HEAD не уходит', async () => {
+		const log = stub({});
+		expect(await reg.served('@alxwlw/stack', '9.9.9')).toBe(false);
+		expect(log).toStrictEqual([`GET ${PACKUMENT_URL}`]);
+	});
+
+	test('packument 404 — false, HEAD не уходит', async () => {
+		const log = stub({ packument: new Response('{}', { status: 404 }) });
+		expect(await reg.served('@alxwlw/stack', '1.2.3')).toBe(false);
+		expect(log).toStrictEqual([`GET ${PACKUMENT_URL}`]);
+	});
+
+	test('у версии нет dist.tarball или он не строка — false, HEAD не уходит', async () => {
+		for (const body of [
+			'{"versions":{"1.2.3":{}}}',
+			'{"versions":{"1.2.3":{"dist":{"tarball":7}}}}',
+		]) {
+			const log = stub({ packument: new Response(body, { status: 200 }) });
+			expect(await reg.served('@alxwlw/stack', '1.2.3')).toBe(false);
+			expect(log).toStrictEqual([`GET ${PACKUMENT_URL}`]);
+		}
+	});
+
+	test('tarball 500 — throw с @alxwlw/stack@1.2.3', async () => {
+		stub({ tarball: new Response(null, { status: 500 }) });
+		await expect(reg.served('@alxwlw/stack', '1.2.3')).rejects.toThrow(
+			'@alxwlw/stack@1.2.3: tarball ответил 500',
+		);
+	});
+
+	test('сбой сети на HEAD — throw с @alxwlw/stack@1.2.3', async () => {
+		stub({ tarball: new Error('ECONNRESET') });
+		await expect(reg.served('@alxwlw/stack', '1.2.3')).rejects.toThrow(
+			'@alxwlw/stack@1.2.3: tarball недоступен: ECONNRESET',
+		);
+	});
+
+	test('зависший HEAD обрывается по таймауту — throw', async () => {
+		// Packument отвечает сразу, HEAD не отвечает никогда, но уважает signal — как настоящий fetch.
+		// Страховка: без signal он сам отклоняется через 2 с, и тест краснеет по содержимому, а не виснет.
+		globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => {
+			if (String(input) === PACKUMENT_URL) {
+				return Promise.resolve(new Response(withTarball, { status: 200 }));
+			}
+			return new Promise((_resolve, reject) => {
+				init?.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+				setTimeout(() => reject(new Error('сигнал не сработал')), 2000);
+			});
+		}) as typeof fetch;
+		const e = await npmRegistryReader(50)
+			.served('@alxwlw/stack', '1.2.3')
+			.then(
+				() => undefined,
+				(x: unknown) => x,
+			);
+		expect(String(e)).toContain('@alxwlw/stack@1.2.3: tarball недоступен: aborted');
 	});
 });

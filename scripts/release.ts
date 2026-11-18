@@ -71,6 +71,7 @@ export function npmRegistry(npm: string, root: string, timeoutMs = 30_000): Publ
 	const reader = npmRegistryReader(timeoutMs);
 	return {
 		has: (name, version) => reader.has(name, version),
+		served: (name, version) => reader.served(name, version),
 		publish(dir) {
 			const r = spawnSync('node', [npm, 'publish', '--provenance', '--access', 'public'], {
 				cwd: join(root, 'packages', dir),
@@ -105,7 +106,7 @@ export async function publishAll(
 /** Бюджет ожидания реестра после публикации; docs/release.md («60 attempts, 10 s apart») сверяется тестом. */
 export const WAIT_BUDGET = { attempts: 60, intervalMs: 10_000 };
 
-/** Ждёт, пока все `published`-пакеты появятся в реестре с версией релиза. */
+/** Ждёт, пока все `published`-пакеты появятся в реестре с версией релиза и tarball каждой версии начнёт отдаваться. */
 export function waitPublished(
 	pkgs: ReleasePackage[],
 	version: string,
