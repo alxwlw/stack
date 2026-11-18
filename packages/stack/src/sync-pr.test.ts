@@ -13,6 +13,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { parse as parseYaml } from 'yaml';
 
 import { loadCanon } from './canon.ts';
+import type { PeerEntry, PeersReader } from './peers.ts';
 import type { Served } from './registry.ts';
 import {
 	type GitHub,
@@ -333,6 +334,52 @@ const SERVED = Object.entries(wantedServed ?? {})
 
 const NODE_PKG = JSON.stringify({ name: 'app', scripts: { 'stack:post-sync': 'true' } });
 
+// Группа peers: записи baseline — литералы, ответ pnpm — JSON той же формы, что у pnpm 12.
+const PEERS_FILE = '.stack-peers-baseline.json';
+const CONFLICT_REACT: PeerEntry = { importer: '.', peer: 'react', kind: 'conflict' };
+const MISSING_ETHERS: PeerEntry = {
+	importer: '.',
+	peer: 'ethers',
+	kind: 'missing',
+	by: '@typechain/hardhat',
+};
+
+const baselineText = (entries: PeerEntry[]): string =>
+	`${JSON.stringify({ version: 1, peers: entries }, null, '\t')}\n`;
+
+// Порт pnpm, который видит заданные записи (conflict react и/или missing ethers).
+function peersPort(...entries: PeerEntry[]): PeersReader {
+	const json = {
+		'.': {
+			bad: {},
+			missing: entries.includes(MISSING_ETHERS)
+				? {
+						ethers: [
+							{
+								parents: [{ name: '@typechain/hardhat', version: '9.1.0' }],
+								optional: false,
+								wantedRange: '^6.1.0',
+							},
+						],
+					}
+				: {},
+			conflicts: entries.includes(CONFLICT_REACT) ? ['react'] : [],
+			intersections: {},
+		},
+	};
+	return () => ({ status: 1, signal: null, stdout: JSON.stringify(json), stderr: '' });
+}
+
+// Потребитель с группой peers, локом и baseline из записей.
+function peersRepo(baseline: PeerEntry[]): { dir: string; remote: string } {
+	return gitRepo({
+		'.stack.jsonc': '{ "profile": "node", "with": ["peers"] }',
+		'package.json': NODE_PKG,
+		'pnpm-lock.yaml': 'lockfileVersion: x\n',
+		[PEERS_FILE]: baselineText(baseline),
+	});
+}
+
 async function runSyncPr(
 	dir: string,
 	over: Partial<SyncPrOptions> = {},
@@ -340,6 +387,7 @@ async function runSyncPr(
 		run?: (line: string) => number | undefined;
 		served?: Served;
 		github?: GitHub;
+		peers?: PeersReader;
 	} = {},
 ) {
 	const journal: string[] = [];
@@ -374,6 +422,11 @@ async function runSyncPr(
 				},
 			},
 			print: (stream, line) => (stream === 'out' ? out : err).push(line),
+			// Вызов порта pnpm виден в журнале; по умолчанию pnpm ничего не находит.
+			peers: (root) => {
+				journal.push('peers');
+				return handlers.peers?.(root) ?? { status: 0, signal: null, stdout: '{}', stderr: '' };
+			},
 		},
 	);
 	return { code, journal, out, err, github: fake };
@@ -530,6 +583,56 @@ describe('syncPr', () => {
 		expect(second.out.at(-1)).toBe('canon already applied, nothing to commit');
 		expect(first.github.created).toHaveLength(1);
 		expect(second.github.created).toHaveLength(0);
+	});
+
+	test('peers: после установки исправленная запись уходит из baseline и попадает в коммит sync-PR', async () => {
+		const { dir, remote } = peersRepo([CONFLICT_REACT, MISSING_ETHERS]);
+		const r = await runSyncPr(dir, {}, { peers: peersPort(MISSING_ETHERS) });
+		expect(r.code).toBe(0);
+		expect(r.journal).toEqual([
+			...SERVED,
+			'proto install',
+			'pnpm install --no-frozen-lockfile',
+			HOOK,
+			'peers',
+		]);
+		expect(git(remote, 'show', `stack/v1.2.3:${PEERS_FILE}`)).toBe(baselineText([MISSING_ETHERS]));
+		expect(r.out).toContain('dropped 1 fixed entr(ies) from .stack-peers-baseline.json');
+		expect(r.out.indexOf('dropped 1 fixed entr(ies) from .stack-peers-baseline.json')).toBeLessThan(
+			r.out.indexOf('pushed stack/v1.2.3'),
+		);
+	});
+
+	test('peers: новая запись не добавляется, sync-PR не падает', async () => {
+		const { dir, remote } = peersRepo([MISSING_ETHERS]);
+		const r = await runSyncPr(dir, {}, { peers: peersPort(CONFLICT_REACT, MISSING_ETHERS) });
+		expect(r.code).toBe(0);
+		expect(git(remote, 'show', `stack/v1.2.3:${PEERS_FILE}`)).toBe(baselineText([MISSING_ETHERS]));
+		expect(r.out.some((l) => l.includes(PEERS_FILE))).toBe(false);
+		expect(r.github.created).toHaveLength(1);
+	});
+
+	test('peers: pnpm недоступен — строка в stderr, sync-PR идёт дальше', async () => {
+		const { dir } = peersRepo([MISSING_ETHERS]);
+		const r = await runSyncPr(dir, {}, { peers: () => ({ error: 'spawn pnpm ENOENT' }) });
+		expect(r.code).toBe(0);
+		expect(r.err).toContain(
+			'sync-pr: peers baseline: pnpm peers check did not start: spawn pnpm ENOENT',
+		);
+		expect(r.github.created).toHaveLength(1);
+	});
+
+	test('peers: группа выключена — порт не зовётся', async () => {
+		const { dir } = gitRepo({
+			'.stack.jsonc': '{ "profile": "node" }',
+			'package.json': NODE_PKG,
+			'pnpm-lock.yaml': 'lockfileVersion: x\n',
+			[PEERS_FILE]: baselineText([CONFLICT_REACT]),
+		});
+		const r = await runSyncPr(dir);
+		expect(r.code).toBe(0);
+		expect(r.journal).not.toContain('peers');
+		expect(r.journal.at(-1)).toBe(HOOK);
 	});
 
 	test('ownVersion — version из packages/stack/package.json', () => {

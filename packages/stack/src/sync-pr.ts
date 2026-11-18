@@ -5,6 +5,8 @@ import { join } from 'node:path';
 import { loadCanon } from './canon.ts';
 import { syncOutput, syncRepo } from './check.ts';
 import { readStackConfig, StackConfigError } from './config.ts';
+import type { PeersReader } from './peers.ts';
+import { peersBaseline } from './peers-baseline.ts';
 import { type Registry, type WaitOptions, waitVisible } from './registry.ts';
 
 export interface NewPr {
@@ -274,6 +276,7 @@ export interface SyncPrPorts {
 	github: GitHub;
 	registry: Registry;
 	print: Print;
+	peers: PeersReader;
 }
 
 // Как ATTEMPTS/INTERVAL шага ожидания в sync.yml.
@@ -338,6 +341,13 @@ export async function syncPr(opts: SyncPrOptions, ports: SyncPrPorts): Promise<0
 		step('proto', ['install']);
 		if (opts.install) step('pnpm', ['install', '--no-frozen-lockfile']);
 		if (hook) step('pnpm', ['run', 'stack:post-sync'], { VERSION: version });
+
+		// Новый лок мог исправить записи baseline группы peers: они уходят в тот же коммит, иначе CI
+		// sync-PR краснел бы на stale-peer-baseline. Новые записи не добавляются, а код не меняет итог:
+		// и новые записи, и сбой pnpm покажет stack check в CI sync-PR. Группу проверяет peersBaseline.
+		const peers = peersBaseline(repoRoot, canon, 'drop-fixed', ports.peers);
+		for (const line of peers.out) print('out', line);
+		for (const line of peers.err) print('err', `sync-pr: peers baseline: ${line}`);
 
 		return await publishChanges(opts, ports.github, print);
 	} catch (error) {

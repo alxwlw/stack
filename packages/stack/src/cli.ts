@@ -136,6 +136,7 @@ try {
 					github: ghGitHub(repoRoot),
 					registry: npmRegistryReader(),
 					print: (stream, line) => (stream === 'out' ? console.log(line) : console.error(line)),
+					peers: pnpmPeers,
 				},
 			),
 		);
