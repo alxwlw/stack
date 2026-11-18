@@ -67,6 +67,7 @@ test('versionLine: major, 0.minor, 0.0.patch; пре-релиз и build отб�
 		'link:../x',
 		'file:../my-pkg',
 		'7.1',
+		'1.2.3.4',
 	].map(versionLine);
 	expect(lines).toStrictEqual([
 		'7',
@@ -77,6 +78,7 @@ test('versionLine: major, 0.minor, 0.0.patch; пре-релиз и build отб�
 		'link:../x',
 		'file:../my-pkg',
 		'7.1',
+		'1.2.3.4',
 	]);
 });
 
@@ -320,6 +322,26 @@ test('peersOutcome: сбои запуска и не та форма — unavaila
 			ran(imp({ missing: { peer: [{ ...rec, parents: [{ name: '', version: '1.0.0' }] }] } }), 1),
 			`${shape}importer ".": missing "peer"[0]: "parents" is not a non-empty array of {name, version}`,
 		],
+		// Битый не последний элемент parents: проверяется каждый, а не только объявивший пакет.
+		[
+			ran(
+				imp({
+					missing: {
+						peer: [
+							{
+								...rec,
+								parents: [
+									{ name: '', version: '1.0.0' },
+									{ name: 'decl', version: '1.0.0' },
+								],
+							},
+						],
+					},
+				}),
+				1,
+			),
+			`${shape}importer ".": missing "peer"[0]: "parents" is not a non-empty array of {name, version}`,
+		],
 		[
 			ran(imp({ missing: { peer: [{ ...rec, optional: 'no' }] } }), 1),
 			`${shape}importer ".": missing "peer"[0]: "optional" is not a boolean`,
@@ -428,6 +450,10 @@ test('baseline: битый файл — problem, по случаю на текс
 			'peers[0] is not a valid entry',
 		],
 		[file([{ ...unmetZod4, importer: '' }]), 'peers[0] is not a valid entry'],
+		[file([{ ...unmetZod4, peer: '' }]), 'peers[0] is not a valid entry'],
+		[file([{ ...unmetZod4, found: '' }]), 'peers[0] is not a valid entry'],
+		[file([{ ...unmetZod4, found: 4 }]), 'peers[0] is not a valid entry'],
+		[file([{ ...unmetZod4, extra: 'x' }]), 'peers[0] is not a valid entry'],
 		[file([unmetZod4, { ...missingEthers, by: 7 }]), 'peers[1] is not a valid entry'],
 		[file([unmetZod4, { ...missingEthers, extra: 'x' }]), 'peers[1] is not a valid entry'],
 		[file([{ importer: '.', peer: 'zod', kind: 'constructor' }]), 'peers[0] is not a valid entry'],
