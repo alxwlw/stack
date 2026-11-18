@@ -135,3 +135,19 @@ test('loadRepo с диска читает MOON_WORKSPACE', () => {
 	const dir = repoDir({ [FILE]: 'vcs:\n  defaultBranch: main\n' });
 	expect(loadRepo(dir, canon).moonWorkspace).toStrictEqual({ vcs: { defaultBranch: 'main' } });
 });
+
+test('явный null на верхнем уровне (~, null) — одна unreadable-file, sync файл не пишет; комментарий и пробелы — пустой файл', () => {
+	for (const yaml of ['~\n', 'null\n']) {
+		expect(rows(yaml)).toStrictEqual([
+			['unreadable-file', FILE, `${FILE} does not parse: top level is not a map`],
+		]);
+		const dir = repoDir({ 'package.json': PKG, [FILE]: yaml });
+		expect(syncRepo(dir, canon, []).applied).toStrictEqual([]);
+		expect(fs.readFileSync(join(dir, FILE), 'utf8')).toBe(yaml);
+	}
+	for (const yaml of ['# только комментарий\n', '  \n']) {
+		expect(rows(yaml)).toStrictEqual([
+			['moon-default-branch', '.moon/workspace.yml:vcs.defaultBranch', MESSAGE],
+		]);
+	}
+});

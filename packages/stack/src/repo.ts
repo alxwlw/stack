@@ -179,8 +179,8 @@ export function repoFromSnapshot(snapshot: Snapshot): Repo {
 			);
 		} else {
 			const top: unknown = doc.toJS();
-			if (top === null) moonWorkspace = {};
-			else if (typeof top === 'object' && !Array.isArray(top)) {
+			if (doc.contents === null) moonWorkspace = {};
+			else if (top !== null && typeof top === 'object' && !Array.isArray(top)) {
 				moonWorkspace = top as Record<string, unknown>;
 			} else bad(MOON_WORKSPACE, `${MOON_WORKSPACE} does not parse: top level is not a map`);
 		}
