@@ -28,19 +28,38 @@ const waitStep = syncSteps?.[waitIdx];
 const callIdx = syncSteps?.findIndex((s) => s.name === 'открыть sync-PR') ?? -1;
 const callStep = syncSteps?.[callIdx];
 
-/** `body` — тело ответа реестра для stack; `undefined` — curl падает, как `curl -f` на 404/5xx. */
+/**
+ * `body` — тело ответа реестра для stack; `undefined` — curl падает, как `curl -f` на 404/5xx.
+ * `tarball` — ответ на пробу tarball (запрос, чей последний аргумент кончается на `.tgz`).
+ */
 function runWait(
 	body: string | undefined,
 	attempts: string,
 	interval = '0',
+	tarball: 200 | 404 = 200,
 ): { status: number | null; calls: string[]; out: string; sleeps: string[] } {
 	const dir = mkdtempSync(join(tmpdir(), 'sync-wait-'));
 	const calls = join(dir, 'calls');
 	const reply = body === undefined ? 'exit 22' : `cat '${join(dir, 'body.json')}'`;
 	if (body !== undefined) writeFileSync(join(dir, 'body.json'), body);
+	// Проба tarball: в журнал `${метод} ${url}` (HEAD — только при ровно `-I` среди аргументов).
+	const probe = tarball === 200 ? 'exit 0' : 'exit 22';
 	writeFileSync(
 		join(dir, 'curl'),
-		`#!/usr/bin/env bash\np="\${!#}"; p="\${p##*%2f}"\necho "$p" >> '${calls}'\n${reply}\n`,
+		[
+			'#!/usr/bin/env bash',
+			'last="${!#}"',
+			'if [[ "$last" == *.tgz ]]; then',
+			'  m=GET',
+			'  for a in "$@"; do if [ "$a" = -I ]; then m=HEAD; fi; done',
+			`  echo "$m $last" >> '${calls}'`,
+			`  ${probe}`,
+			'fi',
+			'p="${last##*%2f}"',
+			`echo "$p" >> '${calls}'`,
+			reply,
+			'',
+		].join('\n'),
 	);
 	chmodSync(join(dir, 'curl'), 0o755);
 	// Заглушка sleep пишет аргумент и не спит: паузы проверяются значением, а не временем.
@@ -92,7 +111,10 @@ function runCall(
 	return { status: res.status, args };
 }
 
-const has = '{"versions":{"1.2.2":{},"1.2.3":{}}}';
+const TARBALL = 'https://registry.npmjs.org/@alxwlw/stack/-/stack-1.2.3.tgz';
+const has = `{"versions":{"1.2.2":{},"1.2.3":{"dist":{"tarball":"${TARBALL}"}}}}`;
+// Версия есть, а dist.tarball нет: пробе нечего запрашивать.
+const noTarball = '{"versions":{"1.2.3":{}}}';
 // dist-tags с той же строкой не должны сойти за версию.
 const lacks = '{"dist-tags":{"latest":"1.2.3"},"versions":{"1.2.2":{}}}';
 
@@ -136,11 +158,31 @@ test('шаг ожидания — короткая страховка: ATTEMPTS 
 	expect(waitStep?.env?.ATTEMPTS).toBe('12');
 });
 
-test('шаг ожидания выходит на первой попытке, когда версия stack уже в реестре', () => {
+test('шаг ожидания выходит на первой попытке, когда версия stack в реестре и tarball отдаётся', () => {
 	const r = runWait(has, '3');
 	expect(r.status).toBe(0);
-	expect(r.calls).toEqual(['stack']);
-	expect(r.sleeps).toEqual([]);
+	expect(r.calls).toStrictEqual(['stack', `HEAD ${TARBALL}`]);
+	expect(r.sleeps).toStrictEqual([]);
+});
+
+test('версия в packument, tarball 404 — ждёт и падает после ATTEMPTS попыток', () => {
+	const r = runWait(has, '3', '0', 404);
+	expect(r.status).toBe(1);
+	expect(r.calls).toStrictEqual([
+		'stack',
+		`HEAD ${TARBALL}`,
+		'stack',
+		`HEAD ${TARBALL}`,
+		'stack',
+		`HEAD ${TARBALL}`,
+	]);
+	expect(r.out).toContain('@alxwlw/stack@1.2.3');
+});
+
+test('версия без dist.tarball — HEAD не уходит', () => {
+	const r = runWait(noTarball, '2');
+	expect(r.status).toBe(1);
+	expect(r.calls).toStrictEqual(['stack', 'stack']);
 });
 
 test('шаг ожидания спит INTERVAL только между попытками', () => {
