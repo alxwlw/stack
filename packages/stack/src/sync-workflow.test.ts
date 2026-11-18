@@ -55,8 +55,8 @@ function runWait(
 			`  echo "$m $*" >> '${calls}'`,
 			`  ${probe}`,
 			'fi',
-			'p="${last##*%2f}"',
-			`echo "$p" >> '${calls}'`,
+			// Запрос packument: в журнал `PACKUMENT ${все аргументы}` — Accept и лимит времени видны в журнале.
+			`echo "PACKUMENT $*" >> '${calls}'`,
 			reply,
 			'',
 		].join('\n'),
@@ -111,6 +111,9 @@ function runCall(
 	return { status: res.status, args };
 }
 
+const ACCEPT = 'application/vnd.npm.install-v1+json; q=1.0, application/json; q=0.8, */*';
+const PACKUMENT = `PACKUMENT -fsS --max-time 30 -H Accept: ${ACCEPT} https://registry.npmjs.org/@alxwlw%2fstack`;
+const HEAD = `HEAD -fsS --max-time 30 -I`;
 const TARBALL = 'https://registry.npmjs.org/@alxwlw/stack/-/stack-1.2.3.tgz';
 const has = `{"versions":{"1.2.2":{},"1.2.3":{"dist":{"tarball":"${TARBALL}"}}}}`;
 // Версия есть, а dist.tarball нет: пробе нечего запрашивать.
@@ -161,7 +164,7 @@ test('шаг ожидания — короткая страховка: ATTEMPTS 
 test('шаг ожидания выходит на первой попытке, когда версия stack в реестре и tarball отдаётся', () => {
 	const r = runWait(has, '3');
 	expect(r.status).toBe(0);
-	expect(r.calls).toStrictEqual(['stack', `HEAD -fsS -I ${TARBALL}`]);
+	expect(r.calls).toStrictEqual([PACKUMENT, `${HEAD} ${TARBALL}`]);
 	expect(r.sleeps).toStrictEqual([]);
 });
 
@@ -169,12 +172,12 @@ test('версия в packument, tarball 404 — ждёт и падает пос
 	const r = runWait(has, '3', '0', 404);
 	expect(r.status).toBe(1);
 	expect(r.calls).toStrictEqual([
-		'stack',
-		`HEAD -fsS -I ${TARBALL}`,
-		'stack',
-		`HEAD -fsS -I ${TARBALL}`,
-		'stack',
-		`HEAD -fsS -I ${TARBALL}`,
+		PACKUMENT,
+		`${HEAD} ${TARBALL}`,
+		PACKUMENT,
+		`${HEAD} ${TARBALL}`,
+		PACKUMENT,
+		`${HEAD} ${TARBALL}`,
 	]);
 	expect(r.out).toContain('@alxwlw/stack@1.2.3');
 });
@@ -182,7 +185,7 @@ test('версия в packument, tarball 404 — ждёт и падает пос
 test('версия без dist.tarball — HEAD не уходит', () => {
 	const r = runWait(noTarball, '2');
 	expect(r.status).toBe(1);
-	expect(r.calls).toStrictEqual(['stack', 'stack']);
+	expect(r.calls).toStrictEqual([PACKUMENT, PACKUMENT]);
 });
 
 test('шаг ожидания спит INTERVAL только между попытками', () => {
@@ -194,7 +197,7 @@ test('шаг ожидания спит INTERVAL только между попы
 test('шаг ожидания падает после ATTEMPTS попыток и называет версию', () => {
 	const r = runWait(lacks, '3');
 	expect(r.status).toBe(1);
-	expect(r.calls).toEqual(['stack', 'stack', 'stack']);
+	expect(r.calls).toEqual([PACKUMENT, PACKUMENT, PACKUMENT]);
 	expect(r.out).toContain('@alxwlw/stack@1.2.3');
 });
 

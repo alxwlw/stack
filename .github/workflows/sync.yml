@@ -53,7 +53,7 @@ jobs:
         with:
           install: false
           registry: ${{ inputs.registry }}
-      # Основное ожидание — в job publish: он зелёный, только когда все версии видны в реестре, и
+      # Основное ожидание — в job publish: он зелёный, только когда все версии есть в реестре и их tarball отдаётся, и
       # rollout зовёт sync после этого. Здесь короткая страховка от отставания CDN у раннера
       # потребителя (в 1.6.0 все sync упали в bunx на «No version matching»). Ждём только stack: без
       # него bunx не стартует. @alxwlw/*-записи каталога dev ждёт сама команда (SYNC_PR_WAIT в
@@ -70,9 +70,9 @@ jobs:
         run: |
           accept='application/vnd.npm.install-v1+json; q=1.0, application/json; q=0.8, */*'
           for i in $(seq 1 "$ATTEMPTS"); do
-            if url=$(curl -fsS -H "Accept: $accept" "https://registry.npmjs.org/@alxwlw%2fstack" |
+            if url=$(curl -fsS --max-time 30 -H "Accept: $accept" "https://registry.npmjs.org/@alxwlw%2fstack" |
               node -e 'const t = JSON.parse(require("fs").readFileSync(0, "utf8")).versions?.[process.env.VERSION]?.dist?.tarball; if (typeof t !== "string") process.exit(1); console.log(t)') &&
-              curl -fsS -I "$url" >/dev/null; then
+              curl -fsS --max-time 30 -I "$url" >/dev/null; then
               echo "@alxwlw/stack@$VERSION есть в реестре, tarball отдаётся"
               exit 0
             fi
