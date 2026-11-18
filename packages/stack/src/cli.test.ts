@@ -66,7 +66,7 @@ test('check до sync — код 1, после sync — код 0', async () => {
 test('неизвестная команда — код 2', async () => {
 	const r = await run(['помой-посуду'], repoDir(BARE));
 	expect(r.code).toBe(2);
-	expect(r.err).toContain('Available: init, sync, check, sync-pr');
+	expect(r.err).toContain('Available: init, sync, check, sync-pr, peers-baseline');
 });
 
 test('sync-pr без GH_TOKEN или STACK_APP_SLUG — код 2 до sync, файлы не тронуты', async () => {
@@ -518,6 +518,68 @@ describe('check с группой peers через настоящий cli', () =
 		expect(err).toContain(
 			`pnpm peers check exited with 2: cwd=${realpathSync(dir)} args=peers check --lockfile-only --json token=unset\n`,
 		);
+	}, 30_000);
+});
+
+// UNMET_PEER_LOCK после починки: стоит peer@2.0.0, decl доволен — pnpm записей не видит.
+const FIXED_PEER_LOCK = UNMET_PEER_LOCK.replaceAll('peer@1.0.0', 'peer@2.0.0')
+	.replace(
+		'specifier: 1.0.0\n        version: 1.0.0\n\npackages',
+		'specifier: 2.0.0\n        version: 2.0.0\n\npackages',
+	)
+	.replace('      peer: 1.0.0\n', '      peer: 2.0.0\n');
+
+describe('peers-baseline через настоящий cli', () => {
+	test('peers-baseline: init, затем check — код 0; лок починили — check краснеет на stale, peers-baseline — снова 0', async () => {
+		const dir = await peersRepo(UNMET_PEER_LOCK);
+		const bin = fakeBin({ pnpm: `exec "${protoBin('pnpm')}" "$@"` });
+		const env = { ...bin.env, npm_config_registry: 'http://127.0.0.1:9/' };
+		const init = await run(['peers-baseline', '--init'], dir, env);
+		expect({ code: init.code, out: init.out, err: init.err }).toEqual({
+			code: 0,
+			out: 'wrote .stack-peers-baseline.json: 1 entr(ies)\n',
+			err: '',
+		});
+		const clean = await run(['check'], dir, env);
+		expect(clean.code, clean.err).toBe(0);
+
+		writeFileSync(join(dir, 'pnpm-lock.yaml'), FIXED_PEER_LOCK);
+		const stale = await run(['check'], dir, env);
+		expect(stale.code).toBe(1);
+		expect(stale.err).toContain(
+			'stale-peer-baseline: peer in . — recorded unmet by decl (found 1) is gone; drop it with: stack peers-baseline\n',
+		);
+		const lowered = await run(['peers-baseline'], dir, env);
+		expect({ code: lowered.code, out: lowered.out, err: lowered.err }).toEqual({
+			code: 0,
+			out: 'wrote .stack-peers-baseline.json: 0 entr(ies) (-1 fixed, +0 new)\n',
+			err: '',
+		});
+		const again = await run(['check'], dir, env);
+		expect(again.code, again.err).toBe(0);
+	}, 60_000);
+
+	test('peers-baseline: --init и --allow-grow вместе — код 2, файл не создан', async () => {
+		const dir = await peersRepo(UNMET_PEER_LOCK);
+		const r = await run(['peers-baseline', '--init', '--allow-grow'], dir);
+		expect(r.code).toBe(2);
+		expect(r.err).toBe('--init and --allow-grow do not go together\n');
+		expect(existsSync(join(dir, '.stack-peers-baseline.json'))).toBe(false);
+	}, 30_000);
+
+	test('peers-baseline без группы peers — код 2, сообщение называет with', async () => {
+		const dir = repoDir(BARE);
+		expect((await run(['init', '--profile', 'node'], dir)).code).toBe(0);
+		writeFileSync(join(dir, 'pnpm-lock.yaml'), UNMET_PEER_LOCK);
+		const r = await run(['peers-baseline', '--init'], dir);
+		expect(r.code).toBe(2);
+		expect(r.err).toBe('peers-baseline needs "peers" in "with" of .stack.jsonc\n');
+	}, 30_000);
+
+	test('peers-baseline без .stack.jsonc — код 2 с подсказкой stack init', async () => {
+		const r = await run(['peers-baseline'], repoDir(BARE));
+		expect(r.code).toBe(2);
+		expect(r.err).toContain('stack init');
 	}, 30_000);
 });
 

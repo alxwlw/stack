@@ -11,6 +11,7 @@ import { type Finding, isDrift } from './findings.ts';
 import { ghGitHub } from './gh.ts';
 import { initConfig } from './init.ts';
 import type { PeersReader } from './peers.ts';
+import { peersBaseline } from './peers-baseline.ts';
 import { npmRegistryReader } from './registry.ts';
 import { ownVersion, type RunProcess, SYNC_PR_WAIT, syncPr, withoutGhToken } from './sync-pr.ts';
 
@@ -30,6 +31,8 @@ function parseCliArgs() {
 				with: { type: 'string', multiple: true },
 				base: { type: 'string' },
 				'no-install': { type: 'boolean' },
+				init: { type: 'boolean' },
+				'allow-grow': { type: 'boolean' },
 			},
 		});
 	} catch (error) {
@@ -136,8 +139,18 @@ try {
 				},
 			),
 		);
+	} else if (command === 'peers-baseline') {
+		if (values.init && values['allow-grow']) fail('--init and --allow-grow do not go together');
+		const cfg = readStackConfig(repoRoot);
+		const mode = values.init ? 'init' : values['allow-grow'] ? 'grow' : 'lower';
+		const r = peersBaseline(repoRoot, loadCanon(cfg), mode, pnpmPeers);
+		for (const line of r.out) console.log(line);
+		for (const line of r.err) console.error(line);
+		process.exit(r.code);
 	} else {
-		fail(`unknown command "${command ?? ''}". Available: init, sync, check, sync-pr`);
+		fail(
+			`unknown command "${command ?? ''}". Available: init, sync, check, sync-pr, peers-baseline`,
+		);
 	}
 } catch (error) {
 	if (error instanceof StackConfigError) fail(error.message);
