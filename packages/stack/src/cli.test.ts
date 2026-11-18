@@ -559,6 +559,32 @@ describe('peers-baseline через настоящий cli', () => {
 		expect(again.code, again.err).toBe(0);
 	}, 60_000);
 
+	test('peers-baseline: новая запись — без флагов код 1, с --allow-grow принята', async () => {
+		const dir = await peersRepo(FIXED_PEER_LOCK);
+		const bin = fakeBin({ pnpm: `exec "${protoBin('pnpm')}" "$@"` });
+		const env = { ...bin.env, npm_config_registry: 'http://127.0.0.1:9/' };
+		expect((await run(['peers-baseline', '--init'], dir, env)).out).toBe(
+			'wrote .stack-peers-baseline.json: 0 entr(ies)\n',
+		);
+		writeFileSync(join(dir, 'pnpm-lock.yaml'), UNMET_PEER_LOCK);
+		const lower = await run(['peers-baseline'], dir, env);
+		expect({ code: lower.code, out: lower.out, err: lower.err }).toEqual({
+			code: 1,
+			out: '',
+			err:
+				'new: peer in . — decl@1.0.0 wants ^2.0.0, found 1.0.0\n' +
+				'1 new entr(ies) — fix them or pass --allow-grow\n',
+		});
+		const grow = await run(['peers-baseline', '--allow-grow'], dir, env);
+		expect({ code: grow.code, out: grow.out, err: grow.err }).toEqual({
+			code: 0,
+			out: 'wrote .stack-peers-baseline.json: 1 entr(ies) (-0 fixed, +1 new)\n',
+			err: '',
+		});
+		const check = await run(['check'], dir, env);
+		expect(check.code, check.err).toBe(0);
+	}, 60_000);
+
 	test('peers-baseline: --init и --allow-grow вместе — код 2, файл не создан', async () => {
 		const dir = await peersRepo(UNMET_PEER_LOCK);
 		const r = await run(['peers-baseline', '--init', '--allow-grow'], dir);
