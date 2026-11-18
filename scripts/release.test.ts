@@ -112,22 +112,35 @@ const pkg = (dir: string, over: Partial<ReleasePackage> = {}): ReleasePackage =>
 	...over,
 });
 
-/** Фейковый реестр: `has` читает множество «имя+версия», `visibleAfter` — сколько опросов пакет «не виден». */
+/**
+ * Фейковый реестр: `has` читает `present` («опубликовано» — версия в packument) и `hasFails`,
+ * `served` — отдельное множество `served` («tarball отдаётся») и `visibleAfter` — сколько опросов пакет «не виден».
+ */
 function fakeRegistry(
-	opts: { present?: string[]; hasFails?: string; visibleAfter?: Record<string, number> } = {},
+	opts: {
+		present?: string[];
+		hasFails?: string;
+		served?: string[];
+		visibleAfter?: Record<string, number>;
+	} = {},
 ) {
 	const present = new Set(opts.present ?? []);
+	const served = new Set(opts.served ?? []);
 	const calls: string[] = [];
 	const polls = new Map<string, number>();
 	const registry: Publisher = {
 		has(name, version) {
 			calls.push(`has ${name}@${version}`);
 			if (name === opts.hasFails) return Promise.reject(new Error(`${name}: реестр ответил 500`));
+			return Promise.resolve(present.has(`${name}@${version}`));
+		},
+		served(name, version) {
+			calls.push(`served ${name}@${version}`);
 			const n = (polls.get(name) ?? 0) + 1;
 			polls.set(name, n);
 			const after = opts.visibleAfter?.[name];
 			return Promise.resolve(
-				present.has(`${name}@${version}`) || (after !== undefined && n >= after),
+				served.has(`${name}@${version}`) || (after !== undefined && n >= after),
 			);
 		},
 		publish(dir) {
@@ -155,6 +168,13 @@ describe('publishAll', () => {
 		]);
 	});
 
+	test('publishAll: версия в packument, tarball ещё не отдаётся — пропуск без publish', async () => {
+		const { registry, calls } = fakeRegistry({ present: ['@x/a@1.0.0'], served: [] });
+		const res = await publishAll([pkg('a')], registry);
+		expect(res).toEqual({ published: [], skipped: ['@x/a'] });
+		expect(calls).toEqual(['has @x/a@1.0.0']);
+	});
+
 	test('has бросает — publish не зовётся, ошибка с именем пакета', async () => {
 		const { registry, calls } = fakeRegistry({ hasFails: '@x/a' });
 		await expect(publishAll([pkg('a'), pkg('b')], registry)).rejects.toThrow('@x/a');
@@ -176,14 +196,27 @@ describe('WAIT_BUDGET', () => {
 
 describe('waitPublished', () => {
 	test('waitPublished: непубликуемый пакет не опрашивается, публикуемый — с версией релиза', async () => {
-		const { registry, calls } = fakeRegistry({ present: ['@x/a@1.2.3'] });
+		const { registry, calls } = fakeRegistry({ served: ['@x/a@1.2.3'] });
 		await waitPublished(
 			[pkg('a', { version: '0.0.1' }), pkg('priv', { published: false })],
 			'1.2.3',
 			registry,
 			{ attempts: 1, intervalMs: 0 },
 		);
-		expect(calls).toEqual(['has @x/a@1.2.3']);
+		expect(calls).toEqual(['served @x/a@1.2.3']);
+	});
+
+	test('waitPublished: has true, served появляется на второй попытке — ждёт served', async () => {
+		const { registry, calls } = fakeRegistry({
+			present: ['@x/a@1.0.0'],
+			visibleAfter: { '@x/a': 2 },
+		});
+		await waitPublished([pkg('a')], '1.0.0', registry, {
+			attempts: 3,
+			intervalMs: 0,
+			sleep: () => Promise.resolve(),
+		});
+		expect(calls).toEqual(['served @x/a@1.0.0', 'served @x/a@1.0.0']);
 	});
 });
 
@@ -338,15 +371,16 @@ describe('CLI', () => {
 			join(root, 'fake-npm.js'),
 			`require('node:fs').appendFileSync(${JSON.stringify(log)}, JSON.stringify({ argv: process.argv.slice(2), cwd: process.cwd() }) + '\\n');\nprocess.exit(${npmExit});\n`,
 		);
-		// b уже в реестре; остальные видны после того, как фейковый npm был вызван в их каталоге.
+		// b уже в реестре; остальные видны после того, как фейковый npm был вызван в их каталоге. HEAD на tarball отдаёт 200.
 		writeFileSync(
 			join(root, 'preload.js'),
 			`const fs = require('node:fs');
-globalThis.fetch = async (url) => {
+globalThis.fetch = async (url, init) => {
+	if (init?.method === 'HEAD') return new Response(null, { status: 200 });
 	const dir = decodeURIComponent(String(url).split('/').pop()).replace('@x/', '');
 	const calls = fs.existsSync(${JSON.stringify(log)}) ? fs.readFileSync(${JSON.stringify(log)}, 'utf8') : '';
 	const seen = dir === 'b' || calls.split('\\n').some((l) => l && JSON.parse(l).cwd.endsWith('/packages/' + dir));
-	return new Response(JSON.stringify({ versions: seen ? { '1.0.0': {} } : {} }), { status: 200 });
+	return new Response(JSON.stringify({ versions: seen ? { '1.0.0': { dist: { tarball: 'https://registry.npmjs.org/@x/' + dir + '/-/' + dir + '-1.0.0.tgz' } } } : {} }), { status: 200 });
 };
 `,
 		);
