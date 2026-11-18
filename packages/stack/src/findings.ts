@@ -21,6 +21,7 @@ export type Finding = FindingBase &
 					| 'renovate-preset'
 					| 'dependabot-config'
 					| 'moon-toolchain-version'
+					| 'moon-default-branch'
 					| 'unreadable-file'
 					| 'stale-exception';
 		  }

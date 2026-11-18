@@ -33,6 +33,8 @@ export const WORKSPACE_FILE = 'pnpm-workspace.yaml';
 
 export const MOON_TOOLCHAINS = '.moon/toolchains.yml';
 
+export const MOON_WORKSPACE = '.moon/workspace.yml';
+
 export const DEPENDABOT_CONFIGS = ['.github/dependabot.yml', '.github/dependabot.yaml'];
 
 // Репозиторий потребителя как значение: правила получают его и не читают диск сами.
@@ -49,7 +51,9 @@ export interface Repo {
 	renovate?: { path: string; config?: unknown };
 	/** Разобранный moon toolchains (MOON_TOOLCHAINS) (верхний уровень); нет поля — файла нет или он не разобрался. */
 	moonToolchains?: Record<string, unknown>;
-	/** Ровно одна находка unreadable-file на каждый неразобранный package.json, pnpm-workspace.yaml, первый конфиг Renovate и MOON_TOOLCHAINS. */
+	/** Разобранный верхний уровень moon workspace (MOON_WORKSPACE); пустой файл — пустой словарь; нет поля — файла нет или он не разобрался (в том числе верх — не словарь). */
+	moonWorkspace?: Record<string, unknown>;
+	/** Ровно одна находка unreadable-file на каждый неразобранный package.json, pnpm-workspace.yaml, первый конфиг Renovate, MOON_TOOLCHAINS и MOON_WORKSPACE. */
 	unreadable: Finding[];
 }
 
@@ -74,7 +78,7 @@ export type Snapshot = ReadonlyMap<string, Read>;
 // Чистая часть: из снимка строит Repo. Здесь единственная классификация unreadable-file: сбой чтения и
 // сбой разбора одной роли — одна находка. Разбираемые роли: package.json (корневой всегда; вложенные —
 // только при pnpm-workspace.yaml среди путей), pnpm-workspace.yaml и первый из RENOVATE_CONFIGS среди
-// путей (нечитаемый заслоняет остальные) и MOON_TOOLCHAINS. Остальные пути — только в paths, находки не дают.
+// путей (нечитаемый заслоняет остальные), MOON_TOOLCHAINS и MOON_WORKSPACE. Остальные пути — только в paths, находки не дают.
 // Порядок unreadable: по rank, равные — в порядке снимка.
 export function repoFromSnapshot(snapshot: Snapshot): Repo {
 	const files = new Map<string, string>();
@@ -161,6 +165,26 @@ export function repoFromSnapshot(snapshot: Snapshot): Repo {
 					: {};
 		}
 	}
+	// В MOON_WORKSPACE пишет sync, а setIn на не-словаре бросает: верх — не словарь здесь неразобранный файл.
+	let moonWorkspace: Record<string, unknown> | undefined;
+	const workspaceMoonRead = snapshot.get(MOON_WORKSPACE);
+	if (workspaceMoonRead !== undefined && 'failed' in workspaceMoonRead) {
+		bad(MOON_WORKSPACE, `${MOON_WORKSPACE} does not parse: ${workspaceMoonRead.failed.message}`);
+	} else if (workspaceMoonRead !== undefined && 'text' in workspaceMoonRead) {
+		const doc = parseDocument(workspaceMoonRead.text);
+		if (doc.errors.length > 0) {
+			bad(
+				MOON_WORKSPACE,
+				`${MOON_WORKSPACE} does not parse: ${(doc.errors[0] as Error).message.split('\n')[0]}`,
+			);
+		} else {
+			const top: unknown = doc.toJS();
+			if (top === null) moonWorkspace = {};
+			else if (typeof top === 'object' && !Array.isArray(top)) {
+				moonWorkspace = top as Record<string, unknown>;
+			} else bad(MOON_WORKSPACE, `${MOON_WORKSPACE} does not parse: top level is not a map`);
+		}
+	}
 	unreadable.sort((a, b) => rank(a) - rank(b));
 	return {
 		files,
@@ -170,6 +194,7 @@ export function repoFromSnapshot(snapshot: Snapshot): Repo {
 		...(workspace && { workspace }),
 		...(renovate && { renovate }),
 		...(moonToolchains && { moonToolchains }),
+		...(moonWorkspace && { moonWorkspace }),
 	};
 }
 
@@ -188,7 +213,7 @@ function readFile(root: string, path: string): Read {
 }
 
 // Адаптер диска, без классификации: dest и satisfiedBy канон-файлов, конфиги Renovate и dependabot,
-// MOON_TOOLCHAINS, pnpm-workspace.yaml, корневой package.json; если pnpm-workspace.yaml есть (текст или сбой чтения) —
+// MOON_TOOLCHAINS, MOON_WORKSPACE, pnpm-workspace.yaml, корневой package.json; если pnpm-workspace.yaml есть (текст или сбой чтения) —
 // ещё вложенные package.json без SKIP.
 export function readSnapshot(root: string, canon: Canon): Snapshot {
 	const candidates = new Set<string>(['package.json', WORKSPACE_FILE]);
@@ -196,7 +221,8 @@ export function readSnapshot(root: string, canon: Canon): Snapshot {
 		candidates.add(f.dest);
 		for (const p of f.satisfiedBy ?? []) candidates.add(p);
 	}
-	for (const p of [...RENOVATE_CONFIGS, ...DEPENDABOT_CONFIGS, MOON_TOOLCHAINS]) candidates.add(p);
+	for (const p of [...RENOVATE_CONFIGS, ...DEPENDABOT_CONFIGS, MOON_TOOLCHAINS, MOON_WORKSPACE])
+		candidates.add(p);
 	const snapshot = new Map<string, Read>();
 	for (const p of candidates) snapshot.set(p, readFile(root, p));
 	const workspace = snapshot.get(WORKSPACE_FILE) as Read;
