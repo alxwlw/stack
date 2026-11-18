@@ -231,7 +231,8 @@ describe('npmRegistryReader.served', () => {
 		const log: string[] = [];
 		globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => {
 			const url = String(input);
-			log.push(`${init?.method ?? 'GET'} ${url}`);
+			// Метка «+headers»: проба не должна нести своих заголовков (кэш-заголовки ломают смысл замера).
+			log.push(`${init?.method ?? 'GET'} ${url}${init?.headers ? ' +headers' : ''}`);
 			if (url === PACKUMENT_URL) {
 				return Promise.resolve(opts.packument ?? new Response(withTarball, { status: 200 }));
 			}

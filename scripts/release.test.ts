@@ -354,6 +354,7 @@ describe('CLI', () => {
 	function publishRun(npmExit: number): {
 		code: number | null;
 		calls: { argv: string[]; cwd: string }[];
+		heads: string[];
 		out: string;
 	} {
 		const root = packagesTree(['a', 'b', 'c', 'd']);
@@ -367,6 +368,7 @@ describe('CLI', () => {
 		man('c', '9.9.9', ',"private":true');
 		man('d', '1.0.0');
 		const log = join(root, 'calls.jsonl');
+		const heads = join(root, 'heads.log');
 		writeFileSync(
 			join(root, 'fake-npm.js'),
 			`require('node:fs').appendFileSync(${JSON.stringify(log)}, JSON.stringify({ argv: process.argv.slice(2), cwd: process.cwd() }) + '\\n');\nprocess.exit(${npmExit});\n`,
@@ -376,7 +378,10 @@ describe('CLI', () => {
 			join(root, 'preload.js'),
 			`const fs = require('node:fs');
 globalThis.fetch = async (url, init) => {
-	if (init?.method === 'HEAD') return new Response(null, { status: 200 });
+	if (init?.method === 'HEAD') {
+		fs.appendFileSync(${JSON.stringify(heads)}, String(url) + '\\n');
+		return new Response(null, { status: 200 });
+	}
 	const dir = decodeURIComponent(String(url).split('/').pop()).replace('@x/', '');
 	const calls = fs.existsSync(${JSON.stringify(log)}) ? fs.readFileSync(${JSON.stringify(log)}, 'utf8') : '';
 	const seen = dir === 'b' || calls.split('\\n').some((l) => l && JSON.parse(l).cwd.endsWith('/packages/' + dir));
@@ -399,12 +404,19 @@ globalThis.fetch = async (url, init) => {
 			.split('\n')
 			.filter(Boolean)
 			.map((l) => JSON.parse(l) as { argv: string[]; cwd: string });
-		return { code: r.exitCode, calls, out: r.stdout.toString() };
+		const headLines = existsSync(heads)
+			? readFileSync(heads, 'utf8').split('\n').filter(Boolean)
+			: [];
+		return { code: r.exitCode, calls, heads: headLines, out: r.stdout.toString() };
 	}
 
 	test('publish: зовёт npm publish с флагами по порядку, пропускает выложенные и private, код 0', () => {
-		const { code, calls, out } = publishRun(0);
+		const { code, calls, heads, out } = publishRun(0);
 		expect(code).toBe(0);
+		// Ожидание публикации идёт через served: HEAD на tarball каждого неприватного пакета (а не только packument).
+		expect(heads).toStrictEqual(
+			['a', 'b', 'd'].map((d) => `https://registry.npmjs.org/@x/${d}/-/${d}-1.0.0.tgz`),
+		);
 		expect(out).toContain('@x/b@1.0.0 is already in the registry');
 		expect(out).toContain('@x/a@1.0.0 есть в реестре');
 		expect(calls.map((c) => c.argv)).toEqual([
