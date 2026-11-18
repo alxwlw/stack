@@ -96,7 +96,7 @@ export function ghGitHub(cwd: string, exec: Exec = spawnExec): GitHub {
 				if (name === '') throw new Error('gh repo view returned no default branch');
 				return name;
 			}),
-		// gh печатает логин GitHub App как `app/<slug>`; `[bot]` — форма из `git user.name` бота (sync-pr.ts:118).
+		// gh печатает логин GitHub App как `app/<slug>`; `[bot]` — форма из `user.name` бота в `publishChanges`.
 		openPrs: () =>
 			settle(() => {
 				const stdout = gh([

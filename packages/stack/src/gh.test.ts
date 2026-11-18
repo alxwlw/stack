@@ -96,18 +96,18 @@ test('каждый вызов gh идёт в cwd репозитория', async 
 	const github = ghGitHub(REPO, f.exec);
 	await github.botUserId('acme-bot');
 	await github.openPr('stack/v1.2.3');
-	const h = fake({ stdout: '[]' });
-	const gh2 = ghGitHub(REPO, h.exec);
-	await gh2.openPrs();
-	await gh2.closePr(7, 'c');
-	const d = fake({ stdout: 'main\n' });
-	await ghGitHub(REPO, d.exec).defaultBranch();
+	const prs = fake({ stdout: '[]' });
+	const listAndClose = ghGitHub(REPO, prs.exec);
+	await listAndClose.openPrs();
+	await listAndClose.closePr(7, 'c');
+	const branch = fake({ stdout: 'main\n' });
+	await ghGitHub(REPO, branch.exec).defaultBranch();
 	const g = fake({ stdout: 'https://github.com/acme/app/pull/8\n' });
 	await ghGitHub(REPO, g.exec).createPr({ head: 'h', title: 't', body: 'b' });
 	expect(f.cwds).toEqual([REPO, REPO]);
 	expect(g.cwds).toEqual([REPO]);
-	expect(h.cwds).toEqual([REPO, REPO]);
-	expect(d.cwds).toEqual([REPO]);
+	expect(prs.cwds).toEqual([REPO, REPO]);
+	expect(branch.cwds).toEqual([REPO]);
 });
 
 test('status null без сигнала — throw с exited with null', async () => {
@@ -183,6 +183,7 @@ test('openPrs: gh pr list открытых, лимит 1000, поля; app/<slug
 	const stdout = JSON.stringify([
 		PR_JSON({ login: 'app/acme-bot', is_bot: true }),
 		PR_JSON({ login: 'alice', is_bot: false }, 8),
+		PR_JSON({ login: 'apple', is_bot: false }, 9),
 	]);
 	const { exec, calls } = fake({ stdout });
 	expect(await ghGitHub(REPO, exec).openPrs()).toStrictEqual([
@@ -199,6 +200,13 @@ test('openPrs: gh pr list открытых, лимит 1000, поля; app/<slug
 			head: 'stack/v1.12.0',
 			base: 'main',
 			author: 'alice',
+		},
+		{
+			number: 9,
+			url: 'https://github.com/acme/app/pull/9',
+			head: 'stack/v1.12.0',
+			base: 'main',
+			author: 'apple',
 		},
 	]);
 	expect(calls).toEqual([
