@@ -12,6 +12,7 @@ const ROOT = join(import.meta.dir, '..', '..', '..');
 // и путь лежит в поле message последней строки. Нет бинаря — тест падает с выводом proto, а не пропускается.
 function protoBin(tool: string): string {
 	const r = spawnSync('proto', ['bin', tool], { cwd: ROOT, encoding: 'utf8' });
+	if (r.error) throw new Error(`proto bin ${tool}: ${r.error.message}`);
 	let last = r.stdout
 		.split('\n')
 		.map((l) => l.trim())
@@ -33,8 +34,9 @@ function protoBin(tool: string): string {
 	return last;
 }
 
-// 64 hex во время выполнения: в исходнике нет строки, которую поймало бы правило канона.
-const KEY = '0123456789abcdef'.repeat(4);
+// 64 hex собираются во время выполнения, поэтому eth-правило канона не видит их в исходнике; в имени
+// нет слов key, secret, token, которые ищет generic-api-key из правил по умолчанию.
+const HEX = '0123456789abcdef'.repeat(4);
 // Hardhat/Anvil #0 — публичный, стоит в allowlist канона.
 const HARDHAT_0 = 'ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80';
 
@@ -45,8 +47,8 @@ test('канон gitleaks: ETH_PRIV ловится, в планах superpowers 
 	const dir = repoDir({
 		'.gitleaks.toml': canonFile('.gitleaks.toml'),
 		'.gitleaks.canon.toml': canonFile('.gitleaks.canon.toml'),
-		'src/a.ts': `ETH_PRIV=0x${KEY}\n`,
-		'docs/superpowers/plans/p.md': `ETH_PRIV=0x${KEY}\n`,
+		'src/a.ts': `ETH_PRIV=0x${HEX}\n`,
+		'docs/superpowers/plans/p.md': `ETH_PRIV=0x${HEX}\n`,
 		'src/h.ts': `ETH_PRIV=0x${HARDHAT_0}\n`,
 	});
 	try {

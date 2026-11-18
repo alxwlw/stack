@@ -34,6 +34,8 @@ const PROJECT: Record<string, string> = {
 	'src/orphan.ts': 'export const x = 1;\n',
 	'.claude/hook.ts': 'export const y = 1;\n',
 	'dist/out.ts': 'export const z = 1;\n',
+	'coverage/c.ts': 'export const c = 1;\n',
+	'.tsbuild/t.ts': 'export const t = 1;\n',
 };
 
 // Отчёт knip в одну отсортированную строку на находку: вид, файл, имя (у массива — имена через |).
