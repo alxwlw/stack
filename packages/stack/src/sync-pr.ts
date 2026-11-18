@@ -129,15 +129,20 @@ async function closeStale(
 			print('err', `sync-pr: closing PR ${pr.url} failed: ${message(error)}`);
 			return 1;
 		}
-		const kept = prs.some((p) => p.head === pr.head && !stale.some((s) => s.number === p.number));
-		if (!kept) {
+		const other = prs.find((p) => p.head === pr.head && !stale.some((s) => s.number === p.number));
+		if (!other) {
 			const r = runGit(repoRoot, ['push', 'origin', '--delete', pr.head]);
 			if (!r.ok) {
 				print('err', `sync-pr: git push --delete ${pr.head} failed: ${r.stderr}`);
 				return 1;
 			}
 		}
-		print('out', `closed PR ${pr.url} (${pr.head})`);
+		print(
+			'out',
+			other
+				? `closed PR ${pr.url} (${pr.head} kept: ${other.url} is open on it)`
+				: `closed PR ${pr.url} (${pr.head})`,
+		);
 	}
 	return 0;
 }
@@ -229,7 +234,7 @@ export async function publishChanges(
 
 	const prs = await listOpen();
 	if (!prs) return 1;
-	let url = prs.find((p) => p.head === branch)?.url;
+	let url = prs.find((p) => p.head === branch && p.base === base)?.url;
 	if (url) {
 		print('out', `updated PR ${url}`);
 	} else {

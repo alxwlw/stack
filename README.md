@@ -318,7 +318,7 @@ A release pushes itself out. When `publish` succeeds, the canon dispatches `stac
 repository on its consumer list; that workflow runs `stack sync-pr` for the new version
 (`bunx @alxwlw/stack@<version> sync-pr`) and, if anything changed, opens a PR on branch
 `stack/v<version>`. Re-dispatching the same version force-updates that
-branch and reuses the open PR instead of opening a second one. After a rollout the consumer is left with one sync-PR,
+branch and reuses the open PR instead of opening a second one. After a rollout the consumer is left with at most one sync-PR on that base,
 and re-dispatching an old version does not close the PR of a newer one.
 
 `sync.yml` keeps only the App token, the checkout, the setup action and a short wait until
