@@ -114,7 +114,7 @@ const pkg = (dir: string, over: Partial<ReleasePackage> = {}): ReleasePackage =>
 
 /**
  * Фейковый реестр: `has` читает `present` («опубликовано» — версия в packument) и `hasFails`,
- * `served` — отдельное множество `served` («tarball отдаётся») и `visibleAfter` — сколько опросов пакет «не виден».
+ * `served` — отдельное множество `served` («tarball отдаётся», состояние `'served'`, иначе `'unlisted'`) и `visibleAfter` — сколько опросов пакет «не виден».
  */
 function fakeRegistry(
 	opts: {
@@ -140,7 +140,9 @@ function fakeRegistry(
 			polls.set(name, n);
 			const after = opts.visibleAfter?.[name];
 			return Promise.resolve(
-				served.has(`${name}@${version}`) || (after !== undefined && n >= after),
+				served.has(`${name}@${version}`) || (after !== undefined && n >= after)
+					? 'served'
+					: 'unlisted',
 			);
 		},
 		publish(dir) {

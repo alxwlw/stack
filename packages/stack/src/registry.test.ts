@@ -21,7 +21,9 @@ function fakeRegistry(opts: { present?: string[]; visibleAfter?: Record<string, 
 			polls.set(name, n);
 			const after = opts.visibleAfter?.[name];
 			return Promise.resolve(
-				present.has(`${name}@${version}`) || (after !== undefined && n >= after),
+				present.has(`${name}@${version}`) || (after !== undefined && n >= after)
+					? 'served'
+					: 'unlisted',
 			);
 		},
 	};
@@ -37,7 +39,7 @@ describe('waitVisible', () => {
 		const calls: string[] = [];
 		const registry: Registry = {
 			has: () => Promise.resolve(false),
-			served: async (n, v) => (calls.push(`${n}@${v}`), true),
+			served: async (n, v) => (calls.push(`${n}@${v}`), 'served'),
 		};
 		let slept = 0;
 		await waitVisible([], registry, {
@@ -53,7 +55,7 @@ describe('waitVisible', () => {
 		const calls: string[] = [];
 		const registry: Registry = {
 			has: () => Promise.resolve(false),
-			served: async (n, v) => (calls.push(`${n}@${v}`), true),
+			served: async (n, v) => (calls.push(`${n}@${v}`), 'served'),
 		};
 		await waitVisible(
 			[
@@ -70,7 +72,7 @@ describe('waitVisible', () => {
 		let slept = 0;
 		const registry: Registry = {
 			has: () => Promise.resolve(false),
-			served: async (n) => n === '@acme/a',
+			served: async (n) => (n === '@acme/a' ? 'served' : 'unlisted'),
 		};
 		await expect(
 			waitVisible(
@@ -82,7 +84,9 @@ describe('waitVisible', () => {
 				registry,
 				{ attempts: 3, intervalMs: 5, sleep: async () => void slept++ },
 			),
-		).rejects.toThrow('за 3 попыток в реестре не появились версии: @acme/b@2.0.0 @acme/c@2.0.0');
+		).rejects.toThrow(
+			'за 3 попыток в реестре не появились версии: @acme/b@2.0.0 (нет в packument), @acme/c@2.0.0 (нет в packument)',
+		);
 		expect(slept).toBe(2);
 	});
 
@@ -129,11 +133,11 @@ describe('waitVisible', () => {
 describe('waitVisible: сбои реестра', () => {
 	const noSleep = (): Promise<void> => Promise.resolve();
 
-	test('served бросает на первой попытке и отдаёт true на второй — ожидание завершается', async () => {
+	test("served бросает на первой попытке и отдаёт 'served' на второй — ожидание завершается", async () => {
 		let n = 0;
 		const registry: Registry = {
 			has: () => Promise.resolve(false),
-			served: () => (++n === 1 ? Promise.reject(new Error('500')) : Promise.resolve(true)),
+			served: () => (++n === 1 ? Promise.reject(new Error('500')) : Promise.resolve('served')),
 		};
 		await waitVisible(wanted('@x/a'), registry, { attempts: 3, intervalMs: 1, sleep: noSleep });
 		expect(n).toBe(2);
@@ -150,8 +154,43 @@ describe('waitVisible: сбои реестра', () => {
 		};
 		await expect(
 			waitVisible(wanted('@x/a'), registry, { attempts: 3, intervalMs: 1, sleep: noSleep }),
-		).rejects.toThrow('за 3 попыток в реестре не появились версии: @x/a@1.0.0');
+		).rejects.toThrow('за 3 попыток в реестре не появились версии: @x/a@1.0.0 (500)');
 		expect(n).toBe(3);
+	});
+});
+
+describe('waitVisible: причина провала', () => {
+	test('причина — последней попытки', async () => {
+		let n = 0;
+		const registry: Registry = {
+			has: () => Promise.resolve(false),
+			served: async () => (++n === 1 ? 'unlisted' : 'no-tarball'),
+		};
+		await expect(
+			waitVisible(wanted('@x/a'), registry, {
+				attempts: 2,
+				intervalMs: 1,
+				sleep: () => Promise.resolve(),
+			}),
+		).rejects.toThrow(
+			'за 2 попыток в реестре не появились версии: @x/a@1.0.0 (в packument есть, tarball не отдаётся)',
+		);
+	});
+
+	test('tarball 404 до конца попыток — не «готово»', async () => {
+		let n = 0;
+		const registry: Registry = {
+			has: () => Promise.resolve(false),
+			served: async () => (n++, 'no-tarball'),
+		};
+		await expect(
+			waitVisible(wanted('@x/a'), registry, {
+				attempts: 2,
+				intervalMs: 1,
+				sleep: () => Promise.resolve(),
+			}),
+		).rejects.toThrow('не появились версии');
+		expect(n).toBe(2);
 	});
 });
 
@@ -212,6 +251,21 @@ describe('npmRegistryReader.has', () => {
 		);
 	});
 
+	test('200 с телом null или [] — has и served бросают с именем пакета, HEAD не уходит', async () => {
+		for (const body of ['null', '[]']) {
+			const msg = '@alxwlw/stack: нечитаемый ответ реестра: не объект';
+			stub(new Response(body, { status: 200 }));
+			await expect(reg.has('@alxwlw/stack', '1.2.3')).rejects.toThrow(msg);
+			const log: string[] = [];
+			globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => {
+				log.push(`${init?.method ?? 'GET'} ${String(input)}`);
+				return Promise.resolve(new Response(body, { status: 200 }));
+			}) as typeof fetch;
+			await expect(reg.served('@alxwlw/stack', '1.2.3')).rejects.toThrow(msg);
+			expect(log).toStrictEqual(['GET https://registry.npmjs.org/@alxwlw%2fstack']);
+		}
+	});
+
 	test('сбой сети — throw с именем пакета', async () => {
 		stub(new Error('ECONNRESET'));
 		await expect(reg.has('@alxwlw/stack', '1.2.3')).rejects.toThrow('@alxwlw/stack');
@@ -248,36 +302,36 @@ describe('npmRegistryReader.served', () => {
 	};
 	const reg = npmRegistryReader();
 
-	test('версия в packument, tarball 200 — true; HEAD уходит ровно на dist.tarball', async () => {
+	test("версия в packument, tarball 200 — 'served'; HEAD уходит ровно на dist.tarball", async () => {
 		const log = stub({ tarball: new Response(null, { status: 200 }) });
-		expect(await reg.served('@alxwlw/stack', '1.2.3')).toBe(true);
+		expect(await reg.served('@alxwlw/stack', '1.2.3')).toBe('served');
 		expect(log).toStrictEqual([`GET ${PACKUMENT_URL}`, `HEAD ${TARBALL}`]);
 	});
 
-	test('tarball 404 — false', async () => {
+	test("tarball 404 — 'no-tarball'", async () => {
 		stub({ tarball: new Response(null, { status: 404 }) });
-		expect(await reg.served('@alxwlw/stack', '1.2.3')).toBe(false);
+		expect(await reg.served('@alxwlw/stack', '1.2.3')).toBe('no-tarball');
 	});
 
-	test('версии нет в packument — false, HEAD не уходит', async () => {
+	test("версии нет в packument — 'unlisted', HEAD не уходит", async () => {
 		const log = stub({});
-		expect(await reg.served('@alxwlw/stack', '9.9.9')).toBe(false);
+		expect(await reg.served('@alxwlw/stack', '9.9.9')).toBe('unlisted');
 		expect(log).toStrictEqual([`GET ${PACKUMENT_URL}`]);
 	});
 
-	test('packument 404 — false, HEAD не уходит', async () => {
+	test("packument 404 — 'unlisted', HEAD не уходит", async () => {
 		const log = stub({ packument: new Response('{}', { status: 404 }) });
-		expect(await reg.served('@alxwlw/stack', '1.2.3')).toBe(false);
+		expect(await reg.served('@alxwlw/stack', '1.2.3')).toBe('unlisted');
 		expect(log).toStrictEqual([`GET ${PACKUMENT_URL}`]);
 	});
 
-	test('у версии нет dist.tarball или он не строка — false, HEAD не уходит', async () => {
+	test("у версии нет dist.tarball или он не строка — 'unlisted', HEAD не уходит", async () => {
 		for (const body of [
 			'{"versions":{"1.2.3":{}}}',
 			'{"versions":{"1.2.3":{"dist":{"tarball":7}}}}',
 		]) {
 			const log = stub({ packument: new Response(body, { status: 200 }) });
-			expect(await reg.served('@alxwlw/stack', '1.2.3')).toBe(false);
+			expect(await reg.served('@alxwlw/stack', '1.2.3')).toBe('unlisted');
 			expect(log).toStrictEqual([`GET ${PACKUMENT_URL}`]);
 		}
 	});
