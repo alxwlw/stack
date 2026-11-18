@@ -42,7 +42,7 @@ function runWait(
 	const calls = join(dir, 'calls');
 	const reply = body === undefined ? 'exit 22' : `cat '${join(dir, 'body.json')}'`;
 	if (body !== undefined) writeFileSync(join(dir, 'body.json'), body);
-	// Проба tarball: в журнал `${метод} ${url}` (HEAD — только при ровно `-I` среди аргументов).
+	// Проба tarball: в журнал `${метод} ${все аргументы}` (HEAD — только при ровно `-I` среди аргументов); лишний заголовок виден в журнале.
 	const probe = tarball === 200 ? 'exit 0' : 'exit 22';
 	writeFileSync(
 		join(dir, 'curl'),
@@ -52,7 +52,7 @@ function runWait(
 			'if [[ "$last" == *.tgz ]]; then',
 			'  m=GET',
 			'  for a in "$@"; do if [ "$a" = -I ]; then m=HEAD; fi; done',
-			`  echo "$m $last" >> '${calls}'`,
+			`  echo "$m $*" >> '${calls}'`,
 			`  ${probe}`,
 			'fi',
 			'p="${last##*%2f}"',
@@ -161,7 +161,7 @@ test('шаг ожидания — короткая страховка: ATTEMPTS 
 test('шаг ожидания выходит на первой попытке, когда версия stack в реестре и tarball отдаётся', () => {
 	const r = runWait(has, '3');
 	expect(r.status).toBe(0);
-	expect(r.calls).toStrictEqual(['stack', `HEAD ${TARBALL}`]);
+	expect(r.calls).toStrictEqual(['stack', `HEAD -fsS -I ${TARBALL}`]);
 	expect(r.sleeps).toStrictEqual([]);
 });
 
@@ -170,11 +170,11 @@ test('версия в packument, tarball 404 — ждёт и падает пос
 	expect(r.status).toBe(1);
 	expect(r.calls).toStrictEqual([
 		'stack',
-		`HEAD ${TARBALL}`,
+		`HEAD -fsS -I ${TARBALL}`,
 		'stack',
-		`HEAD ${TARBALL}`,
+		`HEAD -fsS -I ${TARBALL}`,
 		'stack',
-		`HEAD ${TARBALL}`,
+		`HEAD -fsS -I ${TARBALL}`,
 	]);
 	expect(r.out).toContain('@alxwlw/stack@1.2.3');
 });
