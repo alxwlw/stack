@@ -19,16 +19,22 @@ import {
 	type NewPr,
 	ownVersion,
 	prBody,
-	publishChanges,
-	type PublishOptions,
 	type RunProcess,
 	SYNC_PR_WAIT,
 	syncPr,
 	type SyncPrOptions,
 } from './sync-pr.ts';
-import { git, gitRepo, isolateGitConfig, repoDir } from './testkit.ts';
-
-const PR_URL = 'https://github.com/acme/app/pull/1';
+import {
+	fakeGitHub,
+	git,
+	gitRepo,
+	isolateGitConfig,
+	opts,
+	PR_URL,
+	put,
+	repoDir,
+	run,
+} from './testkit.ts';
 
 let restore: () => void;
 beforeAll(() => {
@@ -36,64 +42,14 @@ beforeAll(() => {
 });
 afterAll(() => restore());
 
-function fakeGitHub(over: Partial<GitHub> = {}): {
-	github: GitHub;
-	calls: string[];
-	created: NewPr[];
-} {
-	const calls: string[] = [];
-	const created: NewPr[] = [];
-	const github: GitHub = {
-		botUserId: async () => {
-			calls.push('botUserId');
-			return 42;
-		},
-		openPr: async () => {
-			calls.push('openPr');
-			return undefined;
-		},
-		createPr: async (pr) => {
-			calls.push('createPr');
-			created.push(pr);
-			return PR_URL;
-		},
-		...over,
-	};
-	return { github, calls, created };
-}
-
-function put(dir: string, path: string, content: string): void {
-	mkdirSync(dirname(join(dir, path)), { recursive: true });
-	writeFileSync(join(dir, path), content);
-}
-
-async function run(
-	opts: PublishOptions,
-	github: GitHub,
-): Promise<{ code: 0 | 1; out: string[]; err: string[] }> {
-	const out: string[] = [];
-	const err: string[] = [];
-	const code = await publishChanges(opts, github, (stream, line) =>
-		(stream === 'out' ? out : err).push(line),
-	);
-	return { code, out, err };
-}
-
-const opts = (dir: string, over: Partial<PublishOptions> = {}): PublishOptions => ({
-	repoRoot: dir,
-	version: '1.2.3',
-	appSlug: 'acme-bot',
-	...over,
-});
-
 describe('publishChanges', () => {
-	test('изменений нет — строка, код 0, ни ветки, ни вызовов GitHub', async () => {
+	test('изменений нет — строка, код 0, ни ветки, ни коммита; GitHub только ищет устаревшие PR', async () => {
 		const { dir } = gitRepo({ 'a.txt': 'a' });
 		const { github, calls } = fakeGitHub();
 		const r = await run(opts(dir), github);
 		expect(r.code).toBe(0);
 		expect(r.out).toEqual(['canon already applied, nothing to commit']);
-		expect(calls).toEqual([]);
+		expect(calls).toEqual(['defaultBranch', 'openPrs']);
 		expect(git(dir, 'branch', '--list', 'stack/v1.2.3')).toBe('');
 	});
 
@@ -155,7 +111,7 @@ describe('publishChanges', () => {
 		expect(r.out).toEqual(['pushed stack/v1.2.3', `opened PR ${PR_URL}`]);
 	});
 
-	test('PR: заголовок, head, без --base — base не передаётся', async () => {
+	test('PR: заголовок, head, без --base — база из defaultBranch', async () => {
 		const { dir } = gitRepo({ 'a.txt': 'a' });
 		put(dir, 'b.txt', 'b');
 		const { github, created } = fakeGitHub();
@@ -164,7 +120,7 @@ describe('publishChanges', () => {
 		const pr = created[0] as NewPr;
 		expect(pr.head).toBe('stack/v1.2.3');
 		expect(pr.title).toBe('chore(stack): канон 1.2.3');
-		expect('base' in pr).toBe(false);
+		expect(pr.base).toBe('main');
 	});
 
 	test('--base передаётся в создание PR', async () => {
@@ -205,12 +161,12 @@ describe('publishChanges', () => {
 		expect(git(remote, 'rev-parse', 'stack/v1.2.3^')).toBe(git(remote, 'rev-parse', 'main'));
 	});
 
-	test('пустой base — как без base', async () => {
+	test('пустой base — как без --base, база из defaultBranch', async () => {
 		const { dir } = gitRepo({ 'a.txt': 'a' });
 		put(dir, 'b.txt', 'b');
 		const { github, created } = fakeGitHub();
 		await run(opts(dir, { base: '' }), github);
-		expect('base' in (created[0] as NewPr)).toBe(false);
+		expect(created[0]?.base).toBe('main');
 	});
 
 	test('git status упал — код 1, причина git в сообщении, GitHub не зовётся', async () => {
@@ -302,13 +258,9 @@ describe('publishChanges', () => {
 		git(clone, 'commit', '-m', 'base moved');
 		git(clone, 'push', 'origin', 'main');
 		put(clone, 'b.txt', 'b');
-		const second = fakeGitHub({
-			openPr: async () => PR_URL,
-		});
-		const r = await run(opts(clone), second.github);
+		const r = await run(opts(clone), first.github);
 
 		expect(first.created).toHaveLength(1);
-		expect(second.created).toHaveLength(0);
 		expect(r.out.at(-1)).toBe(`updated PR ${PR_URL}`);
 		expect(git(remote, 'rev-parse', 'stack/v1.2.3^')).toBe(git(remote, 'rev-parse', 'main'));
 		expect(git(remote, 'rev-list', '--count', 'main..stack/v1.2.3')).toBe('1\n');
@@ -324,7 +276,7 @@ describe('publishChanges', () => {
 		expect(r.code).toBe(1);
 		expect(r.err[0]).toStartWith('sync-pr: git push failed:');
 		expect(r.err[0]?.endsWith('\n')).toBe(false);
-		expect(calls).toEqual(['botUserId']);
+		expect(calls).toEqual(['defaultBranch', 'botUserId']);
 	});
 
 	test('пользователь бота не найден — код 1, commit не создан', async () => {
@@ -342,17 +294,17 @@ describe('publishChanges', () => {
 		expect(git(dir, 'branch', '--list', 'stack/v1.2.3')).toBe('');
 	});
 
-	test('поиск открытого PR упал — код 1, PR не создаётся', async () => {
+	test('поиск открытых PR упал — код 1, PR не создаётся', async () => {
 		const { dir } = gitRepo({ 'a.txt': 'a' });
 		put(dir, 'b.txt', 'b');
 		const { github, calls } = fakeGitHub({
-			openPr: async () => {
+			openPrs: async () => {
 				throw new Error('boom');
 			},
 		});
 		const r = await run(opts(dir), github);
 		expect(r.code).toBe(1);
-		expect(r.err).toEqual(['sync-pr: finding the open PR failed: boom']);
+		expect(r.err).toEqual(['sync-pr: listing open PRs failed: boom']);
 		expect(calls).not.toContain('createPr');
 	});
 

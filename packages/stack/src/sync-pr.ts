@@ -14,11 +14,21 @@ export interface NewPr {
 	body: string;
 }
 
+export interface OpenPr {
+	number: number;
+	url: string;
+	head: string; // headRefName
+	base: string; // baseRefName
+	author: string; // логин; у GitHub App — `<slug>[bot]`, у PR без автора — ''
+}
+
 // Порт GitHub. Боевой adapter — gh; тесты — литерал.
 export interface GitHub {
 	botUserId(slug: string): Promise<number>;
-	openPr(head: string): Promise<string | undefined>; // URL открытого PR с этой веткой
 	createPr(pr: NewPr): Promise<string>; // URL созданного PR
+	defaultBranch(): Promise<string>;
+	openPrs(): Promise<OpenPr[]>; // все открытые PR репозитория
+	closePr(number: number, comment: string): Promise<void>; // закрыть с комментарием; ветку не трогает
 }
 
 export type Print = (stream: 'out' | 'err', line: string) => void;
@@ -83,7 +93,62 @@ function changedFiles(repoRoot: string): string[] {
 const message = (error: unknown): string =>
 	error instanceof Error ? error.message : String(error);
 
-// Всё после установки и хука: список изменённых файлов, пользователь бота, ветка, commit, force-push, PR.
+const SYNC_BRANCH = /^stack\/v(\d+\.\d+\.\d+)$/;
+
+// PR бота из веток `stack/v<X.Y.Z>` строго старше version с той же базой; порядок входа сохраняется.
+// Ветку проверяем первой: PR с чужой или битой веткой под правило не попадает, что бы ни лежало в других полях.
+export function stalePrs(
+	prs: readonly OpenPr[],
+	opts: { version: string; base: string; bot: string },
+): OpenPr[] {
+	return prs.filter((pr) => {
+		const m = SYNC_BRANCH.exec(pr.head);
+		return (
+			m !== null &&
+			pr.author === opts.bot &&
+			pr.base === opts.base &&
+			Bun.semver.order(m[1] as string, opts.version) < 0
+		);
+	});
+}
+
+// Закрывает устаревшие PR по порядку: комментарий, затем удаление ветки. Первая ошибка останавливает.
+// Ветку не трогаем, пока на ней открыт PR, который мы не закрываем (другая база).
+async function closeStale(
+	repoRoot: string,
+	github: GitHub,
+	print: Print,
+	prs: readonly OpenPr[],
+	stale: readonly OpenPr[],
+	comment: string,
+): Promise<0 | 1> {
+	for (const pr of stale) {
+		try {
+			await github.closePr(pr.number, comment);
+		} catch (error) {
+			print('err', `sync-pr: closing PR ${pr.url} failed: ${message(error)}`);
+			return 1;
+		}
+		const other = prs.find((p) => p.head === pr.head && !stale.some((s) => s.number === p.number));
+		if (!other) {
+			const r = runGit(repoRoot, ['push', 'origin', '--delete', pr.head]);
+			if (!r.ok) {
+				print('err', `sync-pr: git push --delete ${pr.head} failed: ${r.stderr}`);
+				return 1;
+			}
+		}
+		print(
+			'out',
+			other
+				? `closed PR ${pr.url} (${pr.head} kept: ${other.url} is open on it)`
+				: `closed PR ${pr.url} (${pr.head})`,
+		);
+	}
+	return 0;
+}
+
+// Всё после установки и хука: список изменённых файлов, ветка по умолчанию, пользователь бота, ветка,
+// commit, force-push, PR и закрытие PR старших версий.
 export async function publishChanges(
 	opts: PublishOptions,
 	github: GitHub,
@@ -92,6 +157,7 @@ export async function publishChanges(
 	const { repoRoot, version, appSlug } = opts;
 	const branch = `stack/v${version}`;
 	const title = `chore(stack): канон ${version}`;
+	const bot = `${appSlug}[bot]`;
 
 	let files: string[];
 	try {
@@ -100,9 +166,36 @@ export async function publishChanges(
 		print('err', `sync-pr: git status failed: ${message(error)}`);
 		return 1;
 	}
+
+	let base: string;
+	try {
+		base = opts.base || (await github.defaultBranch());
+	} catch (error) {
+		print('err', `sync-pr: default branch lookup failed: ${message(error)}`);
+		return 1;
+	}
+
+	const listOpen = async (): Promise<OpenPr[] | undefined> => {
+		try {
+			return await github.openPrs();
+		} catch (error) {
+			print('err', `sync-pr: listing open PRs failed: ${message(error)}`);
+			return undefined;
+		}
+	};
+
 	if (files.length === 0) {
 		print('out', 'canon already applied, nothing to commit');
-		return 0;
+		const prs = await listOpen();
+		if (!prs) return 1;
+		return closeStale(
+			repoRoot,
+			github,
+			print,
+			prs,
+			stalePrs(prs, { version, base, bot }),
+			`Канон ${version} уже в \`${base}\` — этот PR устарел.`,
+		);
 	}
 
 	let id: number;
@@ -113,7 +206,6 @@ export async function publishChanges(
 		return 1;
 	}
 
-	const bot = `${appSlug}[bot]`;
 	const steps: [string, string[]][] = [
 		['checkout', ['checkout', '-B', branch]],
 		['add', ['add', '-A']],
@@ -140,28 +232,29 @@ export async function publishChanges(
 	}
 	print('out', `pushed ${branch}`);
 
-	let url: string | undefined;
-	try {
-		url = await github.openPr(branch);
-	} catch (error) {
-		print('err', `sync-pr: finding the open PR failed: ${message(error)}`);
-		return 1;
-	}
+	const prs = await listOpen();
+	if (!prs) return 1;
+	let url = prs.find((p) => p.head === branch && p.base === base)?.url;
 	if (url) {
 		print('out', `updated PR ${url}`);
-		return 0;
+	} else {
+		try {
+			url = await github.createPr({ head: branch, base, title, body: prBody(version, files) });
+		} catch (error) {
+			print('err', `sync-pr: creating the PR failed: ${message(error)}`);
+			return 1;
+		}
+		print('out', `opened PR ${url}`);
 	}
 
-	try {
-		const pr: NewPr = { head: branch, title, body: prBody(version, files) };
-		if (opts.base) pr.base = opts.base;
-		url = await github.createPr(pr);
-	} catch (error) {
-		print('err', `sync-pr: creating the PR failed: ${message(error)}`);
-		return 1;
-	}
-	print('out', `opened PR ${url}`);
-	return 0;
+	return closeStale(
+		repoRoot,
+		github,
+		print,
+		prs,
+		stalePrs(prs, { version, base, bot }),
+		`Заменён ${url} — канон ${version}.`,
+	);
 }
 
 // Порт процессов: код выхода; вывод процесса идёт в лог job (боевой adapter наследует stdio).

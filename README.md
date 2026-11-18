@@ -116,7 +116,10 @@ when the repo has a root `package.json`, a wait until the `@alxwlw/*` entries of
 catalog are listed in the npm registry and their tarballs answer a HEAD with 200 (skipped with `--no-install`),
 `proto install`, `pnpm install --no-frozen-lockfile` (skipped with `--no-install`) and the
 `stack:post-sync` hook; then the changed files one by one, a commit by the GitHub App's bot on
-`stack/v<version>`, a force-push and a PR (or the open one, reused). The bot's git commands run
+`stack/v<version>`, a force-push and a PR (or the open one, reused). After the PR it closes the open
+sync-PRs of the bot for older versions on the same base, with a comment that links this version's PR, and
+deletes their branches unless another open PR still uses one; when there is nothing to commit it closes them the same way, and the comment
+says the canon is already on the base. The bot's git commands run
 without the repository's git hooks (`core.hooksPath` points at `/dev/null`, so neither `.git/hooks` nor a hooks path set by husky or
 lefthook runs); the consumer's CI on the PR checks the result. The version is the package's own;
 `GH_TOKEN` and `STACK_APP_SLUG` come from the environment. Exit codes: `0` — PR opened or updated, or
@@ -315,7 +318,8 @@ A release pushes itself out. When `publish` succeeds, the canon dispatches `stac
 repository on its consumer list; that workflow runs `stack sync-pr` for the new version
 (`bunx @alxwlw/stack@<version> sync-pr`) and, if anything changed, opens a PR on branch
 `stack/v<version>`. Re-dispatching the same version force-updates that
-branch and reuses the open PR instead of opening a second one.
+branch and reuses the open PR instead of opening a second one. After a rollout the consumer is left with at most one sync-PR on its base,
+and re-dispatching an old version does not close the PR of a newer one.
 
 `sync.yml` keeps only the App token, the checkout, the setup action and a short wait until
 `@alxwlw/stack@<version>` is listed in the npm registry and its tarball answers a HEAD with 200; everything after that is `stack sync-pr`. It
@@ -323,7 +327,7 @@ needs a version that has the command, 1.11.0 or later: re-dispatching an older v
 usage error (exit code 2).
 
 The work is done by the [`alxwlw-stack-bot`](https://github.com/apps/alxwlw-stack-bot) GitHub App,
-which a consumer installs on its own repositories. It asks for exactly what opening that PR takes —
+which a consumer installs on its own repositories. It asks for exactly what opening that PR and closing the ones it replaces takes —
 **actions**, **contents**, **pull requests**, **workflows** (write) and metadata (read) — and nothing
 else. Tokens are minted per installation and expire within the hour, so the canon never holds a
 long-lived credential for a consumer.
