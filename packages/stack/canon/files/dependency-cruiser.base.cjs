@@ -144,7 +144,6 @@ module.exports = {
 	options: {
 		doNotFollow: { path: ['node_modules', '(^|/)dist(/|$)'] },
 		exclude: { path: '(^|/)dist(/|$)' },
-		includeOnly: ['^apps/', '^packages/'],
 		tsPreCompilationDeps: true,
 		detectJSDocImports: true,
 		tsConfig: { fileName: 'tsconfig.json' },

@@ -8,8 +8,18 @@ import { canonFile, repoDir, runTool, toolJson } from './testkit.ts';
 const ROOT = join(import.meta.dir, '..', '..', '..');
 const DEPCRUISE_BIN = join(ROOT, 'node_modules', '.bin', 'depcruise');
 
+// Пакет-заглушка в node_modules: правилам на npm-цели нужен пакет, который разрешается на диск.
+const stubPackage = (name: string): Record<string, string> => ({
+	[`node_modules/${name}/package.json`]: `{ "name": "${name}", "version": "1.0.0", "main": "index.js" }\n`,
+	[`node_modules/${name}/index.js`]: 'module.exports = 1;\n',
+});
+
 const TREE: Record<string, string> = {
-	'package.json': '{ "name": "fixture", "private": true, "type": "module" }\n',
+	'package.json':
+		'{ "name": "fixture", "private": true, "type": "module", "devDependencies": { "dev-tool": "1.0.0" } }\n',
+	...stubPackage('dev-tool'),
+	// phantom лежит в node_modules, но его нет в package.json.
+	...stubPackage('phantom'),
 	// Канон задаёт options.tsConfig.fileName: без tsconfig.json depcruise падает с TS5083.
 	'tsconfig.json': JSON.stringify({
 		compilerOptions: {
@@ -35,15 +45,19 @@ const TREE: Record<string, string> = {
 		"import { b } from './b.ts';\nexport const a = 1;\nexport const ab = () => b;\n",
 	'packages/core/b.ts':
 		"import { a } from './a.ts';\nexport const b = 2;\nexport const ba = () => a;\n",
+	'packages/core/deps.ts':
+		"import { m } from './missing.ts';\nimport tool from 'dev-tool';\nimport phantom from 'phantom';\nimport punycode from 'punycode';\nexport const deps = [m, tool, phantom, punycode];\n",
 };
 
-// Закреплены пять правил, которые срабатывают на малом дереве: no-app-to-app (обратная ссылка на
-// своё app и исключение для e2e), no-package-to-app, no-circular, not-to-spec и no-orphans.
-// Правила с целью в node_modules или core на этом каноне не срабатывают никогда: includeOnly
-// ограничивает граф каталогами apps и packages, и такие цели в граф не попадают. Сравнивается полный
+// Закреплены правила о путях внутри репозитория: no-app-to-app (обратная ссылка на своё app и
+// исключение для e2e), no-package-to-app, no-circular, not-to-spec, no-orphans. И правила с целью вне
+// apps и packages: not-to-unresolvable (несуществующий файл), not-to-dev-dep (devDependency в рабочем
+// коде), no-non-package-json (пакет есть в node_modules, но не в package.json) и no-deprecated-core
+// (punycode). Вторые работают, только пока такие цели остаются в графе: с includeOnly на apps и
+// packages их не ловит ни одно правило, а deps.ts становится орфаном (DX-207). Сравнивается полный
 // отсортированный список нарушений: лишняя запись про своё app или e2e краснит тест так же, как
 // пропавшая.
-test('канон dependency-cruiser: app→app, package→app, цикл, импорт спека и орфан ловятся; своё app и e2e — нет', () => {
+test('канон dependency-cruiser: границы, цикл, спек, орфан, неразрешённый импорт, devDependency, фантомный пакет и устаревший core ловятся; своё app и e2e — нет', () => {
 	const dir = repoDir({
 		...TREE,
 		'.dependency-cruiser.base.cjs': canonFile('.dependency-cruiser.base.cjs'),
@@ -63,8 +77,12 @@ test('канон dependency-cruiser: app→app, package→app, цикл, имп�
 		expect(found).toStrictEqual([
 			'error no-app-to-app apps/web/index.ts → apps/api/index.ts',
 			'error no-circular packages/core/a.ts → packages/core/b.ts',
+			'error no-non-package-json packages/core/deps.ts → node_modules/phantom/index.js',
 			'error no-package-to-app packages/core/index.ts → apps/api/index.ts',
+			'error not-to-dev-dep packages/core/deps.ts → node_modules/dev-tool/index.js',
 			'error not-to-spec apps/web/index.ts → apps/web/x.test.ts',
+			'error not-to-unresolvable packages/core/deps.ts → ./missing.ts',
+			'warn no-deprecated-core packages/core/deps.ts → punycode',
 			'warn no-orphans packages/core/lonely.ts → packages/core/lonely.ts',
 		]);
 	} finally {
