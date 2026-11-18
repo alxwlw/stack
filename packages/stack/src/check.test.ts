@@ -324,7 +324,13 @@ test('группа peers включена, лок есть, порта нет �
 });
 
 test('группа peers включена — находки peers последние и исключением не гасятся', () => {
-	const repo = repoDir({ ...RENOVATE, ...LOCK, '.github/dependabot.yml': 'version: 2\n' });
+	// Находки плана, deps.ts и moon (последнее правило перед peers — checkMoonDefaultBranch).
+	const repo = repoDir({
+		...RENOVATE,
+		...LOCK,
+		'.github/dependabot.yml': 'version: 2\n',
+		'.moon/workspace.yml': 'vcs: git\n',
+	});
 	const port = fakePeers({ status: 1, signal: null, stdout: ONE_BAD, stderr: '' });
 	const findings = checkRepo(
 		repo,
@@ -336,15 +342,16 @@ test('группа peers включена — находки peers послед�
 	expect(findings.map((f) => f.code)).toStrictEqual([
 		'file-missing',
 		'dependabot-config',
+		'moon-default-branch',
 		'peer-dependency',
 		'stale-exception',
 	]);
-	expect(findings[2]).toStrictEqual({
+	expect(findings[3]).toStrictEqual({
 		code: 'peer-dependency',
 		target: 'peer in .',
 		message: 'decl@1.0.0 wants ^2.0.0, found 1.0.0; not in .stack-peers-baseline.json',
 	});
-	expect(findings[3]).toMatchObject({
+	expect(findings[4]).toMatchObject({
 		code: 'stale-exception',
 		target: '.stack-peers-baseline.json',
 	});
