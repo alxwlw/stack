@@ -96,10 +96,18 @@ test('каждый вызов gh идёт в cwd репозитория', async 
 	const github = ghGitHub(REPO, f.exec);
 	await github.botUserId('acme-bot');
 	await github.openPr('stack/v1.2.3');
+	const h = fake({ stdout: '[]' });
+	const gh2 = ghGitHub(REPO, h.exec);
+	await gh2.openPrs();
+	await gh2.closePr(7, 'c');
+	const d = fake({ stdout: 'main\n' });
+	await ghGitHub(REPO, d.exec).defaultBranch();
 	const g = fake({ stdout: 'https://github.com/acme/app/pull/8\n' });
 	await ghGitHub(REPO, g.exec).createPr({ head: 'h', title: 't', body: 'b' });
 	expect(f.cwds).toEqual([REPO, REPO]);
 	expect(g.cwds).toEqual([REPO]);
+	expect(h.cwds).toEqual([REPO, REPO]);
+	expect(d.cwds).toEqual([REPO]);
 });
 
 test('status null без сигнала — throw с exited with null', async () => {
@@ -142,4 +150,104 @@ test('spawnExec: убитый сигналом процесс — signal в ре
 	const r = spawnExec('sh', ['-c', 'kill -TERM $$'], { cwd: tmpdir() });
 	expect(r.status).toBeNull();
 	expect(r.signal).toBe('SIGTERM');
+});
+
+test('defaultBranch: gh repo view --json defaultBranchRef --jq .defaultBranchRef.name, имя без перевода строки', async () => {
+	const { exec, calls } = fake({ stdout: 'main\n' });
+	expect(await ghGitHub(REPO, exec).defaultBranch()).toBe('main');
+	expect(calls).toEqual([
+		[
+			'gh',
+			['repo', 'view', '--json', 'defaultBranchRef', '--jq', '.defaultBranchRef.name'],
+			undefined,
+		],
+	]);
+});
+
+test('defaultBranch: пустой ответ — throw', async () => {
+	const { exec } = fake({ stdout: '\n' });
+	await expect(ghGitHub(REPO, exec).defaultBranch()).rejects.toThrow(
+		'gh repo view returned no default branch',
+	);
+});
+
+const PR_JSON = (author: unknown, n = 7): Record<string, unknown> => ({
+	number: n,
+	url: `https://github.com/acme/app/pull/${n}`,
+	headRefName: 'stack/v1.12.0',
+	baseRefName: 'main',
+	author,
+});
+
+test('openPrs: gh pr list открытых, лимит 1000, поля; app/<slug> → <slug>[bot]', async () => {
+	const stdout = JSON.stringify([
+		PR_JSON({ login: 'app/acme-bot', is_bot: true }),
+		PR_JSON({ login: 'alice', is_bot: false }, 8),
+	]);
+	const { exec, calls } = fake({ stdout });
+	expect(await ghGitHub(REPO, exec).openPrs()).toStrictEqual([
+		{
+			number: 7,
+			url: 'https://github.com/acme/app/pull/7',
+			head: 'stack/v1.12.0',
+			base: 'main',
+			author: 'acme-bot[bot]',
+		},
+		{
+			number: 8,
+			url: 'https://github.com/acme/app/pull/8',
+			head: 'stack/v1.12.0',
+			base: 'main',
+			author: 'alice',
+		},
+	]);
+	expect(calls).toEqual([
+		[
+			'gh',
+			[
+				'pr',
+				'list',
+				'--state',
+				'open',
+				'--limit',
+				'1000',
+				'--json',
+				'number,url,headRefName,baseRefName,author',
+			],
+			undefined,
+		],
+	]);
+});
+
+test('openPrs: автор null — пустой логин', async () => {
+	const { exec } = fake({ stdout: JSON.stringify([PR_JSON(null)]) });
+	expect((await ghGitHub(REPO, exec).openPrs()).map((p) => p.author)).toStrictEqual(['']);
+});
+
+test('openPrs: пустой список — []', async () => {
+	const { exec } = fake({ stdout: '[]\n' });
+	expect(await ghGitHub(REPO, exec).openPrs()).toStrictEqual([]);
+});
+
+test('openPrs: ответ не массив — throw с текстом ответа', async () => {
+	for (const stdout of ['{}', 'null']) {
+		const { exec } = fake({ stdout });
+		await expect(ghGitHub(REPO, exec).openPrs()).rejects.toThrow(
+			`gh pr list returned no list: ${JSON.stringify(stdout)}`,
+		);
+	}
+});
+
+test('closePr: gh pr close <номер> --comment <текст>, без --delete-branch', async () => {
+	const { exec, calls } = fake({});
+	const text = 'Заменён https://github.com/acme/app/pull/9 — канон 1.13.0.';
+	expect(await ghGitHub(REPO, exec).closePr(7, text)).toBeUndefined();
+	expect(calls).toEqual([['gh', ['pr', 'close', '7', '--comment', text], undefined]]);
+});
+
+test('closePr: ненулевой код — throw со stderr', async () => {
+	const { exec } = fake({ status: 1, stderr: 'HTTP 403\n' });
+	await expect(ghGitHub(REPO, exec).closePr(7, 'c')).rejects.toThrow(
+		'gh pr close exited with 1: HTTP 403',
+	);
 });

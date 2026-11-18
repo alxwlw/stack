@@ -14,11 +14,22 @@ export interface NewPr {
 	body: string;
 }
 
+export interface OpenPr {
+	number: number;
+	url: string;
+	head: string; // headRefName
+	base: string; // baseRefName
+	author: string; // логин; у GitHub App — `<slug>[bot]`, у PR без автора — ''
+}
+
 // Порт GitHub. Боевой adapter — gh; тесты — литерал.
 export interface GitHub {
 	botUserId(slug: string): Promise<number>;
 	openPr(head: string): Promise<string | undefined>; // URL открытого PR с этой веткой
 	createPr(pr: NewPr): Promise<string>; // URL созданного PR
+	defaultBranch(): Promise<string>;
+	openPrs(): Promise<OpenPr[]>; // все открытые PR репозитория
+	closePr(number: number, comment: string): Promise<void>; // закрыть с комментарием; ветку не трогает
 }
 
 export type Print = (stream: 'out' | 'err', line: string) => void;

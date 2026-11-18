@@ -57,6 +57,17 @@ function fakeGitHub(over: Partial<GitHub> = {}): {
 			created.push(pr);
 			return PR_URL;
 		},
+		defaultBranch: async () => {
+			calls.push('defaultBranch');
+			return 'main';
+		},
+		openPrs: async () => {
+			calls.push('openPrs');
+			return [];
+		},
+		closePr: async () => {
+			calls.push('closePr');
+		},
 		...over,
 	};
 	return { github, calls, created };

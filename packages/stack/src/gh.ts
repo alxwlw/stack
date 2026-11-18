@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 
-import type { GitHub } from './sync-pr.ts';
+import type { GitHub, OpenPr } from './sync-pr.ts';
 
 export type Exec = (
 	cmd: string,
@@ -15,6 +15,15 @@ export const spawnExec: Exec = (cmd, args, { cwd, input }) => {
 	if (r.error) return { status: null, stdout: '', stderr: r.error.message };
 	return { status: r.status, signal: r.signal, stdout: r.stdout, stderr: r.stderr };
 };
+
+// Форма элемента `gh pr list --json number,url,headRefName,baseRefName,author`.
+interface RawPr {
+	number: number;
+	url: string;
+	headRefName: string;
+	baseRefName: string;
+	author: { login: string } | null;
+}
 
 // Боевой adapter порта GitHub: gh берёт GH_TOKEN из окружения сам и запускается в cwd репозитория —
 // git работает там же, и репозиторий для gh должен быть тем же.
@@ -73,6 +82,51 @@ export function ghGitHub(cwd: string, exec: Exec = spawnExec): GitHub {
 				const url = lines.at(-1);
 				if (!url) throw new Error('gh pr create printed no PR URL');
 				return url;
+			}),
+		defaultBranch: () =>
+			settle(() => {
+				const name = gh([
+					'repo',
+					'view',
+					'--json',
+					'defaultBranchRef',
+					'--jq',
+					'.defaultBranchRef.name',
+				]).trim();
+				if (name === '') throw new Error('gh repo view returned no default branch');
+				return name;
+			}),
+		// gh печатает логин GitHub App как `app/<slug>`; `[bot]` — форма из `git user.name` бота (sync-pr.ts:118).
+		openPrs: () =>
+			settle(() => {
+				const stdout = gh([
+					'pr',
+					'list',
+					'--state',
+					'open',
+					'--limit',
+					'1000',
+					'--json',
+					'number,url,headRefName,baseRefName,author',
+				]);
+				const list: unknown = JSON.parse(stdout);
+				if (!Array.isArray(list)) {
+					throw new Error(`gh pr list returned no list: ${JSON.stringify(stdout)}`);
+				}
+				return (list as RawPr[]).map((p): OpenPr => {
+					const login = p.author?.login ?? '';
+					return {
+						number: p.number,
+						url: p.url,
+						head: p.headRefName,
+						base: p.baseRefName,
+						author: login.startsWith('app/') ? `${login.slice('app/'.length)}[bot]` : login,
+					};
+				});
+			}),
+		closePr: (number, comment) =>
+			settle(() => {
+				gh(['pr', 'close', String(number), '--comment', comment]);
 			}),
 	};
 }
