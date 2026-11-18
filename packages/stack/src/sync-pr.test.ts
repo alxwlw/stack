@@ -24,8 +24,17 @@ import {
 	syncPr,
 	type SyncPrOptions,
 } from './sync-pr.ts';
-import { fakeGitHub, opts, PR_URL, put, run } from './sync-pr-testkit.ts';
-import { git, gitRepo, isolateGitConfig, repoDir } from './testkit.ts';
+import {
+	fakeGitHub,
+	git,
+	gitRepo,
+	isolateGitConfig,
+	opts,
+	PR_URL,
+	put,
+	repoDir,
+	run,
+} from './testkit.ts';
 
 let restore: () => void;
 beforeAll(() => {

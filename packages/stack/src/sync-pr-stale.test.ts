@@ -5,8 +5,17 @@ import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 
 import { type OpenPr, type PublishOptions, stalePrs } from './sync-pr.ts';
-import { botPr, fakeGitHub, opts, PR_URL, put, run } from './sync-pr-testkit.ts';
-import { git, gitRepo, isolateGitConfig } from './testkit.ts';
+import {
+	botPr,
+	fakeGitHub,
+	git,
+	gitRepo,
+	isolateGitConfig,
+	opts,
+	PR_URL,
+	put,
+	run,
+} from './testkit.ts';
 
 let restore: () => void;
 beforeAll(() => {
