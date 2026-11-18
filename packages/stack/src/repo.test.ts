@@ -322,6 +322,20 @@ test('битый pnpm-workspace.yaml — в находке только перв
 	expect(message).not.toContain('\n');
 });
 
+test('битый moon toolchains — в находке первая строка ошибки yaml', () => {
+	const repo = fromTexts(new Map([[MOON_TOOLCHAINS, 'a: [\n']]));
+	expect(repo.unreadable.map((f) => f.message)).toEqual([
+		`${MOON_TOOLCHAINS} does not parse: Flow sequence in block collection must be sufficiently indented and end with a ] at line 2, column 1:`,
+	]);
+});
+
+test('битый moon workspace — в находке первая строка ошибки yaml', () => {
+	const repo = fromTexts(new Map([['.moon/workspace.yml', 'a: [\n']]));
+	expect(repo.unreadable.map((f) => f.message)).toEqual([
+		'.moon/workspace.yml does not parse: Flow sequence in block collection must be sufficiently indented and end with a ] at line 2, column 1:',
+	]);
+});
+
 test('paths: ключи files и существующие нечитаемые пути; missing пути не даёт', () => {
 	expect(
 		repoFromSnapshot(
