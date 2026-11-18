@@ -16,7 +16,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { parse as parseJsonc } from 'jsonc-parser';
 
 import { ownVersion } from './sync-pr.ts';
-import { gitRepo, isolateGitConfig, repoDir } from './testkit.ts';
+import { gitRepo, isolateGitConfig, protoBin, repoDir, UNMET_PEER_LOCK } from './testkit.ts';
 
 const CLI = join(import.meta.dir, 'cli.ts');
 
@@ -66,7 +66,7 @@ test('check до sync — код 1, после sync — код 0', async () => {
 test('неизвестная команда — код 2', async () => {
 	const r = await run(['помой-посуду'], repoDir(BARE));
 	expect(r.code).toBe(2);
-	expect(r.err).toContain('Available: init, sync, check, sync-pr');
+	expect(r.err).toContain('Available: init, sync, check, sync-pr, peers-baseline');
 });
 
 test('sync-pr без GH_TOKEN или STACK_APP_SLUG — код 2 до sync, файлы не тронуты', async () => {
@@ -435,6 +435,178 @@ test('init с опечаткой во второй --with — код 2, файл
 	expect(r.code).toBe(2);
 	expect(r.err).toContain('unknown group "moon-task"');
 	expect(existsSync(join(dir, '.stack.jsonc'))).toBe(false);
+});
+
+// Репо после init --with peers и sync; lock — текст pnpm-lock.yaml, null — лока нет.
+async function peersRepo(lock: string | null): Promise<string> {
+	const dir = repoDir(BARE);
+	expect((await run(['init', '--profile', 'node', '--with', 'peers'], dir)).code).toBe(0);
+	expect((await run(['sync'], dir)).code).toBe(0);
+	if (lock !== null) writeFileSync(join(dir, 'pnpm-lock.yaml'), lock);
+	return dir;
+}
+
+describe('check с группой peers через настоящий cli', () => {
+	test('check с группой peers: настоящий pnpm на рукописном локе — peer-dependency, код 1', async () => {
+		const dir = await peersRepo(UNMET_PEER_LOCK);
+		const bin = fakeBin({ pnpm: `exec "${protoBin('pnpm')}" "$@"` });
+		const r = await run(['check'], dir, {
+			...bin.env,
+			npm_config_registry: 'http://127.0.0.1:9/',
+		});
+		expect(r.code, r.err).toBe(1);
+		expect(r.err).toContain(
+			'peer-dependency: peer in . — decl@1.0.0 wants ^2.0.0, found 1.0.0; not in .stack-peers-baseline.json',
+		);
+	}, 30_000);
+
+	test('check с группой peers без pnpm-lock.yaml — peers-unavailable, pnpm не зовётся', async () => {
+		const marker = join(mkdtempSync(join(tmpdir(), 'stack-log-')), 'pnpm.called');
+		const bin = fakeBin({ pnpm: `touch ${marker}; echo '{}'` });
+		const dir = await peersRepo(null);
+		const r = await run(['check'], dir, bin.env);
+		expect(r.code).toBe(1);
+		expect(r.err).toContain('peers-unavailable: pnpm peers check — no pnpm-lock.yaml');
+		expect(existsSync(marker)).toBe(false);
+		// Контроль: с локом тот же фальшивый pnpm зовётся, а пустой ответ — чистый check.
+		writeFileSync(join(dir, 'pnpm-lock.yaml'), UNMET_PEER_LOCK);
+		const withLock = await run(['check'], dir, bin.env);
+		expect(existsSync(marker)).toBe(true);
+		expect({ code: withLock.code, err: withLock.err }).toEqual({ code: 0, err: '' });
+	}, 30_000);
+
+	test('check с группой peers: pnpm выходит с 2 — первая строка stderr в находке, код 1', async () => {
+		const bin = fakeBin({ pnpm: 'echo; echo " ERR_PNPM_BOOM nope" >&2; exit 2' });
+		const r = await run(['check'], await peersRepo(UNMET_PEER_LOCK), bin.env);
+		expect(r.code).toBe(1);
+		expect(r.err).toContain(
+			'peers-unavailable: pnpm peers check — pnpm peers check exited with 2: ERR_PNPM_BOOM nope\n',
+		);
+	}, 30_000);
+
+	test('check с группой peers: pnpm печатает справку вместо JSON — peers-unavailable, код 1', async () => {
+		const bin = fakeBin({ pnpm: 'echo "Usage: pnpm [command] [flags]"; exit 0' });
+		const r = await run(['check'], await peersRepo(UNMET_PEER_LOCK), bin.env);
+		expect(r.code).toBe(1);
+		expect(r.err).toContain(
+			'peers-unavailable: pnpm peers check — pnpm peers check output is not JSON\n',
+		);
+	}, 30_000);
+
+	test('check с группой peers: pnpm нет на PATH — peers-unavailable с причиной запуска, код 1', async () => {
+		const dir = await peersRepo(UNMET_PEER_LOCK);
+		// PATH без pnpm: только каталог bun и системные.
+		const r = await run(['check'], dir, { PATH: `${dirname(process.execPath)}:/usr/bin:/bin` });
+		expect(r.code).toBe(1);
+		expect(r.err).toContain(
+			'peers-unavailable: pnpm peers check — pnpm peers check did not start: Executable not found in $PATH: "pnpm"\n',
+		);
+	}, 30_000);
+
+	test('check с группой peers: pnpm зовётся в корне --repo с аргументами гейта и без GH_TOKEN', async () => {
+		const bin = fakeBin({ pnpm: 'echo "cwd=$PWD args=$* token=${GH_TOKEN-unset}" >&2; exit 2' });
+		const dir = await peersRepo(UNMET_PEER_LOCK);
+		const elsewhere = mkdtempSync(join(tmpdir(), 'stack-cwd-'));
+		const proc = Bun.spawn(['bun', CLI, 'check', '--repo', dir], {
+			cwd: elsewhere,
+			stdout: 'pipe',
+			stderr: 'pipe',
+			env: { ...process.env, ...bin.env, GH_TOKEN: 'secret-token' },
+		});
+		const err = await new Response(proc.stderr).text();
+		expect(await proc.exited).toBe(1);
+		expect(err).toContain(
+			`pnpm peers check exited with 2: cwd=${realpathSync(dir)} args=peers check --lockfile-only --json token=unset\n`,
+		);
+	}, 30_000);
+});
+
+// UNMET_PEER_LOCK после починки: стоит peer@2.0.0, decl доволен — pnpm записей не видит.
+const FIXED_PEER_LOCK = UNMET_PEER_LOCK.replaceAll('peer@1.0.0', 'peer@2.0.0')
+	.replace(
+		'specifier: 1.0.0\n        version: 1.0.0\n\npackages',
+		'specifier: 2.0.0\n        version: 2.0.0\n\npackages',
+	)
+	.replace('      peer: 1.0.0\n', '      peer: 2.0.0\n');
+
+describe('peers-baseline через настоящий cli', () => {
+	test('peers-baseline: init, затем check — код 0; лок починили — check краснеет на stale, peers-baseline — снова 0', async () => {
+		const dir = await peersRepo(UNMET_PEER_LOCK);
+		const bin = fakeBin({ pnpm: `exec "${protoBin('pnpm')}" "$@"` });
+		const env = { ...bin.env, npm_config_registry: 'http://127.0.0.1:9/' };
+		const init = await run(['peers-baseline', '--init'], dir, env);
+		expect({ code: init.code, out: init.out, err: init.err }).toEqual({
+			code: 0,
+			out: 'wrote .stack-peers-baseline.json: 1 entr(ies)\n',
+			err: '',
+		});
+		const clean = await run(['check'], dir, env);
+		expect(clean.code, clean.err).toBe(0);
+
+		writeFileSync(join(dir, 'pnpm-lock.yaml'), FIXED_PEER_LOCK);
+		const stale = await run(['check'], dir, env);
+		expect(stale.code).toBe(1);
+		expect(stale.err).toContain(
+			'stale-peer-baseline: peer in . — recorded unmet by decl (found 1) is gone; drop it with: stack peers-baseline\n',
+		);
+		const lowered = await run(['peers-baseline'], dir, env);
+		expect({ code: lowered.code, out: lowered.out, err: lowered.err }).toEqual({
+			code: 0,
+			out: 'wrote .stack-peers-baseline.json: 0 entr(ies) (-1 fixed, +0 new)\n',
+			err: '',
+		});
+		const again = await run(['check'], dir, env);
+		expect(again.code, again.err).toBe(0);
+	}, 60_000);
+
+	test('peers-baseline: новая запись — без флагов код 1, с --allow-grow принята', async () => {
+		const dir = await peersRepo(FIXED_PEER_LOCK);
+		const bin = fakeBin({ pnpm: `exec "${protoBin('pnpm')}" "$@"` });
+		const env = { ...bin.env, npm_config_registry: 'http://127.0.0.1:9/' };
+		expect((await run(['peers-baseline', '--init'], dir, env)).out).toBe(
+			'wrote .stack-peers-baseline.json: 0 entr(ies)\n',
+		);
+		writeFileSync(join(dir, 'pnpm-lock.yaml'), UNMET_PEER_LOCK);
+		const lower = await run(['peers-baseline'], dir, env);
+		expect({ code: lower.code, out: lower.out, err: lower.err }).toEqual({
+			code: 1,
+			out: '',
+			err:
+				'new: peer in . — decl@1.0.0 wants ^2.0.0, found 1.0.0\n' +
+				'1 new entr(ies) — fix them or pass --allow-grow\n',
+		});
+		const grow = await run(['peers-baseline', '--allow-grow'], dir, env);
+		expect({ code: grow.code, out: grow.out, err: grow.err }).toEqual({
+			code: 0,
+			out: 'wrote .stack-peers-baseline.json: 1 entr(ies) (-0 fixed, +1 new)\n',
+			err: '',
+		});
+		const check = await run(['check'], dir, env);
+		expect(check.code, check.err).toBe(0);
+	}, 60_000);
+
+	test('peers-baseline: --init и --allow-grow вместе — код 2, файл не создан', async () => {
+		const dir = await peersRepo(UNMET_PEER_LOCK);
+		const r = await run(['peers-baseline', '--init', '--allow-grow'], dir);
+		expect(r.code).toBe(2);
+		expect(r.err).toBe('--init and --allow-grow do not go together\n');
+		expect(existsSync(join(dir, '.stack-peers-baseline.json'))).toBe(false);
+	}, 30_000);
+
+	test('peers-baseline без группы peers — код 2, сообщение называет with', async () => {
+		const dir = repoDir(BARE);
+		expect((await run(['init', '--profile', 'node'], dir)).code).toBe(0);
+		writeFileSync(join(dir, 'pnpm-lock.yaml'), UNMET_PEER_LOCK);
+		const r = await run(['peers-baseline', '--init'], dir);
+		expect(r.code).toBe(2);
+		expect(r.err).toBe('peers-baseline needs "peers" in "with" of .stack.jsonc\n');
+	}, 30_000);
+
+	test('peers-baseline без .stack.jsonc — код 2 с подсказкой stack init', async () => {
+		const r = await run(['peers-baseline'], repoDir(BARE));
+		expect(r.code).toBe(2);
+		expect(r.err).toContain('stack init');
+	}, 30_000);
 });
 
 test('init и check отвергают опечатку в with одной и той же строкой', async () => {

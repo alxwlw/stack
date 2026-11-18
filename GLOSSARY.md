@@ -11,7 +11,7 @@ The one shared set of toolchain files and pinned dependency versions, shipped in
 _Avoid_: template, boilerplate, preset
 
 **Consumer**:
-A repository that adopts the canon and is kept in line with it by `stack sync` and `stack check` (for example `acme/app`). It states how in its `.stack.jsonc` (`readStackConfig`, `packages/stack/src/config.ts`). Loaded once per command as a value by `loadRepo` (`packages/stack/src/repo.ts`): the content of the files it could read, and which paths exist. An unreadable or unparsable `package.json` (root or nested), `pnpm-workspace.yaml`, Renovate config, or moon's toolchain or workspace config becomes exactly one `unreadable-file` finding; the rules are pure functions of that value and the canon. The shape of that file is declared once, by `CONFIG_KEYS`, `PROFILES`, `EXCEPTION_SHAPES` and the canon's group names (`knownGroups`): `readStackConfig` rejects any other key or shape, `canonFor` rejects an unknown group, and `packages/stack/schema.json` must equal what `stackConfigSchema` builds from them.
+A repository that adopts the canon and is kept in line with it by `stack sync` and `stack check` (for example `acme/app`). It states how in its `.stack.jsonc` (`readStackConfig`, `packages/stack/src/config.ts`). Loaded once per command as a value by `loadRepo` (`packages/stack/src/repo.ts`): the content of the files it could read, and which paths exist. An unreadable or unparsable `package.json` (root or nested), `pnpm-workspace.yaml`, Renovate config, moon's toolchain or workspace config, or **Peer baseline** becomes exactly one `unreadable-file` finding; the rules are pure functions of that value and the canon. The shape of that file is declared once, by `CONFIG_KEYS`, `PROFILES`, `EXCEPTION_SHAPES` and the canon's group names (`knownGroups`): `readStackConfig` rejects any other key or shape, `canonFor` rejects an unknown group, and `packages/stack/schema.json` must equal what `stackConfigSchema` builds from them.
 _Avoid_: client, downstream, target repo
 
 **Profile**:
@@ -19,7 +19,7 @@ The kind of repository a consumer declares, `node`, `contracts` or `infra`; it d
 _Avoid_: preset, flavour, template
 
 **Group**:
-A named opt-in slice of the canon, switched on through `with` in `.stack.jsonc`. There are three kinds: a **file group** (the `group` field of a manifest entry), a **catalog group** (a key of `canon/catalogs.json` other than `dev`, which every consumer gets) and a **deprecated group** (accepted for old configs, enables nothing). Names come from `readCanonSource().groups` in `packages/stack/src/canon.ts`; `knownGroups` lists all three kinds.
+A named opt-in slice of the canon, switched on through `with` in `.stack.jsonc`. There are four kinds: a **file group** (the `group` field of a manifest entry), a **catalog group** (a key of `canon/catalogs.json` other than `dev`, which every consumer gets), a **rule group** (switches on a rule of `stack check` rather than a file or a catalog: `RULE_GROUPS`, enabled ones in `Canon.rules`; the only one is `peers`) and a **deprecated group** (accepted for old configs, enables nothing). Names come from `readCanonSource().groups` in `packages/stack/src/canon.ts`; `knownGroups` lists all four kinds.
 _Avoid_: feature, module, flag
 
 ### What the canon holds
@@ -58,6 +58,10 @@ _Avoid_: diff, mismatch
 A recorded reason, in `.stack.jsonc`, why a consumer deliberately differs from the canon. It names an **address** (a `file`, or a `catalog` plus `name`) and covers the findings at that address; a covered finding is **held** (reported as suppressed, and left unapplied by `sync`). An exception that covers nothing any more is itself a `stale-exception` finding. An exception on a `catalog` plus `name` also holds the `inline-version` finding of the same package in any `package.json` (the knip case in `fixtures/node`). `Exception`, `EXCEPTION_SHAPES`, `EXCEPTION_KEYS`, `exceptionProblem`, `exceptionSchema`, `covers`, `resolve`, `allowedLine` in `packages/stack/src/exceptions.ts`; `held` in `SyncResult`, `packages/stack/src/check.ts`.
 _Avoid_: ignore, override, waiver
 
+**Peer baseline**:
+The peer-dependency issues a consumer with the `peers` group already has, recorded in the file `PEERS_BASELINE` names, at the consumer's root, as `PeerEntry` records: importer, peer, kind (`unmet`, `missing`, `conflict`), the package that declares the peer, and for `unmet` the line of the version found (`versionLine`: the major, `0.minor`, or `0.0.patch`). Check compares what `pnpm peers check --lockfile-only --json` reports (`peersOutcome`, read through the `PeersReader` port) with it (`comparePeers`): an issue not recorded is a `peer-dependency` finding, a record no longer reported is `stale-peer-baseline`, and no lockfile or no usable pnpm answer is `peers-unavailable`. None of the three is held by an exception: the baseline plays that part. `packages/stack/src/peers.ts`, `checkPeers` in `packages/stack/src/peers-rule.ts`.
+_Avoid_: allowlist, snapshot, exceptions list
+
 ### Commands
 
 **Check**:
@@ -67,6 +71,10 @@ _Avoid_: lint, audit, verify
 **Sync**:
 Applies every drift the exceptions do not hold, so a following check has nothing left among the drifts. `stack sync`, `syncRepo` in `packages/stack/src/check.ts`.
 _Avoid_: update, apply, fix
+
+**Peer baseline update**:
+The only writer of the **Peer baseline**: `--init` records every current issue in a new file, no flag drops fixed records and refuses new ones, `--allow-grow` records the current set; `stack sync-pr` runs it as `drop-fixed`, which only drops fixed records and stays silent otherwise. A baseline that does not parse is never overwritten. `stack peers-baseline`, `peersBaseline` in `packages/stack/src/peers-baseline.ts`.
+_Avoid_: regenerate, refresh
 
 ### Releasing
 

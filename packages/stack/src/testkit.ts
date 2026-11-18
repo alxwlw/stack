@@ -26,8 +26,47 @@ export const SCHEMA_PATH = join(import.meta.dir, '..', 'schema.json');
 // Канон для тестов правил. Пины нарочно не равны реальным пинам канона: иначе константа,
 // зашитая в правило, осталась бы незамеченной (engines-node в deps.ts, packageManager в package-manager.ts).
 export function testCanon(over: Partial<Canon> = {}): Canon {
-	return { files: [], catalogs: {}, pins: { node: '25.4.1', pnpm: '10.99.0' }, ...over };
+	return { files: [], catalogs: {}, pins: { node: '25.4.1', pnpm: '10.99.0' }, rules: [], ...over };
 }
+
+// Рукописный pnpm-lock.yaml для настоящего `pnpm peers check --lockfile-only`: вымышленный decl@1.0.0
+// объявляет peer ^2.0.0, а стоит peer@1.0.0 — одна запись bad. Пакетов нет ни в одном реестре, и pnpm
+// читает только лок, поэтому тест идёт офлайн.
+export const UNMET_PEER_LOCK = `lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+importers:
+
+  .:
+    dependencies:
+      decl:
+        specifier: 1.0.0
+        version: 1.0.0(peer@1.0.0)
+      peer:
+        specifier: 1.0.0
+        version: 1.0.0
+
+packages:
+
+  decl@1.0.0:
+    resolution: {integrity: sha512-AAAA}
+    peerDependencies:
+      peer: ^2.0.0
+
+  peer@1.0.0:
+    resolution: {integrity: sha512-BBBB}
+
+snapshots:
+
+  decl@1.0.0(peer@1.0.0):
+    dependencies:
+      peer: 1.0.0
+
+  peer@1.0.0: {}
+`;
 
 // Содержимое канон-файла по его dest, как его видит loadCanon: все группы включены. Тесты, сверяющие
 // канон с корнем репозитория или с самим собой, берут файл здесь, а не по пути в canon/files.

@@ -68,7 +68,7 @@ function fixtureSource(): CanonSource {
 			},
 		],
 		catalogs: { dev: { oxlint: '1.83.0', typescript: '7.0.2' }, libs: { react: '19.2.7' } },
-		groups: { files: ['moon-tasks'], catalogs: ['libs'], deprecated: ['renovate'] },
+		groups: { files: ['moon-tasks'], catalogs: ['libs'], deprecated: ['renovate'], rules: [] },
 	};
 }
 
@@ -400,14 +400,28 @@ test('канон Renovate: засев конфига подключает пре
 	expect(seed).toContain("'config:recommended'");
 });
 
-test('knownGroups: файловые, каталожные и устаревшие группы — без повторов, по алфавиту', () => {
+test('knownGroups: файловые, каталожные, устаревшие группы и группы правил — без повторов, по алфавиту', () => {
 	expect(
 		knownGroups({
 			files: ['knip', 'moon-tasks'],
 			catalogs: ['libs', 'knip'],
 			deprecated: ['renovate'],
+			rules: ['peers'],
 		}),
-	).toEqual(['knip', 'libs', 'moon-tasks', 'renovate']);
+	).toEqual(['knip', 'libs', 'moon-tasks', 'peers', 'renovate']);
+});
+
+test('группа правила peers: известна, попадает в Canon.rules, файлов и каталогов не добавляет', () => {
+	const source = readCanonSource();
+	expect(knownGroups(source.groups)).toContain('peers');
+	for (const profile of PROFILES) {
+		const plain = canonFor(source, { profile, with: [], exceptions: [] });
+		const peers = canonFor(source, { profile, with: ['peers'], exceptions: [] });
+		expect(plain.rules, profile).toStrictEqual([]);
+		expect(peers.rules, profile).toStrictEqual(['peers']);
+		expect(peers.files, profile).toStrictEqual(plain.files);
+		expect(peers.catalogs, profile).toStrictEqual(plain.catalogs);
+	}
 });
 
 // Строки таблицы «Group» в README: имя группы (текст между обратными кавычками первой ячейки) → вторая ячейка.
