@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
@@ -9,6 +9,9 @@ import { type Canon, canonDir, canonFor, readCanonSource } from './canon.ts';
 import type { Profile } from './config.ts';
 import { STACK_RENOVATE_PRESET } from './deps.ts';
 import { type Read, RENOVATE_CONFIGS, type Repo, repoFromSnapshot } from './repo.ts';
+
+// Корень репозитория стека: тесты запускают proto и moon из него.
+const ROOT = join(import.meta.dir, '..', '..', '..');
 
 // Не канон-файл: схема конфигурации лежит рядом с пакетом, а не в canon/.
 export const SCHEMA_PATH = join(import.meta.dir, '..', 'schema.json');
@@ -151,11 +154,42 @@ export function git(dir: string, ...args: string[]): string {
 // Запуск закреплённого бинаря. ctx — status, signal, stdout и stderr для второго аргумента expect.
 export type ToolRun = { status: number | null; stdout: string; stderr: string; ctx: string };
 
-export function runTool(bin: string, args: string[], cwd: string): ToolRun {
-	const r = spawnSync(bin, args, { cwd, encoding: 'utf8' });
+export function runTool(
+	bin: string,
+	args: string[],
+	cwd: string,
+	env?: NodeJS.ProcessEnv,
+): ToolRun {
+	const r = spawnSync(bin, args, { cwd, encoding: 'utf8', env });
 	if (r.error) throw new Error(`${bin}: не запустился: ${r.error.message}`);
 	const ctx = `status=${r.status} signal=${r.signal}\nstdout:\n${r.stdout}\nstderr:\n${r.stderr}`;
 	return { status: r.status, stdout: r.stdout, stderr: r.stderr, ctx };
+}
+
+// Путь к бинарю из пина: последняя непустая строка stdout. В окружении агента proto печатает NDJSON,
+// и путь лежит в поле message последней строки. Нет бинаря — тест падает с выводом proto, а не пропускается.
+export function protoBin(tool: string): string {
+	const r = spawnSync('proto', ['bin', tool], { cwd: ROOT, encoding: 'utf8' });
+	if (r.error) throw new Error(`proto bin ${tool}: ${r.error.message}`);
+	let last = r.stdout
+		.split('\n')
+		.map((l) => l.trim())
+		.filter((l) => l !== '')
+		.at(-1);
+	if (last?.startsWith('{')) {
+		try {
+			const message: unknown = (JSON.parse(last) as { message?: unknown }).message;
+			if (typeof message === 'string') last = message;
+		} catch {
+			// не JSON: остаётся как есть, existsSync ниже отклонит
+		}
+	}
+	if (r.status !== 0 || !last || !existsSync(last)) {
+		throw new Error(
+			`proto bin ${tool}: нет бинаря (status=${r.status})\nstdout:\n${r.stdout}\nstderr:\n${r.stderr}`,
+		);
+	}
+	return last;
 }
 
 // JSON из stdout; не разбирается — Error с текстом ошибки разбора и run.ctx.

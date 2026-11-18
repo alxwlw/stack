@@ -11,7 +11,7 @@ interface FindingBase {
 // находки без предмета не подавляются никогда.
 export type Finding = FindingBase &
 	(
-		| { code: 'file-drift' | 'file-missing'; file: string }
+		| { code: 'file-drift' | 'file-missing' | 'moon-default-branch'; file: string }
 		| { code: 'catalog-drift' | 'catalog-missing'; catalog: string; name: string }
 		| { code: 'inline-version' | 'release-age-exclude'; name: string }
 		| {

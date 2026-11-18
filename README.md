@@ -180,6 +180,14 @@ canon — and when `.github/dependabot.yml` (or `.yaml`) exists. Neither can be 
 even when it equals the `.prototools` pin: `.prototools` owns the version, so leave it unset (`node: {}`). `stack sync` does
 not fix it; an exception whose `file` is the path before the colon in the finding's target (with a `reason`) holds it.
 
+`stack check` also fails when moon's YAML workspace config (a workspace file with the extension yml or yaml in the `.moon` directory; the
+first one found is the config) has no `vcs.defaultBranch`, or an empty one. Other formats moon accepts (json, jsonc, toml, pkl,
+hcl) are not checked. Without the setting moon takes `master` as the base: a PR check passes because moon gets the base from the
+PR event, and then CI on the push to `main` dies with `fatal: ambiguous argument 'master'`. `stack sync` writes `main` — the
+branch the canon's `stack` workflow runs on — when the value is missing, empty or not a string, and leaves any other non-empty
+string alone. It never creates the file: the list of projects is the repo's own. A `vcs` that is not a map is only reported.
+An exception whose `file` is the path of the config found (with a `reason`) holds it.
+
 Upgrading an existing consumer: on the first `stack/v<version>` PR after the move to Renovate, `check` goes red
 on `renovate-preset` if the repo already has its own Renovate config without the preset (add
 `github>alxwlw/stack//renovate/canon.json5#v1` to its `extends`), and on `dependabot-config` if

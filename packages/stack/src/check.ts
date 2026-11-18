@@ -11,18 +11,20 @@ import { allowedLine, type Exception, type Held, isHeld, resolve } from './excep
 import { planFiles } from './files.ts';
 import type { Drift, Finding } from './findings.ts';
 import { checkMoonToolchains } from './moon-toolchains.ts';
+import { checkMoonDefaultBranch, planMoonDefaultBranch } from './moon-workspace.ts';
 import { planPackageManager } from './package-manager.ts';
 import { planReleaseAgeExcludes } from './release-age.ts';
 import { loadRepo, type Repo } from './repo.ts';
 
 // План дрейфа: всё, что sync умеет закрыть, в порядке применения — файлы, каталоги, release-age,
-// packageManager. Правки одного файла друг от друга не зависят: sync применяет любое их подмножество.
+// packageManager, ветка по умолчанию moon. Правки одного файла друг от друга не зависят: sync применяет любое их подмножество.
 export function plan(repo: Repo, canon: Canon): Drift[] {
 	return [
 		...planFiles(repo, canon),
 		...planCatalogs(repo, canon),
 		...planReleaseAgeExcludes(repo, canon),
 		...planPackageManager(repo, canon),
+		...planMoonDefaultBranch(repo),
 	];
 }
 
@@ -38,6 +40,7 @@ export function check(repo: Repo, canon: Canon, exceptions: Exception[]): Findin
 			...checkRenovatePreset(repo),
 			...checkDependabot(repo),
 			...checkMoonToolchains(repo, canon),
+			...checkMoonDefaultBranch(repo),
 		],
 		exceptions,
 	);

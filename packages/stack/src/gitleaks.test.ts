@@ -1,38 +1,8 @@
-import { spawnSync } from 'node:child_process';
-import { existsSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
+import { rmSync } from 'node:fs';
 
 import { expect, test } from 'bun:test';
 
-import { canonFile, repoDir, runTool, toolJson } from './testkit.ts';
-
-const ROOT = join(import.meta.dir, '..', '..', '..');
-
-// Путь к бинарю из пина: последняя непустая строка stdout. В окружении агента proto печатает NDJSON,
-// и путь лежит в поле message последней строки. Нет бинаря — тест падает с выводом proto, а не пропускается.
-function protoBin(tool: string): string {
-	const r = spawnSync('proto', ['bin', tool], { cwd: ROOT, encoding: 'utf8' });
-	if (r.error) throw new Error(`proto bin ${tool}: ${r.error.message}`);
-	let last = r.stdout
-		.split('\n')
-		.map((l) => l.trim())
-		.filter((l) => l !== '')
-		.at(-1);
-	if (last?.startsWith('{')) {
-		try {
-			const message: unknown = (JSON.parse(last) as { message?: unknown }).message;
-			if (typeof message === 'string') last = message;
-		} catch {
-			// не JSON: остаётся как есть, existsSync ниже отклонит
-		}
-	}
-	if (r.status !== 0 || !last || !existsSync(last)) {
-		throw new Error(
-			`proto bin ${tool}: нет бинаря (status=${r.status})\nstdout:\n${r.stdout}\nstderr:\n${r.stderr}`,
-		);
-	}
-	return last;
-}
+import { canonFile, protoBin, repoDir, runTool, toolJson } from './testkit.ts';
 
 // 64 hex собираются во время выполнения, поэтому eth-правило канона не видит их в исходнике; в имени
 // нет слов key, secret, token, которые ищет generic-api-key из правил по умолчанию.

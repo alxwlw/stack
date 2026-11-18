@@ -8,6 +8,7 @@ import {
 	DEPENDABOT_CONFIGS,
 	loadRepo,
 	MOON_TOOLCHAINS,
+	MOON_WORKSPACES,
 	type Read,
 	readSnapshot,
 	RENOVATE_CONFIGS,
@@ -495,7 +496,7 @@ test('readSnapshot: вложенные package.json читаются тольк�
 	expect(nested(readSnapshot(repoDir(tree), testCanon()))).toEqual(['package.json']);
 });
 
-test('readSnapshot: кандидаты — package.json, pnpm-workspace.yaml, dest и satisfiedBy канона, Renovate, dependabot и .moon/toolchains.yml', () => {
+test('readSnapshot: кандидаты — package.json, pnpm-workspace.yaml, dest и satisfiedBy канона, Renovate, dependabot, .moon/toolchains.yml и .moon/workspace.yml', () => {
 	const dir = repoDir({
 		'.github/renovate.json5': '{}',
 		'.github/dependabot.yml': 'version: 2',
@@ -534,6 +535,7 @@ test('readSnapshot: кандидаты — package.json, pnpm-workspace.yaml, de
 			...RENOVATE_CONFIGS,
 			...DEPENDABOT_CONFIGS,
 			MOON_TOOLCHAINS,
+			...MOON_WORKSPACES,
 		]
 			.filter((p, i, all) => all.indexOf(p) === i)
 			.sort(),
