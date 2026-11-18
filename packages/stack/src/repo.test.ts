@@ -8,7 +8,7 @@ import {
 	DEPENDABOT_CONFIGS,
 	loadRepo,
 	MOON_TOOLCHAINS,
-	MOON_WORKSPACE,
+	MOON_WORKSPACES,
 	type Read,
 	readSnapshot,
 	RENOVATE_CONFIGS,
@@ -535,7 +535,7 @@ test('readSnapshot: кандидаты — package.json, pnpm-workspace.yaml, de
 			...RENOVATE_CONFIGS,
 			...DEPENDABOT_CONFIGS,
 			MOON_TOOLCHAINS,
-			MOON_WORKSPACE,
+			...MOON_WORKSPACES,
 		]
 			.filter((p, i, all) => all.indexOf(p) === i)
 			.sort(),

@@ -41,6 +41,7 @@ test('нет vcs — drift с адресом, текстом, fix и правк�
 		{
 			code: 'moon-default-branch',
 			target: '.moon/workspace.yml:vcs.defaultBranch',
+			file: '.moon/workspace.yml',
 			message: MESSAGE,
 			fix: '.moon/workspace.yml vcs.defaultBranch: — → main',
 			change: {
@@ -150,4 +151,42 @@ test('явный null на верхнем уровне (~, null) — одна un
 			['moon-default-branch', '.moon/workspace.yml:vcs.defaultBranch', MESSAGE],
 		]);
 	}
+});
+
+test('.moon/workspace.yaml — тот же конфиг: находка с его путём, sync пишет в него', () => {
+	const YAML = '.moon/workspace.yaml';
+	const yaml = "projects:\n  app: 'apps/app'\n";
+	const dir = repoDir({ 'package.json': PKG, [YAML]: yaml });
+	expect(
+		check(loadRepo(dir, canon), canon, [])
+			.filter((f) => f.code !== 'renovate-preset')
+			.map((f) => [f.code, f.target]),
+	).toStrictEqual([['moon-default-branch', '.moon/workspace.yaml:vcs.defaultBranch']]);
+	syncRepo(dir, canon, []);
+	expect(fs.readFileSync(join(dir, YAML), 'utf8')).toBe(`${yaml}vcs:\n  defaultBranch: main\n`);
+	expect(fs.existsSync(join(dir, FILE))).toBe(false);
+});
+
+test('оба файла — читается и правится только .yml', () => {
+	const dir = repoDir({
+		'package.json': PKG,
+		[FILE]: 'projects: {}\n',
+		'.moon/workspace.yaml': 'projects: {}\n',
+	});
+	syncRepo(dir, canon, []);
+	expect(fs.readFileSync(join(dir, FILE), 'utf8')).toBe(
+		'projects: {}\nvcs:\n  defaultBranch: main\n',
+	);
+	expect(fs.readFileSync(join(dir, '.moon/workspace.yaml'), 'utf8')).toBe('projects: {}\n');
+});
+
+test('исключение на пути .yaml держит находку; на .yml — нет (stale)', () => {
+	const files = { '.moon/workspace.yaml': 'projects: {}\n' };
+	const hold = (file: string) =>
+		check(testRepo(canon, files), canon, [{ file, reason: 'r' }]).map((f) => [
+			f.code,
+			f.suppressedBy?.reason,
+		]);
+	expect(hold('.moon/workspace.yaml')).toStrictEqual([['moon-default-branch', 'r']]);
+	expect(hold(FILE).map((r) => r[0])).toStrictEqual(['moon-default-branch', 'stale-exception']);
 });

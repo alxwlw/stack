@@ -22,7 +22,7 @@ afterAll(() => {
 // из окружения, и контроль без настройки стал бы зелёным. GITHUB_* здесь перекрываются или
 // безвредны (push с одним GITHUB_BASE_REF остаётся красным); чистка оставлена целиком для
 // предсказуемости.
-const PUSH_ENV: NodeJS.ProcessEnv = {
+const pushEnv = (): NodeJS.ProcessEnv => ({
 	...Object.fromEntries(
 		Object.entries(process.env).filter(([k]) => !/^(CI|GITHUB_\w+|RUNNER_\w+|MOON_\w+)$/.test(k)),
 	),
@@ -30,7 +30,7 @@ const PUSH_ENV: NodeJS.ProcessEnv = {
 	GITHUB_ACTIONS: 'true',
 	GITHUB_EVENT_NAME: 'push',
 	GITHUB_REF: 'refs/heads/main',
-};
+});
 
 // Воркспейс tools и harness до их PR #2: проекты есть, vcs нет.
 const USER_WS = "projects:\n  app: 'app'\n";
@@ -51,6 +51,8 @@ test('stack init с moon-tasks и свой moon-воркспейс без vcs: �
 		USER_WS + 'vcs:\n  defaultBranch: main\n',
 	);
 	const moon = protoBin('moon');
+	const PUSH_ENV = pushEnv();
+	expect(PUSH_ENV.GIT_CONFIG_GLOBAL).toBe(process.env.GIT_CONFIG_GLOBAL);
 	const green = runTool(moon, ['run', ':noop'], dir, PUSH_ENV);
 	expect(green.status, green.ctx).toBe(0);
 
