@@ -68,7 +68,7 @@ async function readPackument(name: string, timeoutMs: number): Promise<Packument
 	if (typeof body !== 'object' || body === null || Array.isArray(body)) {
 		throw new Error(`${name}: нечитаемый ответ реестра: не объект`);
 	}
-	return body as Packument;
+	return body;
 }
 
 export function npmRegistryReader(timeoutMs = 30_000): Registry {
@@ -126,7 +126,7 @@ export async function waitVisible(
 				}
 				why = state === 'unlisted' ? 'нет в packument' : 'в packument есть, tarball не отдаётся';
 			} catch (e) {
-				why = (e as Error).message;
+				why = e instanceof Error ? e.message : String(e);
 			}
 			left.push({ ...w, why });
 		}

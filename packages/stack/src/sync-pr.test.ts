@@ -13,6 +13,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { parse as parseYaml } from 'yaml';
 
 import { loadCanon } from './canon.ts';
+import type { Served } from './registry.ts';
 import {
 	type GitHub,
 	type NewPr,
@@ -25,7 +26,6 @@ import {
 	syncPr,
 	type SyncPrOptions,
 } from './sync-pr.ts';
-import type { Served } from './registry.ts';
 import { git, gitRepo, isolateGitConfig, repoDir } from './testkit.ts';
 
 const PR_URL = 'https://github.com/acme/app/pull/1';
