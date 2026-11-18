@@ -117,8 +117,8 @@ catalog are listed in the npm registry and their tarballs answer a HEAD with 200
 `proto install`, `pnpm install --no-frozen-lockfile` (skipped with `--no-install`) and the
 `stack:post-sync` hook; then the changed files one by one, a commit by the GitHub App's bot on
 `stack/v<version>`, a force-push and a PR (or the open one, reused). After the PR it closes the open
-sync-PRs of the bot for older versions on the same base, with a comment that links the new PR, and
-deletes their branches; when there is nothing to commit it closes them the same way, and the comment
+sync-PRs of the bot for older versions on the same base, with a comment that links this version's PR, and
+deletes their branches unless another open PR still uses one; when there is nothing to commit it closes them the same way, and the comment
 says the canon is already on the base. The bot's git commands run
 without the repository's git hooks (`core.hooksPath` points at `/dev/null`, so neither `.git/hooks` nor a hooks path set by husky or
 lefthook runs); the consumer's CI on the PR checks the result. The version is the package's own;
@@ -318,7 +318,7 @@ A release pushes itself out. When `publish` succeeds, the canon dispatches `stac
 repository on its consumer list; that workflow runs `stack sync-pr` for the new version
 (`bunx @alxwlw/stack@<version> sync-pr`) and, if anything changed, opens a PR on branch
 `stack/v<version>`. Re-dispatching the same version force-updates that
-branch and reuses the open PR instead of opening a second one. After a rollout the consumer is left with at most one sync-PR on that base,
+branch and reuses the open PR instead of opening a second one. After a rollout the consumer is left with at most one sync-PR on its base,
 and re-dispatching an old version does not close the PR of a newer one.
 
 `sync.yml` keeps only the App token, the checkout, the setup action and a short wait until

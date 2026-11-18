@@ -131,7 +131,7 @@ test('spawnExec: убитый сигналом процесс — signal в ре
 test('defaultBranch: gh repo view --json defaultBranchRef --jq .defaultBranchRef.name, имя без перевода строки', async () => {
 	const { exec, calls } = fake({ stdout: 'main\n' });
 	expect(await ghGitHub(REPO, exec).defaultBranch()).toBe('main');
-	expect(calls).toEqual([
+	expect(calls).toStrictEqual([
 		[
 			'gh',
 			['repo', 'view', '--json', 'defaultBranchRef', '--jq', '.defaultBranchRef.name'],
@@ -185,7 +185,7 @@ test('openPrs: gh pr list открытых, лимит 1000, поля; app/<slug
 			author: 'apple',
 		},
 	]);
-	expect(calls).toEqual([
+	expect(calls).toStrictEqual([
 		[
 			'gh',
 			[
@@ -226,7 +226,7 @@ test('closePr: gh pr close <номер> --comment <текст>, без --delete-
 	const { exec, calls } = fake({});
 	const text = 'Заменён https://github.com/acme/app/pull/9 — канон 1.13.0.';
 	expect(await ghGitHub(REPO, exec).closePr(7, text)).toBeUndefined();
-	expect(calls).toEqual([['gh', ['pr', 'close', '7', '--comment', text], undefined]]);
+	expect(calls).toStrictEqual([['gh', ['pr', 'close', '7', '--comment', text], undefined]]);
 });
 
 test('closePr: ненулевой код — throw со stderr', async () => {

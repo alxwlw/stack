@@ -48,8 +48,13 @@ describe('stalePrs', () => {
 		expect(stale).toHaveLength(2);
 	});
 
-	test('PR без заполненных полей ветки и автора не попадает под правило', () => {
-		const broken = { number: 1, url: prUrl(1), base: 'main' } as unknown as OpenPr;
+	test('PR бота своей базы без поля ветки не попадает под правило', () => {
+		const broken = {
+			number: 1,
+			url: prUrl(1),
+			base: 'main',
+			author: 'acme-bot[bot]',
+		} as unknown as OpenPr;
 		expect(stalePrs([broken], { version: '1.13.0', base: 'main', bot: 'acme-bot[bot]' })).toEqual(
 			[],
 		);
