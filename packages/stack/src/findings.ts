@@ -22,7 +22,10 @@ export type Finding = FindingBase &
 					| 'dependabot-config'
 					| 'moon-toolchain-version'
 					| 'unreadable-file'
-					| 'stale-exception';
+					| 'stale-exception'
+					| 'peer-dependency'
+					| 'stale-peer-baseline'
+					| 'peers-unavailable';
 		  }
 	);
 export type FindingCode = Finding['code'];

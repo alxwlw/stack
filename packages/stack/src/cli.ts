@@ -10,6 +10,7 @@ import { allowedLine, isHeld } from './exceptions.ts';
 import { type Finding, isDrift } from './findings.ts';
 import { ghGitHub } from './gh.ts';
 import { initConfig } from './init.ts';
+import type { PeersReader } from './peers.ts';
 import { npmRegistryReader } from './registry.ts';
 import { ownVersion, type RunProcess, SYNC_PR_WAIT, syncPr, withoutGhToken } from './sync-pr.ts';
 
@@ -67,6 +68,19 @@ const runProcess: RunProcess = (cmd, args, { cwd, env }) => {
 	return r.status ?? 1;
 };
 
+// Боевой adapter порта pnpm для группы peers: вывод захватывается, разбор — peersOutcome. Проверка
+// идёт по локу, без установки; GH_TOKEN не нужен pnpm, как и установке в sync-pr.
+const pnpmPeers: PeersReader = (cwd) => {
+	const r = spawnSync('pnpm', ['peers', 'check', '--lockfile-only', '--json'], {
+		cwd,
+		encoding: 'utf8',
+		maxBuffer: 1 << 30,
+		env: withoutGhToken(process.env),
+	});
+	if (r.error) return { error: r.error.message };
+	return { status: r.status, signal: r.signal, stdout: r.stdout, stderr: r.stderr };
+};
+
 const { values, positionals } = parseCliArgs();
 
 const repoRoot = values.repo ?? process.cwd();
@@ -90,7 +104,7 @@ try {
 		for (const line of stdout) console.log(line);
 	} else if (command === 'check') {
 		const cfg = readStackConfig(repoRoot);
-		const findings = checkRepo(repoRoot, loadCanon(cfg), cfg.exceptions);
+		const findings = checkRepo(repoRoot, loadCanon(cfg), cfg.exceptions, pnpmPeers);
 		const blocking = findings.filter((f) => !isHeld(f));
 		for (const f of findings.filter(isHeld)) console.warn(allowedLine(f));
 		for (const f of blocking) console.error(`${f.code}: ${f.target} — ${f.message}`);

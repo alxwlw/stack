@@ -7,6 +7,7 @@ import { type Document, parseDocument } from 'yaml';
 
 import type { Canon } from './canon.ts';
 import type { Finding } from './findings.ts';
+import { parsePeersBaseline, type PeerEntry, PEERS_BASELINE } from './peers.ts';
 
 // package.json в этих каталогах не читаются: чужой или собранный файл — не предмет проверки.
 export const SKIP = /node_modules|\.worktrees|\.moon\/cache|(^|\/)(dist|build)\//;
@@ -40,6 +41,9 @@ export const MOON_WORKSPACES = [MOON_WORKSPACE, '.moon/workspace.yaml'];
 
 export const DEPENDABOT_CONFIGS = ['.github/dependabot.yml', '.github/dependabot.yaml'];
 
+// Лок pnpm: правилу peers нужен только как существующий путь, его читает сам pnpm.
+export const LOCKFILE = 'pnpm-lock.yaml';
+
 // Репозиторий потребителя как значение: правила получают его и не читают диск сами.
 export interface Repo {
 	/** Содержимое прочитанных файлов; нечитаемый (каталог, нет прав) в files не попадает — его существование в paths. */
@@ -58,7 +62,9 @@ export interface Repo {
 	moonWorkspace?: Record<string, unknown>;
 	/** Путь moon workspace, который прочитан первым из MOON_WORKSPACES; есть, когда файл есть (и разобрался, и нет). */
 	moonWorkspacePath?: string;
-	/** Ровно одна находка unreadable-file на каждый неразобранный package.json, pnpm-workspace.yaml, первый конфиг Renovate, MOON_TOOLCHAINS и найденный из MOON_WORKSPACES. */
+	/** Разобранный PEERS_BASELINE; нет поля — файла нет или он не разобрался. */
+	peersBaseline?: PeerEntry[];
+	/** Ровно одна находка unreadable-file на каждый неразобранный package.json, pnpm-workspace.yaml, первый конфиг Renovate, MOON_TOOLCHAINS, найденный из MOON_WORKSPACES и PEERS_BASELINE. */
 	unreadable: Finding[];
 }
 
@@ -88,7 +94,8 @@ export type Snapshot = ReadonlyMap<string, Read>;
 // Чистая часть: из снимка строит Repo. Здесь единственная классификация unreadable-file: сбой чтения и
 // сбой разбора одной роли — одна находка. Разбираемые роли: package.json (корневой всегда; вложенные —
 // только при pnpm-workspace.yaml среди путей), pnpm-workspace.yaml и первый из RENOVATE_CONFIGS среди
-// путей (нечитаемый заслоняет остальные), MOON_TOOLCHAINS и найденный из MOON_WORKSPACES. Остальные пути — только в paths, находки не дают.
+// путей (нечитаемый заслоняет остальные), MOON_TOOLCHAINS, найденный из MOON_WORKSPACES и PEERS_BASELINE.
+// Остальные пути (среди них LOCKFILE) — только в paths, находки не дают.
 // Порядок unreadable: по rank, равные — в порядке снимка.
 export function repoFromSnapshot(snapshot: Snapshot): Repo {
 	const files = new Map<string, string>();
@@ -196,6 +203,16 @@ export function repoFromSnapshot(snapshot: Snapshot): Repo {
 			}
 		}
 	}
+	// Неразобранный baseline не становится пустым: поля нет, и правило peers не сравнивает.
+	let peersBaseline: PeerEntry[] | undefined;
+	const peersRead = snapshot.get(PEERS_BASELINE);
+	if (peersRead !== undefined && 'failed' in peersRead) {
+		unparsable(PEERS_BASELINE, peersRead.failed.message);
+	} else if (peersRead !== undefined && 'text' in peersRead) {
+		const parsed = parsePeersBaseline(peersRead.text);
+		if ('problem' in parsed) unparsable(PEERS_BASELINE, parsed.problem);
+		else peersBaseline = parsed.entries;
+	}
 	unreadable.sort((a, b) => rank(a) - rank(b));
 	return {
 		files,
@@ -207,6 +224,7 @@ export function repoFromSnapshot(snapshot: Snapshot): Repo {
 		...(moonToolchains && { moonToolchains }),
 		...(moonWorkspace && { moonWorkspace }),
 		...(moonWorkspacePath !== undefined && { moonWorkspacePath }),
+		...(peersBaseline !== undefined && { peersBaseline }),
 	};
 }
 
@@ -225,15 +243,22 @@ function readFile(root: string, path: string): Read {
 }
 
 // Адаптер диска, без классификации: dest и satisfiedBy канон-файлов, конфиги Renovate и dependabot,
-// MOON_TOOLCHAINS, MOON_WORKSPACES, pnpm-workspace.yaml, корневой package.json; если pnpm-workspace.yaml есть (текст или сбой чтения) —
-// ещё вложенные package.json без SKIP.
+// MOON_TOOLCHAINS, MOON_WORKSPACES, PEERS_BASELINE, LOCKFILE, pnpm-workspace.yaml, корневой package.json;
+// если pnpm-workspace.yaml есть (текст или сбой чтения) — ещё вложенные package.json без SKIP.
 export function readSnapshot(root: string, canon: Canon): Snapshot {
 	const candidates = new Set<string>(['package.json', WORKSPACE_FILE]);
 	for (const f of canon.files) {
 		candidates.add(f.dest);
 		for (const p of f.satisfiedBy ?? []) candidates.add(p);
 	}
-	for (const p of [...RENOVATE_CONFIGS, ...DEPENDABOT_CONFIGS, MOON_TOOLCHAINS, ...MOON_WORKSPACES])
+	for (const p of [
+		...RENOVATE_CONFIGS,
+		...DEPENDABOT_CONFIGS,
+		MOON_TOOLCHAINS,
+		...MOON_WORKSPACES,
+		PEERS_BASELINE,
+		LOCKFILE,
+	])
 		candidates.add(p);
 	const snapshot = new Map<string, Read>();
 	for (const p of candidates) snapshot.set(p, readFile(root, p));
@@ -248,7 +273,7 @@ export function readSnapshot(root: string, canon: Canon): Snapshot {
 
 // Verbatim канон-файл сравнивается по содержимому, поэтому нечитаемый (например, каталог) для правила
 // отсутствует: file-missing, затем sync падает с EISDIR — громко, намеренно. Create-if-absent
-// dest/satisfiedBy и конфиги dependabot нужны правилам только как существующие пути.
+// dest/satisfiedBy, конфиги dependabot и LOCKFILE нужны правилам только как существующие пути.
 export function loadRepo(root: string, canon: Canon): Repo {
 	return repoFromSnapshot(readSnapshot(root, canon));
 }

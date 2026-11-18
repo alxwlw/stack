@@ -4,9 +4,11 @@ import { join } from 'node:path';
 import { expect, test } from 'bun:test';
 
 import { check, plan, syncRepo } from './check.ts';
+import { type PeerEntry, PEERS_BASELINE } from './peers.ts';
 import {
 	DEPENDABOT_CONFIGS,
 	loadRepo,
+	LOCKFILE,
 	MOON_TOOLCHAINS,
 	MOON_WORKSPACES,
 	type Read,
@@ -469,6 +471,60 @@ test('inline-version при нечитаемом pnpm-workspace.yaml: гейт w
 	expect(check(repo, canon, []).map((f) => f.code)).toContain('inline-version');
 });
 
+const PEER_ENTRIES: PeerEntry[] = [
+	{ importer: '.', peer: 'zod', kind: 'unmet', by: 'abitype', found: '4' },
+	{ importer: 'packages/a', peer: 'react', kind: 'missing', by: 'ui-kit' },
+];
+const baselineText = (peers: unknown[]): string => JSON.stringify({ version: 1, peers });
+
+test('baseline peers: разобранный — в peersBaseline, pnpm-lock.yaml — в paths', () => {
+	const repo = fromTexts(
+		new Map([
+			[PEERS_BASELINE, baselineText(PEER_ENTRIES)],
+			[LOCKFILE, 'lockfileVersion: x\n'],
+		]),
+	);
+	expect(repo.peersBaseline).toStrictEqual(PEER_ENTRIES);
+	expect(repo.paths.has(LOCKFILE)).toBe(true);
+	expect(repo.unreadable).toStrictEqual([]);
+	// Нет файла — нет и поля: пустым baseline отсутствие файла не становится.
+	const none = fromTexts(new Map([['package.json', '{}']]));
+	expect('peersBaseline' in none).toBe(false);
+	expect(none.paths.has(LOCKFILE)).toBe(false);
+});
+
+test('baseline peers: битый — ровно одна unreadable-file с причиной разбора, поля peersBaseline нет', () => {
+	const conflictWithFound = { importer: '.', peer: 'viem', kind: 'conflict', found: '2' };
+	for (const [text, reason] of [
+		['{', `not JSON: JSON Parse error: Expected '}'`],
+		['{"version":2,"peers":[]}', 'version must be 1'],
+		[baselineText([conflictWithFound]), 'peers[0] is not a valid entry'],
+		[baselineText([PEER_ENTRIES[0], PEER_ENTRIES[0]]), 'peers[1] repeats an earlier entry'],
+	] as const) {
+		const repo = fromTexts(new Map([[PEERS_BASELINE, text]]));
+		expect(triple(repo), text).toStrictEqual([
+			['unreadable-file', PEERS_BASELINE, `${PEERS_BASELINE} does not parse: ${reason}`],
+		]);
+		expect(
+			repo.unreadable[0]?.message.startsWith('.stack-peers-baseline.json does not parse: '),
+		).toBe(true);
+		expect('peersBaseline' in repo, text).toBe(false);
+	}
+});
+
+test('baseline peers: сбой чтения — unreadable-file', () => {
+	const repo = repoFromSnapshot(new Map([[PEERS_BASELINE, { failed: new Error('EACCES') }]]));
+	expect(triple(repo)).toStrictEqual([
+		[
+			'unreadable-file',
+			'.stack-peers-baseline.json',
+			'.stack-peers-baseline.json does not parse: EACCES',
+		],
+	]);
+	expect('peersBaseline' in repo).toBe(false);
+	expect(repo.paths.has(PEERS_BASELINE)).toBe(true);
+});
+
 // Адаптер диска: сверяем значения снимка, а не находки.
 const read = (snapshot: Snapshot, path: string): Read => snapshot.get(path) as Read;
 const nested = (snapshot: Snapshot) =>
@@ -517,7 +573,7 @@ test('readSnapshot: вложенные package.json читаются тольк�
 	expect(nested(readSnapshot(repoDir(tree), testCanon()))).toEqual(['package.json']);
 });
 
-test('readSnapshot: кандидаты — package.json, pnpm-workspace.yaml, dest и satisfiedBy канона, Renovate, dependabot, .moon/toolchains.yml и .moon/workspace.yml', () => {
+test('readSnapshot: кандидаты — package.json, pnpm-workspace.yaml, dest и satisfiedBy канона, Renovate, dependabot, .moon/toolchains.yml, .moon/workspace.yml, baseline peers и pnpm-lock.yaml', () => {
 	const dir = repoDir({
 		'.github/renovate.json5': '{}',
 		'.github/dependabot.yml': 'version: 2',
@@ -525,6 +581,7 @@ test('readSnapshot: кандидаты — package.json, pnpm-workspace.yaml, de
 		'seed.txt': 'a',
 		'alt/seed.txt': 'b',
 		'other.txt': 'x',
+		'pnpm-lock.yaml': 'lockfileVersion: x\n',
 	});
 	const snapshot = readSnapshot(
 		dir,
@@ -557,10 +614,14 @@ test('readSnapshot: кандидаты — package.json, pnpm-workspace.yaml, de
 			...DEPENDABOT_CONFIGS,
 			MOON_TOOLCHAINS,
 			...MOON_WORKSPACES,
+			PEERS_BASELINE,
+			LOCKFILE,
 		]
 			.filter((p, i, all) => all.indexOf(p) === i)
 			.sort(),
 	);
+	expect(read(snapshot, 'pnpm-lock.yaml')).toEqual({ text: 'lockfileVersion: x\n' });
+	expect(read(snapshot, '.stack-peers-baseline.json')).toEqual({ missing: true });
 	expect(read(snapshot, 'seed.txt')).toEqual({ text: 'a' });
 	expect(read(snapshot, 'alt/seed.txt')).toEqual({ text: 'b' });
 	expect(read(snapshot, '.github/dependabot.yml')).toEqual({ text: 'version: 2' });

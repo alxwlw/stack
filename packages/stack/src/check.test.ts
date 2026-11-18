@@ -8,7 +8,8 @@ import type { Canon } from './canon.ts';
 import { check, checkRepo, syncOutput, syncRepo } from './check.ts';
 import { STACK_RENOVATE_PRESET } from './deps.ts';
 import { allowedLine, type Held } from './exceptions.ts';
-import type { Drift } from './findings.ts';
+import type { Drift, FindingCode } from './findings.ts';
+import type { PeersReader, PeersRun } from './peers.ts';
 import { repoDir, testCanon, testRepo } from './testkit.ts';
 
 // Конфиг Renovate на пресете канона: тесты исключений и каталогов не про бота.
@@ -262,6 +263,118 @@ test('syncRepo: два дрейфа каталога, packageManager и файл
 		spy.mockRestore();
 	}
 	expect(writes.toSorted()).toEqual(['.editorconfig', 'package.json', 'pnpm-workspace.yaml']);
+});
+
+// Ответ `pnpm peers check --lockfile-only --json` с одной записью bad, в форме настоящего pnpm.
+const ONE_BAD = JSON.stringify({
+	'.': {
+		bad: {
+			peer: [
+				{
+					parents: [{ name: 'decl', version: '1.0.0' }],
+					optional: false,
+					wantedRange: '^2.0.0',
+					foundVersion: '1.0.0',
+					resolvedFrom: [],
+				},
+			],
+		},
+		missing: {},
+		conflicts: [],
+		intersections: {},
+	},
+});
+
+// Порт, который записывает каталог каждого вызова и отдаёт заданный запуск pnpm.
+function fakePeers(run: PeersRun): { read: PeersReader; calls: string[] } {
+	const calls: string[] = [];
+	return {
+		read: (root) => {
+			calls.push(root);
+			return run;
+		},
+		calls,
+	};
+}
+
+const throwingPeers: PeersReader = () => {
+	throw new Error('порт pnpm не должен вызываться');
+};
+
+const LOCK = { 'pnpm-lock.yaml': 'lockfileVersion: x\n' };
+const peersCanon: Canon = { ...canon, rules: ['peers'] };
+
+test('группа peers выключена — порт не зовётся', () => {
+	const repo = repoDir({ ...RENOVATE, ...LOCK, '.editorconfig': 'root = true\n' });
+	expect(checkRepo(repo, canon, [], throwingPeers)).toEqual([]);
+});
+
+test('группа peers включена без pnpm-lock.yaml — порт не зовётся, peers-unavailable', () => {
+	const repo = repoDir({ ...RENOVATE, '.editorconfig': 'root = true\n' });
+	expect(checkRepo(repo, peersCanon, [], throwingPeers)).toStrictEqual([
+		{ code: 'peers-unavailable', target: 'pnpm peers check', message: 'no pnpm-lock.yaml' },
+	]);
+});
+
+test('группа peers включена, лок есть, порта нет — Error', () => {
+	const repo = repoDir({ ...RENOVATE, ...LOCK, '.editorconfig': 'root = true\n' });
+	expect(() => checkRepo(repo, peersCanon, [])).toThrow(
+		new Error('checkRepo: peers group needs a PeersReader'),
+	);
+});
+
+test('группа peers включена — находки peers последние и исключением не гасятся', () => {
+	const repo = repoDir({ ...RENOVATE, ...LOCK, '.github/dependabot.yml': 'version: 2\n' });
+	const port = fakePeers({ status: 1, signal: null, stdout: ONE_BAD, stderr: '' });
+	const findings = checkRepo(
+		repo,
+		peersCanon,
+		[{ file: '.stack-peers-baseline.json', reason: 'x' }],
+		port.read,
+	);
+	expect(port.calls).toStrictEqual([repo]);
+	expect(findings.map((f) => f.code)).toStrictEqual([
+		'file-missing',
+		'dependabot-config',
+		'peer-dependency',
+		'stale-exception',
+	]);
+	expect(findings[2]).toStrictEqual({
+		code: 'peer-dependency',
+		target: 'peer in .',
+		message: 'decl@1.0.0 wants ^2.0.0, found 1.0.0; not in .stack-peers-baseline.json',
+	});
+	expect(findings[3]).toMatchObject({
+		code: 'stale-exception',
+		target: '.stack-peers-baseline.json',
+	});
+});
+
+test('stale-peer-baseline и peers-unavailable тоже не гасятся исключением на baseline', () => {
+	const stale = JSON.stringify({
+		version: 1,
+		peers: [{ importer: '.', peer: 'zod', kind: 'conflict' }],
+	});
+	const cases: [Record<string, string>, string, FindingCode][] = [
+		[{ '.stack-peers-baseline.json': stale }, '{}', 'stale-peer-baseline'],
+		[{}, 'Usage: pnpm [command]', 'peers-unavailable'],
+	];
+	for (const [files, stdout, code] of cases) {
+		const repo = repoDir({ ...RENOVATE, ...LOCK, '.editorconfig': 'root = true\n', ...files });
+		const findings = checkRepo(
+			repo,
+			peersCanon,
+			[{ file: '.stack-peers-baseline.json', reason: 'x' }],
+			fakePeers({ status: 0, signal: null, stdout, stderr: '' }).read,
+		);
+		expect(
+			findings.map((f) => [f.code, f.suppressedBy]),
+			code,
+		).toStrictEqual([
+			[code, undefined],
+			['stale-exception', undefined],
+		]);
+	}
 });
 
 test('syncOutput: удержанные — в stderr, правки и итог — в stdout', () => {

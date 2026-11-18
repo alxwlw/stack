@@ -22,6 +22,8 @@ export type PeersRun =
 	| { status: number | null; signal: string | null; stdout: string; stderr: string }
 	| { error: string };
 export type PeersOutcome = { issues: PeerIssue[] } | { unavailable: string };
+// Порт процесса: запуск `pnpm peers check` в корне репозитория.
+export type PeersReader = (repoRoot: string) => PeersRun;
 
 // Линия версии: major, у 0.x — 0.minor, у 0.0.x — 0.0.patch. Пре-релиз и build отброшены,
 // версия не по semver (link:, file:) остаётся как есть.
