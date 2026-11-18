@@ -10,6 +10,7 @@
 	"devDependencies": {
 		"@types/bun": "catalog:dev",
 		"@types/node": "catalog:dev",
+		"dependency-cruiser": "catalog:dev",
 		"oxfmt": "catalog:dev",
 		"oxlint": "catalog:dev",
 		"oxlint-tsgolint": "catalog:dev",

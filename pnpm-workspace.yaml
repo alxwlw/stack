@@ -3,6 +3,7 @@ packages:
 
 catalogs:
   dev:
+    dependency-cruiser: 18.8.0-beta-2
     typescript: 7.1.0-beta
     oxlint: 1.90.0
     oxlint-tsgolint: 7.0.2005
