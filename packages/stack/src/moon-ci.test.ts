@@ -18,8 +18,10 @@ afterAll(() => {
 	restore();
 });
 
-// Окружение push-события. Чистка обязательна: CI самого стека гоняет bun test на pull_request, где
-// GITHUB_BASE_REF=main даёт moon базу из события. Тогда контроль без настройки стал бы зелёным.
+// Окружение push-события. Решает чистка MOON_*: унаследованный MOON_BASE=main дал бы moon базу
+// из окружения, и контроль без настройки стал бы зелёным. GITHUB_* здесь перекрываются или
+// безвредны (push с одним GITHUB_BASE_REF остаётся красным); чистка оставлена целиком для
+// предсказуемости.
 const PUSH_ENV: NodeJS.ProcessEnv = {
 	...Object.fromEntries(
 		Object.entries(process.env).filter(([k]) => !/^(CI|GITHUB_\w+|RUNNER_\w+|MOON_\w+)$/.test(k)),
