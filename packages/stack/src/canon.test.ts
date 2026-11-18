@@ -322,11 +322,9 @@ test('canonFile: несуществующий dest — ошибка с dest и �
 	);
 });
 
-test('канон gitleaks: eth-private-key ловится по eth_priv и не обещает лишнего', () => {
-	const toml = canonFile('.gitleaks.canon.toml');
-	expect(toml.split('\n')[0]).not.toContain('pre-commit');
-	expect(toml).toMatch(/keywords = \[[^\]]*'eth_priv'/);
-	expect(toml).toContain(String.raw`'''docs/superpowers/(specs|plans|archive)/'''`);
+// Поведение правил канона (keywords, allowlist) проверяет сам gitleaks — gitleaks.test.ts.
+test('канон gitleaks: первая строка не обещает pre-commit', () => {
+	expect(canonFile('.gitleaks.canon.toml').split('\n')[0]).not.toContain('pre-commit');
 });
 
 test('канон markdownlint не обещает глоб oxfmt, которого нет', () => {
