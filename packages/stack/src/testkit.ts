@@ -148,6 +148,28 @@ export function git(dir: string, ...args: string[]): string {
 	return r.stdout;
 }
 
+// Запуск закреплённого бинаря. ctx — status, signal, stdout и stderr для второго аргумента expect.
+export type ToolRun = { status: number | null; stdout: string; stderr: string; ctx: string };
+
+export function runTool(bin: string, args: string[], cwd: string): ToolRun {
+	const r = spawnSync(bin, args, { cwd, encoding: 'utf8' });
+	if (r.error) throw new Error(`${bin}: не запустился: ${r.error.message}`);
+	const ctx = `status=${r.status} signal=${r.signal}\nstdout:\n${r.stdout}\nstderr:\n${r.stderr}`;
+	return { status: r.status, stdout: r.stdout, stderr: r.stderr, ctx };
+}
+
+// JSON из stdout; не разбирается — Error с текстом ошибки разбора и run.ctx.
+// oxlint-disable-next-line typescript/no-unnecessary-type-parameters -- T задаёт тип разобранного JSON на стороне вызова
+export function toolJson<T>(run: ToolRun): T {
+	try {
+		return JSON.parse(run.stdout) as T;
+	} catch (e) {
+		throw new Error(`stdout не JSON: ${e instanceof Error ? e.message : String(e)}\n${run.ctx}`, {
+			cause: e,
+		});
+	}
+}
+
 // Конфигурация git на время файла тестов: у владельца глобально commit.gpgsign=true, в CI нет идентичности.
 // Возвращает функцию, которая возвращает прежние значения.
 export function isolateGitConfig(): () => void {
