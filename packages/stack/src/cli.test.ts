@@ -194,7 +194,7 @@ describe('sync-pr через настоящий cli', () => {
 		const bin = fakeBin({
 			gh: `case "$1 $2" in
 "api /users/acme-bot[bot]") echo 42;;
-"pr list") echo;;
+"pr list") echo "[]";;
 "pr create") echo "$PWD|$*" >> ${log}; cat >/dev/null; echo https://github.com/acme/app/pull/8;;
 *) echo "unexpected $*" >&2; exit 9;;
 esac`,
@@ -217,13 +217,14 @@ esac`,
 		expect(args).toContain('--base staging');
 	});
 
-	test('пустой --base= (потребитель без STACK_SYNC_BASE) — gh pr create без --base', async () => {
+	test('пустой --base= (потребитель без STACK_SYNC_BASE) — gh pr create с базой из gh repo view', async () => {
 		const { dir } = gitRepo(NODE_REPO_NO_PKG);
 		const log = join(mkdtempSync(join(tmpdir(), 'stack-log-')), 'gh.log');
 		const bin = fakeBin({
 			gh: `case "$1 $2" in
 "api /users/acme-bot[bot]") echo 42;;
-"pr list") echo;;
+"repo view") echo main;;
+"pr list") echo "[]";;
 "pr create") echo "$*" >> ${log}; cat >/dev/null; echo https://github.com/acme/app/pull/9;;
 *) echo "unexpected $*" >&2; exit 9;;
 esac`,
@@ -241,7 +242,7 @@ esac`,
 		expect(out).toContain('opened PR https://github.com/acme/app/pull/9');
 		const args = readFileSync(log, 'utf8').trim();
 		expect(args).toContain('pr create');
-		expect(args).not.toContain('--base');
+		expect(args).toContain('--base main');
 	});
 });
 

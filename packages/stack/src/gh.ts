@@ -47,22 +47,6 @@ export function ghGitHub(cwd: string, exec: Exec = spawnExec): GitHub {
 				}
 				return id;
 			}),
-		openPr: (head) =>
-			settle(() => {
-				const url = gh([
-					'pr',
-					'list',
-					'--head',
-					head,
-					'--state',
-					'open',
-					'--json',
-					'url',
-					'--jq',
-					'.[0].url // ""',
-				]).trim();
-				return url === '' ? undefined : url;
-			}),
 		createPr: (pr) =>
 			settle(() => {
 				const args = [
