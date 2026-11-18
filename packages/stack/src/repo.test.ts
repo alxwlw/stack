@@ -42,7 +42,9 @@ test('битый корневой package.json — одна unreadable-file, с 
 
 test('битый package.json — причина из message SyntaxError, без имени класса', () => {
 	const repo = fromTexts(new Map([['package.json', '{']]));
-	expect(repo.unreadable[0]?.message).toBe(`package.json does not parse: JSON Parse error: Expected '}'`);
+	expect(repo.unreadable[0]?.message).toBe(
+		`package.json does not parse: JSON Parse error: Expected '}'`,
+	);
 });
 
 test('битый вложенный package.json — одна находка на файл, соседний разобран', () => {

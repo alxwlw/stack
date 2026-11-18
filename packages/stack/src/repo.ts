@@ -74,6 +74,11 @@ const rank = (f: Finding): number =>
 				? 2
 				: 3;
 
+// Первая строка первой ошибки yaml: остальное — контекст разбора, в находку не идёт.
+// split отдаёт хотя бы один элемент, поэтому каст к string честный.
+const firstYamlError = (doc: Document): string =>
+	(doc.errors[0] as Error).message.split('\n')[0] as string;
+
 // Прочитанное с диска по одному пути: текст, «файла нет» или ошибка чтения (файл есть, но не читается).
 export type Read = { text: string } | { missing: true } | { failed: Error };
 
@@ -95,8 +100,13 @@ export function repoFromSnapshot(snapshot: Snapshot): Repo {
 	}
 	const packages = new Map<string, Record<string, unknown>>();
 	const unreadable: Finding[] = [];
-	const bad = (target: string, message: string) =>
-		unreadable.push({ code: 'unreadable-file', target, message });
+	const unparsable = (target: string, reason: string): void => {
+		unreadable.push({
+			code: 'unreadable-file',
+			target,
+			message: `${target} does not parse: ${reason}`,
+		});
+	};
 
 	const manifests = [...paths].filter(
 		(p) => basename(p) === 'package.json' && (p === 'package.json' || paths.has(WORKSPACE_FILE)),
@@ -105,7 +115,7 @@ export function repoFromSnapshot(snapshot: Snapshot): Repo {
 	for (const file of manifests) {
 		const read = snapshot.get(file) as Read;
 		if ('failed' in read) {
-			bad(file, `${file} does not parse: ${read.failed.message}`);
+			unparsable(file, read.failed.message);
 			continue;
 		}
 		try {
@@ -117,23 +127,19 @@ export function repoFromSnapshot(snapshot: Snapshot): Repo {
 					: {},
 			);
 		} catch (err) {
-			bad(file, `${file} does not parse: ${err instanceof Error ? err.message : String(err)}`);
+			// JSON.parse бросает только SyntaxError, поэтому у err есть message.
+			unparsable(file, (err as Error).message);
 		}
 	}
 
 	let workspace: Document | undefined;
 	const workspaceRead = snapshot.get(WORKSPACE_FILE);
 	if (workspaceRead !== undefined && 'failed' in workspaceRead) {
-		bad(WORKSPACE_FILE, `${WORKSPACE_FILE} does not parse: ${workspaceRead.failed.message}`);
+		unparsable(WORKSPACE_FILE, workspaceRead.failed.message);
 	} else if (workspaceRead !== undefined && 'text' in workspaceRead) {
 		const doc = parseDocument(workspaceRead.text);
 		if (doc.errors.length === 0) workspace = doc;
-		else {
-			bad(
-				WORKSPACE_FILE,
-				`${WORKSPACE_FILE} does not parse: ${(doc.errors[0] as Error).message.split('\n')[0]}`,
-			);
-		}
+		else unparsable(WORKSPACE_FILE, firstYamlError(doc));
 	}
 
 	const renovatePath = RENOVATE_CONFIGS.find((p) => paths.has(p));
@@ -145,23 +151,18 @@ export function repoFromSnapshot(snapshot: Snapshot): Repo {
 			renovate = { path: renovatePath, config: JSON5.parse((read as { text: string }).text) };
 		} catch (err) {
 			renovate = { path: renovatePath };
-			bad(
-				renovatePath,
-				`${renovatePath} does not parse: ${err instanceof Error ? err.message : String(err)}`,
-			);
+			// JSON5.parse бросает SyntaxError, read.failed — Error из fs: message есть у обоих.
+			unparsable(renovatePath, (err as Error).message);
 		}
 	}
 	let moonToolchains: Record<string, unknown> | undefined;
 	const moonRead = snapshot.get(MOON_TOOLCHAINS);
 	if (moonRead !== undefined && 'failed' in moonRead) {
-		bad(MOON_TOOLCHAINS, `${MOON_TOOLCHAINS} does not parse: ${moonRead.failed.message}`);
+		unparsable(MOON_TOOLCHAINS, moonRead.failed.message);
 	} else if (moonRead !== undefined && 'text' in moonRead) {
 		const doc = parseDocument(moonRead.text);
 		if (doc.errors.length > 0) {
-			bad(
-				MOON_TOOLCHAINS,
-				`${MOON_TOOLCHAINS} does not parse: ${(doc.errors[0] as Error).message.split('\n')[0]}`,
-			);
+			unparsable(MOON_TOOLCHAINS, firstYamlError(doc));
 		} else {
 			const top: unknown = doc.toJS();
 			moonToolchains =
@@ -181,17 +182,17 @@ export function repoFromSnapshot(snapshot: Snapshot): Repo {
 	if (moonWorkspacePath !== undefined && workspaceMoonRead !== undefined) {
 		const at = moonWorkspacePath;
 		if ('failed' in workspaceMoonRead) {
-			bad(at, `${at} does not parse: ${workspaceMoonRead.failed.message}`);
+			unparsable(at, workspaceMoonRead.failed.message);
 		} else if ('text' in workspaceMoonRead) {
 			const doc = parseDocument(workspaceMoonRead.text);
 			if (doc.errors.length > 0) {
-				bad(at, `${at} does not parse: ${(doc.errors[0] as Error).message.split('\n')[0]}`);
+				unparsable(at, firstYamlError(doc));
 			} else {
 				const top: unknown = doc.toJS();
 				if (doc.contents === null) moonWorkspace = {};
 				else if (top !== null && typeof top === 'object' && !Array.isArray(top)) {
 					moonWorkspace = top as Record<string, unknown>;
-				} else bad(at, `${at} does not parse: top level is not a map`);
+				} else unparsable(at, 'top level is not a map');
 			}
 		}
 	}
@@ -217,8 +218,8 @@ function readFile(root: string, path: string): Read {
 	try {
 		return { text: readFileSync(join(root, path), 'utf8') };
 	} catch (err) {
-		const e = err instanceof Error ? err : new Error(String(err));
-		const code = (e as { code?: string }).code;
+		const e = err as NodeJS.ErrnoException;
+		const code = e.code;
 		return code !== undefined && MISSING.has(code) ? { missing: true } : { failed: e };
 	}
 }
