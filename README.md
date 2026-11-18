@@ -180,7 +180,7 @@ canon — and when `.github/dependabot.yml` (or `.yaml`) exists. Neither can be 
 even when it equals the `.prototools` pin: `.prototools` owns the version, so leave it unset (`node: {}`). `stack sync` does
 not fix it; an exception whose `file` is the path before the colon in the finding's target (with a `reason`) holds it.
 
-`stack check` also fails when moon's YAML workspace config (`workspace.yml` or `workspace.yaml` in the `.moon` directory; the
+`stack check` also fails when moon's YAML workspace config (a workspace file with the extension yml or yaml in the `.moon` directory; the
 first one found is the config) has no `vcs.defaultBranch`, or an empty one. Other formats moon accepts (json, jsonc, toml, pkl,
 hcl) are not checked. Without the setting moon takes `master` as the base: a PR check passes because moon gets the base from the
 PR event, and then CI on the push to `main` dies with `fatal: ambiguous argument 'master'`. `stack sync` writes `main` — the
