@@ -15,6 +15,7 @@ import { parse as parseYaml } from 'yaml';
 import { loadCanon } from './canon.ts';
 import type { Served } from './registry.ts';
 import {
+	type GitHub,
 	type NewPr,
 	ownVersion,
 	prBody,

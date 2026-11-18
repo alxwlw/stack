@@ -42,11 +42,11 @@ export function fakeGitHub(
 	const closed: [number, string][] = [];
 	const open: OpenPr[] = [...initial];
 	const github: GitHub = {
-		botUserId: async () => {
+		botUserId: () => {
 			calls.push('botUserId');
-			return 42;
+			return Promise.resolve(42);
 		},
-		createPr: async (pr) => {
+		createPr: (pr) => {
 			calls.push('createPr');
 			created.push(pr);
 			open.push({
@@ -56,21 +56,22 @@ export function fakeGitHub(
 				base: pr.base ?? '',
 				author: 'acme-bot[bot]',
 			});
-			return PR_URL;
+			return Promise.resolve(PR_URL);
 		},
-		defaultBranch: async () => {
+		defaultBranch: () => {
 			calls.push('defaultBranch');
-			return 'main';
+			return Promise.resolve('main');
 		},
-		openPrs: async () => {
+		openPrs: () => {
 			calls.push('openPrs');
-			return [...open];
+			return Promise.resolve([...open]);
 		},
-		closePr: async (number, comment) => {
+		closePr: (number, comment) => {
 			calls.push('closePr');
 			closed.push([number, comment]);
 			const i = open.findIndex((p) => p.number === number);
 			if (i >= 0) open.splice(i, 1);
+			return Promise.resolve();
 		},
 		...over,
 	};
