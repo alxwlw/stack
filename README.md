@@ -125,11 +125,19 @@ lefthook runs); the consumer's CI on the PR checks the result. The version is th
 `GH_TOKEN` and `STACK_APP_SLUG` come from the environment. Exit codes: `0` — PR opened or updated, or
 nothing to commit; `1` — a step failed; `2` — a usage or configuration error.
 
+`stack peers-baseline [--init | --allow-grow]` writes the baseline of the `peers` group (see
+[Peer dependencies](#peer-dependencies)): `--init` records every current peer issue in a new file,
+no flag only drops the entries the lockfile no longer has, `--allow-grow` also records new ones.
+Exit codes: `0` — the file is written; `1` — `pnpm peers check` could not answer (no
+`pnpm-lock.yaml`, pnpm missing or failing), or there are new entries and no `--allow-grow`; `2` — a
+usage or configuration error (the `peers` group is off, the file is missing, already there with
+`--init`, or does not parse — it is never overwritten then).
+
 ## Profiles and groups
 
 `profile` (required, set once by `init`) picks which canon files apply at all. `with` is a list of
-opt-in groups layered on top — extra files, or extra catalog entries, that not every repo on a
-profile needs.
+opt-in groups layered on top — extra files, extra catalog entries, or an extra check of `stack check`
+(`peers`), that not every repo on a profile needs.
 
 | Profile     | For                                                                                                                                                                                                                                                                             |
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -225,7 +233,46 @@ canon's node pin doesn't satisfy, a Renovate config whose `extends` lacks
 `github>alxwlw/stack//renovate/canon.json5#v1` (or no Renovate config at all), and a
 `.github/dependabot.yml` (or `.yaml`) — these always block; there's no exception shape for any of them. `check` prints every exception it actually
 suppressed as a warning, and fails on one that no longer suppresses anything — the canon moved on
-and the exception is now stale, so it gets deleted, not carried forward silently.
+and the exception is now stale, so it gets deleted, not carried forward silently. The findings of
+the `peers` group have no exception shape either: their baseline is the record of what the repo
+accepts (see [Peer dependencies](#peer-dependencies)).
+
+## Peer dependencies
+
+A peer dependency that a repo does not declare itself is resolved by pnpm from whatever the
+lockfile happens to hold. When a lockfile refresh moves that peer to another major, nothing says
+so: `pnpm install --frozen-lockfile` stays quiet, and every version the diff shows can look fine.
+`pnpm peers check` sees it. The opt-in `peers` group makes it a gate of `stack check`, measured
+against a baseline of the issues the repo already has:
+
+```bash
+# .stack.jsonc: "with": ["peers"]
+npx stack peers-baseline --init   # once: record what is already there
+git add .stack-peers-baseline.json
+```
+
+`check` runs `pnpm peers check --lockfile-only --json` in the repo root. It reads the lockfile
+alone, with no install, so `pnpm-lock.yaml` must exist. Three findings come out of it:
+
+| Code                  | When                                                                                                                                          |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `peer-dependency`     | an unmet, missing or conflicting peer that the baseline does not record                                                                       |
+| `stale-peer-baseline` | a baseline entry that pnpm no longer reports — drop it, or the same issue could come back unnoticed                                           |
+| `peers-unavailable`   | no `pnpm-lock.yaml`, or pnpm gave no usable answer (not installed, failed, printed something other than its JSON report); never read as clean |
+
+None of them can be held by an exception. To turn the gate off, drop `peers` from `with`.
+
+An entry is keyed by the importer (the workspace package), the peer, the kind (`unmet`, `missing`
+or `conflict`), the package that declares the peer, and, for `unmet`, the line of the version
+found: the major, `0.minor` below 1.0, `0.0.patch` below 0.1, with pre-release and build tags
+dropped. A patch or minor bump on either side keeps the key, so a routine lockfile refresh adds no
+noise; a peer that moves to another major gets a new key and fails the check.
+
+`stack peers-baseline` with no flag only drops fixed entries. It refuses to record new ones (exit
+`1`, listing them) unless `--allow-grow` is passed, so accepting a new issue is a visible change of
+the baseline in the PR diff. Sync-PRs drop fixed entries on their own: after the install,
+`stack sync-pr` removes from the baseline what the new lockfile fixed and commits it with the rest
+of the canon; new entries stay findings for the PR's CI.
 
 ## CI
 
