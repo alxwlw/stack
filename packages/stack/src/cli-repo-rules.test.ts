@@ -248,6 +248,8 @@ describe('check с группой repo-rules через настоящий cli',
 			expect(s.code).toBe(0);
 			expect(probe(work, 'rev-parse', '--is-shallow-repository').out).toBe('false');
 			expect(probe(work, 'merge-base', 'origin/main', 'HEAD').code).toBe(0);
+			// --filter=blob:none оставляет origin промисорным: полный fetch не качает содержимое файлов.
+			expect(probe(work, 'config', '--get', 'remote.origin.promisor').out).toBe('true');
 			const r = await run(['check'], work, PR);
 			expect(r.code).toBe(1);
 			expect(r.err).toContain(REMOVED_LINE);
