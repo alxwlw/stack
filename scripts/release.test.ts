@@ -251,10 +251,12 @@ describe('setVersion', () => {
 	});
 
 	test('двигает зависимость между пакетами в каждом из DEP_FIELDS', () => {
+		// Литерал, не DEP_FIELDS: иначе мутант в списке сузит и тест.
+		const FIELDS = ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies'];
 		const root = fixtureRoot();
 		const path = join(root, 'packages/oxlint-config/package.json');
 		const data = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>;
-		for (const field of DEP_FIELDS) {
+		for (const field of FIELDS) {
 			data[field] = {
 				...(data[field] as object | undefined),
 				'@alxwlw/stack': '0.0.1',
@@ -264,7 +266,7 @@ describe('setVersion', () => {
 		writeFileSync(path, JSON.stringify(data));
 		setVersion(root, '1.2.3');
 		const after = JSON.parse(readFileSync(path, 'utf8')) as Record<string, Record<string, string>>;
-		for (const field of DEP_FIELDS) {
+		for (const field of FIELDS) {
 			expect(after[field]).toMatchObject({ '@alxwlw/stack': '1.2.3', other: '0.0.1' });
 		}
 	});
