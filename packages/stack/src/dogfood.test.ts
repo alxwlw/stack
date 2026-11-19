@@ -5,7 +5,9 @@ import { expect, test } from 'bun:test';
 import { parse as parseYaml } from 'yaml';
 
 import { loadCanon, readCanonSource } from './canon.ts';
+import { loadRepo } from './repo.ts';
 import { canonFile } from './testkit.ts';
+import { planToolchainPins } from './toolchain-pins-rule.ts';
 
 // Репозиторий канона сознательно не вызывает `stack sync` на себе (его каталог dev называет
 // версии @alxwlw/* как workspace:*, sync их сломает) — поэтому ничто не мешает корневым файлам
@@ -55,4 +57,9 @@ test('корневой package.json#packageManager — pnpm на пине кан
 	const pin = loadCanon({ profile: 'node', with: [], exceptions: [] }).pins.pnpm;
 	expect(pin).toBeDefined();
 	expect(pkg.packageManager).toBe(`pnpm@${pin}`);
+});
+
+test('в этом репозитории разошедшихся копий пинов нет', () => {
+	const canon = loadCanon({ profile: 'node', with: [], exceptions: [] });
+	expect(planToolchainPins(loadRepo(ROOT, canon), canon, [])).toStrictEqual([]);
 });

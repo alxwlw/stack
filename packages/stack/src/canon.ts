@@ -248,7 +248,7 @@ export function loadCanon(cfg: StackConfig, dir: string = canonDir()): Canon {
 }
 
 // Строковые значения верхнего уровня .prototools; таблица [plugins] и нестроковые значения — не пины.
-function parsePins(prototools: string): Record<string, string> {
+export function parsePins(prototools: string): Record<string, string> {
 	const parsed = Bun.TOML.parse(prototools) as Record<string, unknown>;
 	return Object.fromEntries(
 		Object.entries(parsed).filter((e): e is [string, string] => typeof e[1] === 'string'),

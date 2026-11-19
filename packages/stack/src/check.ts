@@ -19,16 +19,20 @@ import { planReleaseAgeExcludes } from './release-age.ts';
 import { loadRepo, LOCKFILE, type Repo } from './repo.ts';
 import { readRepoRules, type RepoRulesOutcome, type RepoRulesPort } from './repo-rules.ts';
 import { checkRepoRules, repoRulesNotes } from './repo-rules-rule.ts';
+import { planToolchainPins } from './toolchain-pins-rule.ts';
 
 // План дрейфа: всё, что sync умеет закрыть, в порядке применения — файлы, каталоги, release-age,
-// packageManager, ветка по умолчанию moon. Правки одного файла друг от друга не зависят: sync применяет любое их подмножество.
-export function plan(repo: Repo, canon: Canon): Drift[] {
+// packageManager, ветка по умолчанию moon, копии пинов тулчейна. Правки одного файла друг от друга не
+// зависят: sync применяет любое их подмножество. Исключения нужны правилу копий пинов: удержанный
+// .prototools меняет, с какими пинами оно сверяется; сами находки гасит resolve.
+export function plan(repo: Repo, canon: Canon, exceptions: readonly Exception[] = []): Drift[] {
 	return [
 		...planFiles(repo, canon),
 		...planCatalogs(repo, canon),
 		...planReleaseAgeExcludes(repo, canon),
 		...planPackageManager(repo, canon),
 		...planMoonDefaultBranch(repo),
+		...planToolchainPins(repo, canon, exceptions),
 	];
 }
 
@@ -45,7 +49,7 @@ export function check(
 ): Finding[] {
 	const r = resolve(
 		[
-			...plan(repo, canon),
+			...plan(repo, canon, exceptions),
 			...repo.unreadable,
 			...checkInlineVersions(repo, canon),
 			...checkEnginesNode(repo, canon),
@@ -61,8 +65,12 @@ export function check(
 	return [...r.findings, ...r.stale];
 }
 
-export function planRepo(repoRoot: string, canon: Canon): Drift[] {
-	return plan(loadRepo(repoRoot, canon), canon);
+export function planRepo(
+	repoRoot: string,
+	canon: Canon,
+	exceptions: readonly Exception[] = [],
+): Drift[] {
+	return plan(loadRepo(repoRoot, canon), canon, exceptions);
 }
 
 /** Порты `checkRepo`: каждый нужен только своей группе. */
@@ -114,7 +122,7 @@ export interface SyncResult {
 export function syncRepo(repoRoot: string, canon: Canon, exceptions: Exception[]): SyncResult {
 	const repo = loadRepo(repoRoot, canon);
 	const result: SyncResult = { applied: [], held: [] };
-	for (const d of resolve(plan(repo, canon), exceptions).findings) {
+	for (const d of resolve(plan(repo, canon, exceptions), exceptions).findings) {
 		if (isHeld(d)) result.held.push(d);
 		else result.applied.push(d);
 	}

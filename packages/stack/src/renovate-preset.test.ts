@@ -13,6 +13,7 @@ const ROOT = join(import.meta.dir, '..', '..', '..');
 interface Rule {
 	description?: string;
 	matchPackageNames?: string[];
+	matchDepNames?: string[];
 	matchDepTypes?: string[];
 	matchManagers?: string[];
 	enabled?: boolean;
@@ -24,8 +25,11 @@ const preset = JSON5.parse(readFileSync(join(ROOT, 'renovate', 'canon.json5'), '
 	ignorePaths?: unknown;
 };
 const rules = preset.packageRules ?? [];
+const matchKeys = (r: Rule): string[] => Object.keys(r).filter((k) => k.startsWith('match'));
+// Renovate соединяет matcher'ы одного правила через AND. Прежние правила покрывают своё целиком,
+// только пока в них один match*: второй сузил бы правило до пересечения и молча снял покрытие.
 const disabled = (pred: (r: Rule) => boolean): boolean =>
-	rules.some((r) => r.enabled === false && pred(r));
+	rules.some((r) => r.enabled === false && matchKeys(r).length === 1 && pred(r));
 
 test('пресет: выключает пакеты канона и ссылки на workflow/action стека', () => {
 	expect(disabled((r) => r.matchPackageNames?.includes('@alxwlw/**') === true)).toBe(true);
@@ -61,10 +65,33 @@ test('пресет: не задаёт extends и ignorePaths — они оста
 	expect(preset.ignorePaths).toBeUndefined();
 });
 
+// Одного match* для копий пинов нет: имя node несут и engines, и .nvmrc, и образ в container:, а
+// matchManagers: ['dockerfile'] в одиночку выключил бы все образы. Пара сужает правило намеренно.
+test('пресет: выключает образы node и oven/bun в Dockerfile — и только их', () => {
+	expect(rules.find((r) => r.matchManagers?.includes('dockerfile'))).toStrictEqual({
+		description: expect.any(String),
+		matchManagers: ['dockerfile'],
+		matchPackageNames: ['node', 'oven/bun'],
+		enabled: false,
+	});
+});
+
+// uses-with — depType версии во входе with у action; тем же типом идут python-version, moon-version
+// и десятки других, поэтому правило называет три имени: node, bun и moonrepo/proto (proto-version).
+test('пресет: выключает версии node, bun и proto во входах with — и только их', () => {
+	expect(rules.find((r) => r.matchDepTypes?.includes('uses-with'))).toStrictEqual({
+		description: expect.any(String),
+		matchDepTypes: ['uses-with'],
+		matchDepNames: ['node', 'bun', 'moonrepo/proto'],
+		enabled: false,
+	});
+});
+
 test('пресет: каждое правило только выключает — других решений за потребителя он не принимает', () => {
 	const allowed = new Set([
 		'description',
 		'matchPackageNames',
+		'matchDepNames',
 		'matchDepTypes',
 		'matchManagers',
 		'enabled',
@@ -72,11 +99,15 @@ test('пресет: каждое правило только выключает 
 	expect(rules.length).toBeGreaterThan(0);
 	for (const r of rules) {
 		expect(r.enabled).toBe(false);
-		// Renovate соединяет matcher'ы одного правила через AND: второй match* сузил бы правило до
-		// пересечения и молча снял бы покрытие, поэтому ровно один match* на правило.
-		expect(Object.keys(r).filter((k) => k.startsWith('match'))).toHaveLength(1);
 		for (const key of Object.keys(r)) expect(allowed.has(key)).toBe(true);
 	}
+	const counts = rules.map((r) => matchKeys(r).length);
+	for (const n of counts) {
+		expect(n).toBeGreaterThanOrEqual(1);
+		expect(n).toBeLessThanOrEqual(2);
+	}
+	// Два match* — только у правил о копиях пинов (тесты выше называют их целиком).
+	expect(counts.filter((n) => n === 2)).toHaveLength(2);
 });
 
 // '!имя' в match*-списке отменяет совпадение: includes(...) в тестах выше его пропускает, а правило

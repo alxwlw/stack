@@ -1,15 +1,17 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { Glob } from 'bun';
 import JSON5 from 'json5';
 import { type Document, parseDocument } from 'yaml';
 
 import type { Canon } from './canon.ts';
 import type { Finding } from './findings.ts';
 import { parsePeersBaseline, type PeerEntry, PEERS_BASELINE } from './peers.ts';
+import { pinSiteKind } from './toolchain-pins.ts';
 
 // package.json в этих каталогах не читаются: чужой или собранный файл — не предмет проверки.
+// По тем же причинам не читаются и файлы с копиями пинов тулчейна (Dockerfile, workflow).
+// Обход дерева (walkFiles) в такие каталоги не заходит.
 export const SKIP = /node_modules|\.worktrees|\.moon\/cache|(^|\/)(dist|build)\//;
 
 // Имена и порядок поиска — как у самого Renovate (расширения json, jsonc, json5 для каждого места; первый
@@ -242,9 +244,33 @@ function readFile(root: string, path: string): Read {
 	}
 }
 
+// Файлы под dir (путь от корня репозитория, '' — сам корень), отсортированные, пути через `/`.
+// Каталог, который не читается (или которого нет), пропускается молча: Bun.Glob#scanSync бросает на первом
+// же таком каталоге, а stack check и sync не должны падать из-за чужих данных в дереве. Заходит только в
+// настоящий каталог (не симлинк), без точки в имени и не под SKIP; файл — только настоящий файл.
+function walkFiles(root: string, dir: string): string[] {
+	let entries;
+	try {
+		entries = readdirSync(join(root, dir), { withFileTypes: true });
+	} catch {
+		return [];
+	}
+	const out: string[] = [];
+	for (const entry of entries) {
+		const path = dir === '' ? entry.name : `${dir}/${entry.name}`;
+		if (entry.isFile()) out.push(path);
+		else if (entry.isDirectory() && !entry.name.startsWith('.') && !SKIP.test(`${path}/`)) {
+			out.push(...walkFiles(root, path));
+		}
+	}
+	return out.sort();
+}
+
 // Адаптер диска, без классификации: dest и satisfiedBy канон-файлов, конфиги Renovate и dependabot,
 // MOON_TOOLCHAINS, MOON_WORKSPACES, PEERS_BASELINE, LOCKFILE, pnpm-workspace.yaml, корневой package.json;
-// если pnpm-workspace.yaml есть (текст или сбой чтения) — ещё вложенные package.json без SKIP.
+// если pnpm-workspace.yaml есть (текст или сбой чтения) — ещё вложенные package.json без SKIP;
+// всегда — Dockerfile и workflow с возможными копиями пинов (pinSiteKind) без SKIP. Дерево обходится один
+// раз (без скрытых каталогов), каталоги .github/workflows и .github/actions — отдельными обходами.
 export function readSnapshot(root: string, canon: Canon): Snapshot {
 	const candidates = new Set<string>(['package.json', WORKSPACE_FILE]);
 	for (const f of canon.files) {
@@ -262,11 +288,22 @@ export function readSnapshot(root: string, canon: Canon): Snapshot {
 		candidates.add(p);
 	const snapshot = new Map<string, Read>();
 	for (const p of candidates) snapshot.set(p, readFile(root, p));
+	const tree = walkFiles(root, '');
 	const workspace = snapshot.get(WORKSPACE_FILE) as Read;
 	if (!('missing' in workspace)) {
-		for (const file of new Glob('**/package.json').scanSync({ cwd: root })) {
-			if (!SKIP.test(file) && !candidates.has(file)) snapshot.set(file, readFile(root, file));
+		for (const file of tree) {
+			if (basename(file) === 'package.json' && !SKIP.test(file) && !candidates.has(file)) {
+				snapshot.set(file, readFile(root, file));
+			}
 		}
+	}
+	for (const file of [
+		...tree,
+		...walkFiles(root, '.github/workflows'),
+		...walkFiles(root, '.github/actions'),
+	]) {
+		if (SKIP.test(file) || pinSiteKind(file) === undefined || snapshot.has(file)) continue;
+		snapshot.set(file, readFile(root, file));
 	}
 	return snapshot;
 }
