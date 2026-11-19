@@ -94,6 +94,8 @@ const ADDRESS: { [C in FindingCode]: ((f: FindingOf<C>) => Address) | 'unsuppres
 	'moon-toolchain-version': () => ({ file: '.moon/toolchains.yml' }),
 	// Ветка по умолчанию в moon workspace; исключение по найденному пути держит и drift, и отчёт.
 	'moon-default-branch': (f) => ({ file: f.file }),
+	// Копии пинов тулчейна — адрес сам Dockerfile или workflow.
+	'toolchain-pin': (f) => ({ file: f.file }),
 	'unreadable-file': 'unsuppressible',
 	'stale-exception': 'unsuppressible',
 	// Исключение для находок peers — сам baseline; отказ от гейта — убрать группу из with.

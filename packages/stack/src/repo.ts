@@ -8,9 +8,19 @@ import { type Document, parseDocument } from 'yaml';
 import type { Canon } from './canon.ts';
 import type { Finding } from './findings.ts';
 import { parsePeersBaseline, type PeerEntry, PEERS_BASELINE } from './peers.ts';
+import { pinSiteKind } from './toolchain-pins.ts';
 
 // package.json в этих каталогах не читаются: чужой или собранный файл — не предмет проверки.
+// По тем же причинам не читаются и файлы с копиями пинов тулчейна (Dockerfile, workflow).
 export const SKIP = /node_modules|\.worktrees|\.moon\/cache|(^|\/)(dist|build)\//;
+
+// Где лежат копии пинов тулчейна: Dockerfile в любом месте дерева (скрытые каталоги `**` не обходит),
+// workflow и composite action каталога .github — буквальным путём.
+const PIN_SITE_GLOBS = [
+	'**/{Dockerfile,Dockerfile.*,*.Dockerfile}',
+	'.github/workflows/*.{yml,yaml}',
+	'.github/actions/**/action.{yml,yaml}',
+];
 
 // Имена и порядок поиска — как у самого Renovate (расширения json, jsonc, json5 для каждого места; первый
 // найденный файл и есть конфиг), без устаревшего package.json#renovate. JSON5.parse читает и JSONC.
@@ -244,7 +254,8 @@ function readFile(root: string, path: string): Read {
 
 // Адаптер диска, без классификации: dest и satisfiedBy канон-файлов, конфиги Renovate и dependabot,
 // MOON_TOOLCHAINS, MOON_WORKSPACES, PEERS_BASELINE, LOCKFILE, pnpm-workspace.yaml, корневой package.json;
-// если pnpm-workspace.yaml есть (текст или сбой чтения) — ещё вложенные package.json без SKIP.
+// если pnpm-workspace.yaml есть (текст или сбой чтения) — ещё вложенные package.json без SKIP;
+// всегда — Dockerfile и workflow с возможными копиями пинов (PIN_SITE_GLOBS) без SKIP.
 export function readSnapshot(root: string, canon: Canon): Snapshot {
 	const candidates = new Set<string>(['package.json', WORKSPACE_FILE]);
 	for (const f of canon.files) {
@@ -266,6 +277,12 @@ export function readSnapshot(root: string, canon: Canon): Snapshot {
 	if (!('missing' in workspace)) {
 		for (const file of new Glob('**/package.json').scanSync({ cwd: root })) {
 			if (!SKIP.test(file) && !candidates.has(file)) snapshot.set(file, readFile(root, file));
+		}
+	}
+	for (const pattern of PIN_SITE_GLOBS) {
+		for (const file of new Glob(pattern).scanSync({ cwd: root })) {
+			if (SKIP.test(file) || pinSiteKind(file) === undefined || snapshot.has(file)) continue;
+			snapshot.set(file, readFile(root, file));
 		}
 	}
 	return snapshot;
