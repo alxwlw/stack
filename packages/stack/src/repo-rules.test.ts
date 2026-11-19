@@ -15,6 +15,9 @@ import { git, gitRepo, isolateGitConfig, repoDir } from './testkit.ts';
 
 const V = { rule: 'max-lines', path: 'src/a.ts', line: 801, message: '812 lines' };
 const S = { rule: 'suppression-reason', path: 'src/b.ts', baseline: 2, actual: 1 };
+const SHAPE_V = 'output has an unexpected shape: violations';
+const SHAPE_S = 'output has an unexpected shape: stale';
+const SHAPE_N = 'output has an unexpected shape: notes';
 const json = (o: unknown) => JSON.stringify(o, null, 2);
 const ok = (code: number, o: unknown): RepoRulesRun => ({ code, out: json(o), err: '' });
 
@@ -47,6 +50,14 @@ test.each([
 test('repoRulesPart: код 1 с нарушением и устаревшей записью — отчёт, лишние поля отброшены', () => {
 	const run = ok(1, { violations: [{ ...V, extra: 1 }], stale: [S], notes: ['n'], more: true });
 	expect(repoRulesPart(run)).toStrictEqual({ violations: [V], stale: [S], notes: ['n'] });
+});
+
+test('repoRulesPart: код 1 только с устаревшей записью — отчёт, не unavailable', () => {
+	expect(repoRulesPart(ok(1, { violations: [], stale: [S], notes: [] }))).toStrictEqual({
+		violations: [],
+		stale: [S],
+		notes: [],
+	});
 });
 
 test('repoRulesPart: код 0 с пустыми списками — пустой отчёт', () => {
@@ -91,6 +102,48 @@ test.each<[string, RepoRulesRun, string]>([
 		'код 2, первая строка пуста',
 		{ code: 2, out: '', err: '\nrepo-rules: internal error: boom' },
 		'internal error: boom',
+	],
+	['violations — объект', ok(0, { violations: {}, stale: [], notes: [] }), SHAPE_V],
+	['stale — объект', ok(0, { violations: [], stale: {}, notes: [] }), SHAPE_S],
+	['notes — объект', ok(0, { violations: [], stale: [], notes: {} }), SHAPE_N],
+	['элемент violations — строка', ok(0, { violations: ['x'], stale: [], notes: [] }), SHAPE_V],
+	['элемент violations — null', ok(0, { violations: [null], stale: [], notes: [] }), SHAPE_V],
+	['элемент violations — массив', ok(0, { violations: [[]], stale: [], notes: [] }), SHAPE_V],
+	[
+		'rule нарушения — число',
+		ok(0, { violations: [{ ...V, rule: 1 }], stale: [], notes: [] }),
+		SHAPE_V,
+	],
+	[
+		'path нарушения — число',
+		ok(0, { violations: [{ ...V, path: 1 }], stale: [], notes: [] }),
+		SHAPE_V,
+	],
+	[
+		'message нарушения — число',
+		ok(0, { violations: [{ ...V, message: 1 }], stale: [], notes: [] }),
+		SHAPE_V,
+	],
+	['элемент stale — null', ok(0, { violations: [], stale: [null], notes: [] }), SHAPE_S],
+	[
+		'rule записи — число',
+		ok(0, { violations: [], stale: [{ ...S, rule: 1 }], notes: [] }),
+		SHAPE_S,
+	],
+	[
+		'path записи — число',
+		ok(0, { violations: [], stale: [{ ...S, path: 1 }], notes: [] }),
+		SHAPE_S,
+	],
+	[
+		'baseline записи — строка',
+		ok(0, { violations: [], stale: [{ ...S, baseline: '2' }], notes: [] }),
+		SHAPE_S,
+	],
+	[
+		'actual записи — строка',
+		ok(0, { violations: [], stale: [{ ...S, actual: '1' }], notes: [] }),
+		SHAPE_S,
 	],
 	['код 2 без текста', { code: 2, out: '', err: '' }, 'exited with 2'],
 	[
