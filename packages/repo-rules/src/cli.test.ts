@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, symlinkSync } from 'node:fs';
+import { existsSync, readFileSync, renameSync, rmSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { afterAll, describe, expect, test } from 'bun:test';
@@ -13,7 +13,8 @@ const DISABLE = '// eslint-disable-next-line no-console\nconsole.log(1);\n';
 const USAGE =
 	'usage: repo-rules [-C <dir>] check [--json]\n' +
 	'       repo-rules [-C <dir>] diff [--base <ref>] [--json]\n' +
-	'       repo-rules [-C <dir>] baseline [--init] [--allow-grow]';
+	'       repo-rules [-C <dir>] baseline [--init] [--allow-grow]\n' +
+	'       repo-rules [-C <dir>] baseline --drop-fixed';
 
 describe('repo-rules CLI', () => {
 	test('check: violations print path:line rule message, exit 1', () => {
@@ -279,5 +280,100 @@ describe('repo-rules CLI', () => {
 		const src = readFileSync(join(import.meta.dir, 'cli.mjs'), 'utf8');
 		expect(src.startsWith('#!/usr/bin/env node\n')).toBe(true);
 		expect(existsSync(join(import.meta.dir, 'main.mjs'))).toBe(true);
+	});
+
+	const FILE = '.repo-rules-baseline.json';
+	const read = (root: string): string => readFileSync(join(root, FILE), 'utf8');
+	const SILENT = { code: 0, stdout: '', stderr: '' };
+
+	test('baseline --drop-fixed lowers what is fixed and records neither growth nor new violations', () => {
+		const r = repo({
+			'src/gone.ts': DISABLE,
+			'src/shrunk.ts': `${DISABLE}${DISABLE}`,
+			'src/grown.ts': DISABLE,
+		});
+		expect(cli(['-C', r.root, 'baseline', '--init']).code).toBe(0);
+		r.write({
+			'src/gone.ts': 'console.log(1);\n',
+			'src/shrunk.ts': DISABLE,
+			'src/grown.ts': `${DISABLE}${DISABLE}`,
+			'src/new.ts': DISABLE,
+		});
+		r.git('add', '-A');
+		const before = JSON.parse(cli(['-C', r.root, 'check', '--json']).stdout);
+		expect(before.stale).toHaveLength(2);
+		expect(before.violations).toHaveLength(3);
+
+		expect(cli(['-C', r.root, 'baseline', '--drop-fixed'])).toStrictEqual({
+			code: 0,
+			stdout: `repo-rules baseline: lowered 2 entr(ies) in ${FILE}\n`,
+			stderr: '',
+		});
+		expect(read(r.root)).toBe(
+			'{\n  "version": 1,\n  "rules": {\n    "suppression-reason": {\n' +
+				'      "src/grown.ts": 1,\n      "src/shrunk.ts": 1\n    }\n  }\n}\n',
+		);
+		const after = cli(['-C', r.root, 'check', '--json']);
+		expect(after.code).toBe(1);
+		expect(JSON.parse(after.stdout)).toStrictEqual({ ...before, stale: [] });
+	});
+
+	test('baseline --drop-fixed with nothing to lower writes nothing and prints nothing', () => {
+		// Четыре пробела и пути не по алфавиту: любая перезапись изменила бы байты.
+		const hand =
+			'{\n    "version": 1,\n    "rules": {\n        "suppression-reason": {\n' +
+			'            "src/z.ts": 1,\n            "src/a.ts": 1\n        }\n    }\n}\n';
+		const r = repo({
+			'src/z.ts': DISABLE,
+			'src/a.ts': `${DISABLE}${DISABLE}`,
+			'src/new.ts': DISABLE,
+			[FILE]: hand,
+		});
+		expect(cli(['-C', r.root, 'baseline', '--drop-fixed'])).toStrictEqual(SILENT);
+		expect(read(r.root)).toBe(hand);
+	});
+
+	test('baseline --drop-fixed without a baseline file creates none', () => {
+		const r = repo({ 'src/a.ts': DISABLE });
+		expect(cli(['-C', r.root, 'baseline', '--drop-fixed'])).toStrictEqual(SILENT);
+		expect(existsSync(join(r.root, FILE))).toBe(false);
+	});
+
+	test('baseline --drop-fixed drops the entries of files that are gone', () => {
+		const r = repo({ 'src/a.ts': DISABLE, 'src/b.ts': DISABLE, 'src/c.ts': DISABLE });
+		expect(cli(['-C', r.root, 'baseline', '--init']).code).toBe(0);
+		r.git('rm', '-q', 'src/a.ts'); // удалён и из индекса
+		rmSync(join(r.root, 'src/b.ts')); // отслеживается, на диске нет
+		renameSync(join(r.root, 'src/c.ts'), join(r.root, 'src/d.ts')); // новый путь не отслеживается
+		expect(cli(['-C', r.root, 'baseline', '--drop-fixed']).stdout).toBe(
+			`repo-rules baseline: lowered 3 entr(ies) in ${FILE}\n`,
+		);
+		expect(read(r.root)).toBe('{\n  "version": 1,\n  "rules": {}\n}\n');
+	});
+
+	test('baseline --drop-fixed leaves a baseline that does not parse alone, exit 2', () => {
+		const r = repo({ 'src/a.ts': DISABLE, [FILE]: '{ not json' });
+		const res = cli(['-C', r.root, 'baseline', '--drop-fixed']);
+		expect(res.code).toBe(2);
+		expect(res.stdout).toBe('');
+		expect(res.stderr).toStartWith(`repo-rules: ${FILE}: not JSON (`);
+		expect(read(r.root)).toBe('{ not json');
+	});
+
+	test.each(['--init', '--allow-grow'])('baseline --drop-fixed does not go with %s', (flag) => {
+		const stale = repo({ 'src/a.ts': DISABLE });
+		expect(cli(['-C', stale.root, 'baseline', '--init']).code).toBe(0);
+		const recorded = read(stale.root);
+		stale.write({ 'src/a.ts': 'console.log(1);\n' });
+		const none = repo({ 'src/a.ts': DISABLE });
+		for (const r of [stale, none]) {
+			expect(cli(['-C', r.root, 'baseline', '--drop-fixed', flag])).toStrictEqual({
+				code: 2,
+				stdout: '',
+				stderr: 'repo-rules: --drop-fixed does not go with --init or --allow-grow\n',
+			});
+		}
+		expect(read(stale.root)).toBe(recorded);
+		expect(existsSync(join(none.root, FILE))).toBe(false);
 	});
 });

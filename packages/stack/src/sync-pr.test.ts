@@ -12,29 +12,23 @@ import { dirname, join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { parse as parseYaml } from 'yaml';
 
-import { loadCanon } from './canon.ts';
 import { ownVersion } from './own-packages.ts';
 import type { PeerEntry, PeersReader } from './peers.ts';
-import type { Served } from './registry.ts';
-import {
-	type GitHub,
-	type NewPr,
-	prBody,
-	type RunProcess,
-	SYNC_PR_WAIT,
-	syncPr,
-	type SyncPrOptions,
-} from './sync-pr.ts';
+import { type NewPr, prBody, SYNC_PR_WAIT } from './sync-pr.ts';
 import {
 	fakeGitHub,
 	git,
 	gitRepo,
+	HOOK,
 	isolateGitConfig,
+	NODE_PKG,
 	opts,
 	PR_URL,
 	put,
 	repoDir,
 	run,
+	runSyncPr,
+	SERVED,
 } from './testkit.ts';
 
 let restore: () => void;
@@ -324,15 +318,6 @@ describe('publishChanges', () => {
 	});
 });
 
-const HOOK = 'pnpm run stack:post-sync|VERSION=1.2.3';
-
-// Ожидаемые обращения к реестру — из канона, а не литералом.
-const SERVED = loadCanon({ profile: 'node', with: [], exceptions: [] }).ownPackages.map(
-	(p) => `served ${p.name}@${p.version}`,
-);
-
-const NODE_PKG = JSON.stringify({ name: 'app', scripts: { 'stack:post-sync': 'true' } });
-
 // Группа peers: записи baseline — литералы, ответ pnpm — JSON той же формы, что у pnpm 12.
 const PEERS_FILE = '.stack-peers-baseline.json';
 const CONFLICT_REACT: PeerEntry = { importer: '.', peer: 'react', kind: 'conflict' };
@@ -377,59 +362,6 @@ function peersRepo(baseline: PeerEntry[]): { dir: string; remote: string } {
 		'pnpm-lock.yaml': 'lockfileVersion: x\n',
 		[PEERS_FILE]: baselineText(baseline),
 	});
-}
-
-async function runSyncPr(
-	dir: string,
-	over: Partial<SyncPrOptions> = {},
-	handlers: {
-		run?: (line: string) => number | undefined;
-		served?: Served | ((name: string, version: string) => Served);
-		github?: GitHub;
-		peers?: PeersReader;
-	} = {},
-) {
-	const journal: string[] = [];
-	const out: string[] = [];
-	const err: string[] = [];
-	const fake = fakeGitHub();
-	const execute: RunProcess = (cmd, args, o) => {
-		const line = `${cmd} ${args.join(' ')}`;
-		journal.push(o.env?.VERSION ? `${line}|VERSION=${o.env.VERSION}` : line);
-		return handlers.run?.(line) ?? 0;
-	};
-	const code = await syncPr(
-		{
-			repoRoot: dir,
-			version: '1.2.3',
-			appSlug: 'acme-bot',
-			install: true,
-			wait: { attempts: 2, intervalMs: 0 },
-			...over,
-		},
-		{
-			run: execute,
-			github: handlers.github ?? fake.github,
-			registry: {
-				has: async (name, version) => {
-					journal.push(`has ${name}@${version}`);
-					return true;
-				},
-				served: async (name, version) => {
-					journal.push(`served ${name}@${version}`);
-					const served = handlers.served ?? 'served';
-					return typeof served === 'function' ? served(name, version) : served;
-				},
-			},
-			print: (stream, line) => (stream === 'out' ? out : err).push(line),
-			// Вызов порта pnpm виден в журнале; по умолчанию pnpm ничего не находит.
-			peers: (root) => {
-				journal.push('peers');
-				return handlers.peers?.(root) ?? { status: 0, signal: null, stdout: '{}', stderr: '' };
-			},
-		},
-	);
-	return { code, journal, out, err, github: fake };
 }
 
 describe('syncPr', () => {

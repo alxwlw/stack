@@ -119,7 +119,8 @@ when the repo has a root `package.json`, a wait until every Own package (the `@a
 the canon's `dev` catalog and the `@alxwlw/*` dependencies of `@alxwlw/stack`) is listed in the npm
 registry and its tarball answers a HEAD with 200 (skipped with `--no-install`),
 `proto install`, `pnpm install --no-frozen-lockfile` (skipped with `--no-install`) and the
-`stack:post-sync` hook; then the changed files one by one, a commit by the GitHub App's bot on
+`stack:post-sync` hook; with the `repo-rules` group — in a repo with no root `package.json` and with
+`--no-install` too — it lowers the fixed entries of the repo-rules baseline; then the changed files one by one, a commit by the GitHub App's bot on
 `stack/v<version>`, a force-push and a PR (or the open one, reused). After the PR it closes the open
 sync-PRs of the bot for older versions on the same base, with a comment that links this version's PR, and
 deletes their branches unless another open PR still uses one; when there is nothing to commit it closes them the same way, and the comment
@@ -328,6 +329,13 @@ In a pull request job the reusable `check.yml` fetches the history this part nee
 
 A repo that already wires repo-rules by hand keeps the same baseline file. The rules of the new version
 may find more: `stack repo-rules baseline --allow-grow` records the growth, and it shows in the PR diff.
+
+Sync-PRs lower fixed entries on their own: right before its commit, `stack sync-pr` runs
+`repo-rules baseline --drop-fixed` in process, so an entry that the new rules or the rewritten canon files no
+longer need leaves the baseline in the same commit. An entry that grew and a new violation are not recorded:
+they stay findings for the PR's CI. The step needs neither the install nor a root `package.json`. When it
+fails (a baseline file that does not parse, for one), `stack sync-pr` prints one line on stderr and goes on;
+`stack check` on the PR then reports `repo-rules-unavailable`.
 
 ## CI
 

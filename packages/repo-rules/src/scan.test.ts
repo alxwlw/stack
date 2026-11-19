@@ -6,12 +6,13 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import {
 	BASELINE_FILE,
 	compare,
+	dropFixed,
 	emptyCounts,
 	growth,
 	loadBaseline,
 	writeBaseline,
 } from './baseline.mjs';
-import { loadConfig } from './config.mjs';
+import { loadConfig, REPO_RULES } from './config.mjs';
 import { scan } from './scan.mjs';
 import { cleanup, lines, repo } from './testkit.ts';
 
@@ -318,5 +319,59 @@ describe('baseline', () => {
 		writeBaseline(r.root, counts);
 		const rules = JSON.parse(readFileSync(join(r.root, BASELINE_FILE), 'utf8')).rules;
 		expect(Object.keys(rules)).toEqual(['max-lines', 'number-or-default']);
+	});
+
+	const fixedCase = () => {
+		const prev = emptyCounts();
+		prev['max-lines'] = { 'gone.md': 900, 'shrunk.md': 900, 'grown.md': 850, 'same.md': 801 };
+		prev['suppression-reason'] = { 'a.ts': 2 };
+		const next = emptyCounts();
+		next['max-lines'] = { 'shrunk.md': 820, 'grown.md': 900, 'same.md': 801, 'new.md': 1000 };
+		next['suppression-reason'] = { 'a.ts': 3 };
+		next['number-or-default'] = { 'n.ts': 1 };
+		return { prev, next };
+	};
+
+	test('dropFixed: gone entries leave, shrunk ones lower, grown and new ones are not recorded', () => {
+		const { prev, next } = fixedCase();
+		const before = structuredClone(prev);
+		const r = dropFixed(prev, next);
+		const want = emptyCounts();
+		want['max-lines'] = { 'shrunk.md': 820, 'grown.md': 850, 'same.md': 801 };
+		want['suppression-reason'] = { 'a.ts': 2 };
+		expect(r.counts).toStrictEqual(want);
+		expect(r.fixed).toStrictEqual([
+			{ rule: 'max-lines', path: 'gone.md', from: 900, to: 0 },
+			{ rule: 'max-lines', path: 'shrunk.md', from: 900, to: 820 },
+		]);
+		expect(prev).toStrictEqual(before);
+	});
+
+	test('dropFixed: nothing fixed — the counts equal prev and fixed is empty', () => {
+		const prev = emptyCounts();
+		prev['number-or-default'] = { 'a.ts': 2, 'b.ts': 1 };
+		const next = emptyCounts();
+		next['number-or-default'] = { 'a.ts': 3, 'b.ts': 1, 'c.ts': 4 };
+		expect(dropFixed(prev, next)).toStrictEqual({ counts: prev, fixed: [] });
+	});
+
+	test('dropFixed leaves nothing stale and hides no violation', () => {
+		const { prev, next } = fixedCase();
+		// По одному срабатыванию на строку у max-lines, по числу записи у остальных правил.
+		const hits = REPO_RULES.flatMap((rule) =>
+			Object.entries(next[rule]).flatMap(([path, n]) =>
+				Array.from({ length: rule === 'max-lines' ? 1 : n }, (_, i) => ({
+					rule,
+					path,
+					line: i + 1,
+					message: 'm',
+				})),
+			),
+		);
+		const was = compare(next, hits, prev);
+		const now = compare(next, hits, dropFixed(prev, next).counts);
+		expect(was.stale).toHaveLength(2);
+		expect(now.stale).toStrictEqual([]);
+		expect(now.violations).toStrictEqual(was.violations);
 	});
 });

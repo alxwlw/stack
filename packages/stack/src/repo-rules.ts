@@ -55,6 +55,29 @@ export function repoRulesCalls(
 	return { check, diff: env.GITHUB_ACTIONS === 'true' ? diff : undefined };
 }
 
+/** Аргументы режима repo-rules «убрать исправленное из baseline»: его зовёт sync-pr. */
+export function repoRulesDropFixedCall(repoRoot: string): string[] {
+	return ['-C', repoRoot, 'baseline', '--drop-fixed'];
+}
+
+// Причина сбоя: первая непустая строка stderr без префикса repo-rules, при пустом stderr — код выхода.
+function failureReason(run: RepoRulesRun): string {
+	const first = run.err.split('\n').find((l) => l.trim() !== '');
+	if (first === undefined) return `exited with ${run.code}`;
+	return first.startsWith(ERROR_PREFIX) ? first.slice(ERROR_PREFIX.length) : first;
+}
+
+/** Что sync-pr печатает по исходу режима: строки repo-rules при коде 0, иначе причина сбоя. */
+export interface RepoRulesDropFixed {
+	out: string[];
+	err: string[];
+}
+
+export function repoRulesDropFixed(run: RepoRulesRun): RepoRulesDropFixed {
+	if (run.code === 0) return { out: run.out.split('\n').filter((l) => l.trim() !== ''), err: [] };
+	return { out: [], err: [failureReason(run)] };
+}
+
 const isRecord = (v: unknown): v is Record<string, unknown> =>
 	typeof v === 'object' && v !== null && !Array.isArray(v);
 
@@ -90,11 +113,7 @@ const noteOf = (x: unknown): string | undefined => (typeof x === 'string' ? x : 
 
 export function repoRulesPart(run: RepoRulesRun): RepoRulesPart {
 	if (run.code !== 0 && run.code !== 1) {
-		const first = run.err.split('\n').find((l) => l.trim() !== '');
-		if (first === undefined) return { unavailable: `exited with ${run.code}` };
-		return {
-			unavailable: first.startsWith(ERROR_PREFIX) ? first.slice(ERROR_PREFIX.length) : first,
-		};
+		return { unavailable: failureReason(run) };
 	}
 	let data: unknown;
 	try {

@@ -13,6 +13,7 @@ pnpm exec repo-rules diff --base origin/main
 repo-rules [-C <dir>] check [--json]
 repo-rules [-C <dir>] diff [--base <ref>] [--json]
 repo-rules [-C <dir>] baseline [--init] [--allow-grow]
+repo-rules [-C <dir>] baseline --drop-fixed
 ```
 
 `-C <dir>` runs in that directory (any place inside the repository). `--json` prints `{ violations, stale, notes }` instead of text lines. `--help` prints the usage; a missing or unknown command prints it on stderr and exits 2.
@@ -44,6 +45,11 @@ A reason is at least three non-space characters.
 ## Baseline
 
 `.repo-rules-baseline.json` records the violations that already exist: line count per long file, hit count per file for the other rules. `check` fails when a file goes over its entry, and also when an entry is higher than reality (stale), so a fixed place cannot be reused by a new one. `baseline` only lowers entries; raising one takes `--allow-grow`, which shows in the PR diff.
+
+`baseline --drop-fixed` is the mode for an automated update PR: it lowers the entries that are higher than
+reality and leaves the rest. An entry that grew keeps its count and a new violation is not recorded, so both
+stay for `check` to report. With nothing to lower, or with no baseline file, it writes nothing and exits 0. It
+does not go with `--init` or `--allow-grow`.
 
 ## Configuration
 

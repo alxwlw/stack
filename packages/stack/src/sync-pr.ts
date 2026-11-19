@@ -8,6 +8,7 @@ import { readStackConfig, StackConfigError } from './config.ts';
 import type { PeersReader } from './peers.ts';
 import { peersBaseline } from './peers-baseline.ts';
 import { type Registry, type WaitOptions, waitVisible } from './registry.ts';
+import { repoRulesDropFixed, repoRulesDropFixedCall, type RepoRulesReader } from './repo-rules.ts';
 
 export interface NewPr {
 	head: string;
@@ -277,6 +278,7 @@ export interface SyncPrPorts {
 	registry: Registry;
 	print: Print;
 	peers: PeersReader;
+	repoRules: RepoRulesReader;
 }
 
 // Как ATTEMPTS/INTERVAL шага ожидания в sync.yml.
@@ -284,7 +286,22 @@ export const SYNC_PR_WAIT: WaitOptions = { attempts: 12, intervalMs: 10_000 };
 
 class StepFailed extends Error {}
 
-// sync в процессе, ожидание реестра, установка, хук stack:post-sync, затем publishChanges.
+// Исправленные записи baseline repo-rules уходят в тот же коммит: правила идут в процессе и читают исходники,
+// поэтому режим нужен и без package.json, и без установки. Рост и новые нарушения он не записывает, а код
+// не меняет итог: что осталось несведённым, покажет stack check в CI sync-PR. Группу проверяет эта функция.
+function dropFixedRepoRules(
+	repoRoot: string,
+	canon: ReturnType<typeof loadCanon>,
+	repoRules: RepoRulesReader,
+	print: Print,
+): void {
+	if (!canon.rules.includes('repo-rules')) return;
+	const r = repoRulesDropFixed(repoRules(repoRulesDropFixedCall(repoRoot), {}));
+	for (const line of r.out) print('out', line);
+	for (const line of r.err) print('err', `sync-pr: repo-rules baseline: ${line}`);
+}
+
+// sync в процессе, ожидание реестра, установка, хук stack:post-sync, baseline peers и repo-rules, затем publishChanges.
 export async function syncPr(opts: SyncPrOptions, ports: SyncPrPorts): Promise<0 | 1 | 2> {
 	const { repoRoot, version } = opts;
 	const { run, print } = ports;
@@ -305,7 +322,10 @@ export async function syncPr(opts: SyncPrOptions, ports: SyncPrPorts): Promise<0
 		}
 
 		const pkgPath = join(repoRoot, 'package.json');
-		if (!existsSync(pkgPath)) return await publishChanges(opts, ports.github, print);
+		if (!existsSync(pkgPath)) {
+			dropFixedRepoRules(repoRoot, canon, ports.repoRules, print);
+			return await publishChanges(opts, ports.github, print);
+		}
 
 		let hook = false;
 		try {
@@ -338,6 +358,7 @@ export async function syncPr(opts: SyncPrOptions, ports: SyncPrPorts): Promise<0
 		for (const line of peers.out) print('out', line);
 		for (const line of peers.err) print('err', `sync-pr: peers baseline: ${line}`);
 
+		dropFixedRepoRules(repoRoot, canon, ports.repoRules, print);
 		return await publishChanges(opts, ports.github, print);
 	} catch (error) {
 		print('err', `sync-pr: ${message(error)}`);

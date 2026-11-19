@@ -5,17 +5,23 @@ import { dirname, join } from 'node:path';
 
 import { stringify } from 'yaml';
 
-import { type Canon, canonDir, canonFor, readCanonSource } from './canon.ts';
+import { type Canon, canonDir, canonFor, loadCanon, readCanonSource } from './canon.ts';
 import type { Profile } from './config.ts';
 import { STACK_RENOVATE_PRESET } from './deps.ts';
 import { ownPackages } from './own-packages.ts';
+import type { PeersReader } from './peers.ts';
+import type { Served } from './registry.ts';
 import { type Read, RENOVATE_CONFIGS, type Repo, repoFromSnapshot } from './repo.ts';
+import type { RepoRulesReader } from './repo-rules.ts';
 import {
 	type GitHub,
 	type NewPr,
 	type OpenPr,
 	publishChanges,
 	type PublishOptions,
+	type RunProcess,
+	syncPr,
+	type SyncPrOptions,
 } from './sync-pr.ts';
 
 // Корень репозитория стека: тесты запускают proto и moon из него.
@@ -416,4 +422,72 @@ export async function spawnIn(cmd: string[], cwd: string) {
 		proc.exited,
 	]);
 	return { code, out, err };
+}
+
+export const HOOK = 'pnpm run stack:post-sync|VERSION=1.2.3';
+
+// Ожидаемые обращения к реестру — из канона, а не литералом.
+export const SERVED = loadCanon({ profile: 'node', with: [], exceptions: [] }).ownPackages.map(
+	(p) => `served ${p.name}@${p.version}`,
+);
+
+export const NODE_PKG = JSON.stringify({ name: 'app', scripts: { 'stack:post-sync': 'true' } });
+
+export async function runSyncPr(
+	dir: string,
+	over: Partial<SyncPrOptions> = {},
+	handlers: {
+		run?: (line: string) => number | undefined;
+		served?: Served | ((name: string, version: string) => Served);
+		github?: GitHub;
+		peers?: PeersReader;
+		repoRules?: RepoRulesReader;
+	} = {},
+) {
+	const journal: string[] = [];
+	const out: string[] = [];
+	const err: string[] = [];
+	const fake = fakeGitHub();
+	const execute: RunProcess = (cmd, args, o) => {
+		const line = `${cmd} ${args.join(' ')}`;
+		journal.push(o.env?.VERSION ? `${line}|VERSION=${o.env.VERSION}` : line);
+		return handlers.run?.(line) ?? 0;
+	};
+	const code = await syncPr(
+		{
+			repoRoot: dir,
+			version: '1.2.3',
+			appSlug: 'acme-bot',
+			install: true,
+			wait: { attempts: 2, intervalMs: 0 },
+			...over,
+		},
+		{
+			run: execute,
+			github: handlers.github ?? fake.github,
+			registry: {
+				has: (name, version) => {
+					journal.push(`has ${name}@${version}`);
+					return Promise.resolve(true);
+				},
+				served: (name, version) => {
+					journal.push(`served ${name}@${version}`);
+					const served = handlers.served ?? 'served';
+					return Promise.resolve(typeof served === 'function' ? served(name, version) : served);
+				},
+			},
+			print: (stream, line) => (stream === 'out' ? out : err).push(line),
+			// Вызов порта pnpm виден в журнале; по умолчанию pnpm ничего не находит.
+			peers: (root) => {
+				journal.push('peers');
+				return handlers.peers?.(root) ?? { status: 0, signal: null, stdout: '{}', stderr: '' };
+			},
+			// Вызов порта repo-rules виден в журнале; по умолчанию режим ничего не меняет.
+			repoRules: (argv, env) => {
+				journal.push(`repo-rules ${argv.join(' ')}`);
+				return handlers.repoRules?.(argv, env) ?? { code: 0, out: '', err: '' };
+			},
+		},
+	);
+	return { code, journal, out, err, github: fake };
 }
