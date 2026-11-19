@@ -90,14 +90,22 @@ const pnpmPeers: PeersReader = (cwd) => {
 // Проводник: аргументы после `repo-rules` уходят в repo-rules как есть, флаги stack здесь не разбираются.
 // Версия правил — версия самого stack: пакет берётся из зависимостей stack, не из репозитория потребителя.
 if (Bun.argv[2] === 'repo-rules') {
-	process.exit(
-		repoRulesMain(
-			Bun.argv.slice(3),
-			process.env,
-			(s) => process.stdout.write(`${s}\n`),
-			(s) => process.stderr.write(`${s}\n`),
-		),
+	// Вывод собирается и дописывается до выхода: process.exit сразу после write обрывает канал на 64 КиБ.
+	let out = '';
+	let err = '';
+	const code = repoRulesMain(
+		Bun.argv.slice(3),
+		process.env,
+		(s) => void (out += `${s}\n`),
+		(s) => void (err += `${s}\n`),
 	);
+	const flush = (stream: NodeJS.WriteStream, text: string) =>
+		new Promise<void>((resolve) => {
+			if (text) stream.write(text, () => resolve());
+			else resolve();
+		});
+	await Promise.all([flush(process.stdout, out), flush(process.stderr, err)]);
+	process.exit(code);
 }
 
 const { values, positionals } = parseCliArgs();

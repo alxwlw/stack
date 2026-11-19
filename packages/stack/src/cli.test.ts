@@ -679,6 +679,16 @@ describe('stack repo-rules', () => {
 		expect(viaStack).toStrictEqual(viaBin);
 	});
 
+	test('большой вывод проводника доходит целиком (канал не обрывается на выходе)', async () => {
+		const files: Record<string, string> = {};
+		for (let i = 0; i < 3000; i++) files[`f${i}.test.ts`] = `test.only('x${i}', () => {});\n`;
+		const { dir } = gitRepo(files);
+		const viaStack = await spawnIn(['bun', CLI, 'repo-rules', 'check', '--json'], dir);
+		const viaBin = await spawnIn(['node', RR_BIN, 'check', '--json'], dir);
+		expect(viaBin.out.length).toBeGreaterThan(300_000);
+		expect(viaStack).toStrictEqual(viaBin);
+	}, 60_000);
+
 	test('коды проводника: чисто 0, нарушение 1, вне git 2', async () => {
 		expect((await spawnIn(['bun', CLI, 'repo-rules', 'check'], clean)).code).toBe(0);
 		expect((await spawnIn(['bun', CLI, 'repo-rules', 'check'], dirty)).code).toBe(1);
