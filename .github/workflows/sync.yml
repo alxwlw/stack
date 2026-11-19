@@ -77,7 +77,7 @@ jobs:
             local url
             if ! doc=$(curl -fsS --max-time 30 -H "Accept: $accept" "https://registry.npmjs.org/${1/\//%2f}"); then
               why='реестр не ответил'
-            elif ! url=$(printf '%s' "$doc" | PKG_VERSION="$2" node -e 'const t = JSON.parse(require("fs").readFileSync(0, "utf8")).versions?.[process.env.PKG_VERSION]?.dist?.tarball; if (typeof t !== "string") process.exit(1); console.log(t)'); then
+            elif ! url=$(printf '%s' "$doc" | node -e 'const t = JSON.parse(require("fs").readFileSync(0, "utf8")).versions?.[process.argv[1]]?.dist?.tarball; if (typeof t !== "string") process.exit(1); console.log(t)' "$2"); then
               why='нет в packument'
             elif ! curl -fsS --max-time 30 -I "$url" >/dev/null; then
               why='в packument есть, tarball не отдаётся'
