@@ -6,6 +6,8 @@ import { join } from 'node:path';
 import { afterEach, expect, test } from 'bun:test';
 import { parse as parseYaml } from 'yaml';
 
+import { protoBin } from './testkit.ts';
+
 const ROOT = join(import.meta.dir, '..', '..', '..');
 
 // DX-211 (DP-662): на self-hosted раннере ~/.npmrc живёт между джобами всех репозиториев. Шаг токена
@@ -188,7 +190,9 @@ test('pnpm шлёт токен этого джоба, хотя последня�
 		mkdirSync(project);
 		writeFileSync(join(project, 'package.json'), '{"name":"probe","version":"0.0.0"}\n');
 		writeFileSync(join(project, '.npmrc'), `@probe:registry=http://${host}/\n`);
-		const pnpm = Bun.spawn(['pnpm', 'view', '@probe/pkg', 'version'], {
+		// На раннере `pnpm` в PATH — шим proto: во временном каталоге с чужим HOME он не находит версию.
+		// Настоящий бинарник по пину репозитория (protoBin разбирает и NDJSON proto в окружении агента).
+		const pnpm = Bun.spawn([protoBin('pnpm'), 'view', '@probe/pkg', 'version'], {
 			cwd: project,
 			env: {
 				PATH: process.env.PATH ?? '',
