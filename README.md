@@ -86,7 +86,7 @@ a Renovate config without the canon preset, a leftover Dependabot config, inline
 
 `sync` also rewrites **pin copies** — versions of node, bun, pnpm and proto repeated outside `.prototools`:
 
-- in a Dockerfile (a file named `Dockerfile`, `Dockerfile.<suffix>` or `<name>.Dockerfile`, anywhere in the
+- in a Dockerfile (a file named Dockerfile, `Dockerfile.<suffix>` or `<name>.Dockerfile`, anywhere in the
   tree): the tag of a `node` or `oven/bun` image in `FROM`, and a `pnpm@<version>` literal;
 - in the workflows and composite actions of the `.github` directory: the `proto-version`, `node-version` and
   `bun-version` inputs directly under a `with`.
