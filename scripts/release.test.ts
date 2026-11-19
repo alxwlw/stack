@@ -250,6 +250,25 @@ describe('setVersion', () => {
 		expect(Object.keys(deps())).toStrictEqual(Object.keys(before));
 	});
 
+	test('двигает зависимость между пакетами в каждом из DEP_FIELDS', () => {
+		const root = fixtureRoot();
+		const path = join(root, 'packages/oxlint-config/package.json');
+		const data = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>;
+		for (const field of DEP_FIELDS) {
+			data[field] = {
+				...(data[field] as object | undefined),
+				'@alxwlw/stack': '0.0.1',
+				other: '0.0.1',
+			};
+		}
+		writeFileSync(path, JSON.stringify(data));
+		setVersion(root, '1.2.3');
+		const after = JSON.parse(readFileSync(path, 'utf8')) as Record<string, Record<string, string>>;
+		for (const field of DEP_FIELDS) {
+			expect(after[field]).toMatchObject({ '@alxwlw/stack': '1.2.3', other: '0.0.1' });
+		}
+	});
+
 	test('не трогает записи каталога, чужие @alxwlw/*', () => {
 		const root = fixtureRoot();
 		setVersion(root, '1.2.3');
