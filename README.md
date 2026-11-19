@@ -110,7 +110,8 @@ each kind; the finding codes say which is which); `2` — a usage error (no `.st
 unknown `--profile`, an unknown group in `with` (from `.stack.jsonc` or `--with`), a bad flag).
 There is no `--help`: argument parsing is strict, and `stack init --profile <node|contracts|infra>`
 is the only way to create the config file in the first place. Every command accepts
-`--repo <path>` to target a repo other than the current directory.
+`--repo <path>` to target a repo other than the current directory. `stack check --base <ref>` hands
+the ref to the `diff` part of the `repo-rules` group and has no effect without that group.
 
 `stack sync-pr [--base <branch>] [--no-install]` is meant for the sync workflow (it commits the whole
 tree and force-pushes) and does the whole consumer side of a release in one command: `stack sync`;
@@ -246,7 +247,8 @@ canon's node pin doesn't satisfy, a Renovate config whose `extends` lacks
 suppressed as a warning, and fails on one that no longer suppresses anything — the canon moved on
 and the exception is now stale, so it gets deleted, not carried forward silently. The findings of
 the `peers` group have no exception shape either: their baseline is the record of what the repo
-accepts (see [Peer dependencies](#peer-dependencies)).
+accepts (see [Peer dependencies](#peer-dependencies)); the same goes for the `repo-rules` group,
+whose accepted places are recorded in the repo-rules baseline (see [Repo rules](#repo-rules)).
 
 ## Peer dependencies
 
@@ -284,6 +286,44 @@ noise; a peer that moves to another major gets a new key and fails the check.
 the baseline in the PR diff. Sync-PRs drop fixed entries on their own: after the install,
 `stack sync-pr` removes from the baseline what the new lockfile fixed and commits it with the rest
 of the canon; new entries stay findings for the PR's CI.
+
+## Repo rules
+
+The opt-in `repo-rules` group makes `stack check` run the `check` and `diff` commands of
+`@alxwlw/repo-rules` in process and turn their result into findings. The rules are those of this
+`@alxwlw/stack` version, so the package does not have to be in the repo's manifests, and an older copy
+of repo-rules that the repo declares itself is not used by the group. Without the group nothing
+changes: repo-rules is not called.
+
+```bash
+# .stack.jsonc: "with": ["repo-rules"]
+npx stack repo-rules baseline --init   # once: record what is already there
+git add <the file it wrote>
+```
+
+The file it writes is the repo-rules baseline file, described in
+[`packages/repo-rules/README.md`](packages/repo-rules/README.md). Without it every violation of the
+current rules is a finding. Three findings come out of the group:
+
+| Code                        | When                                                                                                                                             |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `repo-rules-violation`      | a place breaks a rule and the baseline does not cover it                                                                                         |
+| `stale-repo-rules-baseline` | a baseline entry is higher than reality; lower it with `stack repo-rules baseline`                                                               |
+| `repo-rules-unavailable`    | a call did not run or its answer cannot be read (a baseline that does not parse, a directory outside git, no merge-base); never read as no drift |
+
+None of them can be held by an exception. To turn the gate off, drop `repo-rules` from `with`.
+
+The `diff` part compares the branch with a base: `--base <ref>` names it. In GitHub Actions on a
+`pull_request` the base is `origin/$GITHUB_BASE_REF`. On other events, and locally without `--base`, the
+part is skipped with a note on stderr; a note never changes the exit code. A commit trailer
+`Tests-Removed: <reason>` in the range accepts a removal of assertions.
+
+The group checks the whole git repository that holds the `--repo` directory, and the paths in findings
+are relative to the git root. For the rules themselves see
+[`packages/repo-rules/README.md`](packages/repo-rules/README.md).
+
+A repo that already wires repo-rules by hand keeps the same baseline file. The rules of the new version
+may find more: `stack repo-rules baseline --allow-grow` records the growth, and it shows in the PR diff.
 
 ## CI
 
