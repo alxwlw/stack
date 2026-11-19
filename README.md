@@ -93,7 +93,9 @@ a Renovate config without the canon preset, a leftover Dependabot config, inline
 A copy is compared at its own precision and keeps it, together with the tag suffix: with the pins `26.13.1` and
 `1.4.4`, `node:26.11.1-alpine` becomes `node:26.13.1-alpine`, `node:24-slim` becomes `node:26-slim`, and
 `oven/bun:1.4-alpine` is left alone. `check` reports one `toolchain-pin` finding per file, and `sync` rewrites
-every copy in that file, leaving comments, quotes and line endings as they were. The copies follow the
+every copy in that file, leaving comments, quotes and line endings as they were, with two exceptions: an
+unquoted two-number value that YAML would read as another number gets quotes (`'26.10'`), and the integrity hash
+after a `pnpm@<version>` that changes is dropped. The copies follow the
 `.prototools` the repo has after `sync`: the canon's pins, or the repo's own pins when an exception holds
 `.prototools`. An exception whose `file` is the path of the Dockerfile or workflow (with a `reason`) holds its
 finding, and `sync` then leaves that file alone.
@@ -218,10 +220,13 @@ would fight: Renovate bumps a pin, the next `stack sync` reverts it. The preset 
 floating `v1` tag, so a release updates it everywhere without a PR: the update arrives once the release moves
 the `v1` tag, and until then `#v1` and `@v1` still point at the previous release.
 
-For the `node` and `oven/bun` images the preset is wider than `sync`: Renovate also stops moving the forms
+For the `node` and `oven/bun` images the preset is wider than `sync`: Renovate also stops moving the ones
 `sync` does not rewrite — an image pinned by digest, a tag built from an `ARG`, an image named in
-`COPY --from`. Those are moved by hand. An image under a registry or another namespace is not a pin copy and
-stays with Renovate. A `pnpm@<version>` literal is not something Renovate reads at all.
+`COPY --from`, and any image in a file `sync` does not read (a Dockerfile in a hidden directory such as
+`.devcontainer`, in `dist` or `build`, a `Containerfile`) or in a file held back by an exception. The same goes
+for the three version inputs in an action file outside the `.github` directory. All of those are moved by hand.
+An image under a registry or another namespace is not a pin copy and stays with Renovate. A `pnpm@<version>`
+literal is not something Renovate reads at all.
 
 `stack check` fails when the Renovate config (the first one found, in Renovate's own lookup order)
 doesn't extend the preset with exactly the `#v1` tag — no tag or `#main` would pull an unreleased
