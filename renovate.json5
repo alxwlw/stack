@@ -9,6 +9,10 @@
 	// pnpm 12 по умолчанию отвергает версии моложе суток (minimumReleaseAge 1440): без этой границы бот
 	// предлагает свежий релиз, и `pnpm install` в CI его PR падает (#54: oxfmt 0.79.0 через 3 ч после публикации).
 	minimumReleaseAge: '1 day',
+	// minimumReleaseAge ставит на ветку статус renovate/stability-days, а у RENOVATE_TOKEN нет права на
+	// commit statuses: 403, и Renovate бросает весь прогон («Repository has changed during renovation»).
+	// Отбор версий по возрасту от статуса не зависит (internalChecksFilter strict по умолчанию).
+	statusCheckNames: { minimumReleaseAge: null },
 	proto: {
 		// Дополняет '**/.prototools' по умолчанию: канон-файл назван без точки.
 		managerFilePatterns: ['/^packages/stack/canon/files/prototools$/'],
