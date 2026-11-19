@@ -90,7 +90,7 @@ const pnpmPeers: PeersReader = (cwd) => {
 // Проводник: аргументы после `repo-rules` уходят в repo-rules как есть, флаги stack здесь не разбираются.
 // Версия правил — версия самого stack: пакет берётся из зависимостей stack, не из репозитория потребителя.
 if (Bun.argv[2] === 'repo-rules') {
-	// Вывод собирается и дописывается до выхода: process.exit сразу после write обрывает канал на 64 КиБ.
+	// Вывод собирается и дописывается до выхода: process.exit сразу после write обрывает канал на 128 КиБ.
 	let out = '';
 	let err = '';
 	const code = repoRulesMain(
@@ -99,12 +99,22 @@ if (Bun.argv[2] === 'repo-rules') {
 		(s) => void (out += `${s}\n`),
 		(s) => void (err += `${s}\n`),
 	);
+	// Ошибка записи (диск полон, канал закрыт) — одна строка и код 2, как в бинарнике repo-rules.
+	let writeError: Error | undefined;
 	const flush = (stream: NodeJS.WriteStream, text: string) =>
 		new Promise<void>((resolve) => {
-			if (text) stream.write(text, () => resolve());
+			if (text)
+				stream.write(text, (e) => {
+					writeError ??= e ?? undefined;
+					resolve();
+				});
 			else resolve();
 		});
 	await Promise.all([flush(process.stdout, out), flush(process.stderr, err)]);
+	if (writeError) {
+		process.stderr.write(`repo-rules: ${writeError.message}\n`);
+		process.exit(2);
+	}
 	process.exit(code);
 }
 

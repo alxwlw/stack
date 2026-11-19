@@ -691,6 +691,16 @@ describe('stack repo-rules', () => {
 		expect(await bytes('bun "$0" repo-rules check --json')).toBe(viaBin);
 	}, 60_000);
 
+	test('сломанный stdout: проводник как бинарник — строка repo-rules: и код 2', async () => {
+		// /dev/full: запись падает с ENOSPC; код выхода и stderr сравниваются с бинарником.
+		const via = (cmd: string) =>
+			spawnIn(['sh', '-c', `${cmd} >/dev/full; echo "rc=$?"`, CLI, RR_BIN], clean);
+		const viaBin = await via('node "$1" check --json');
+		expect(viaBin.out).toBe('rc=2\n');
+		expect(viaBin.err).toStartWith('repo-rules: ENOSPC');
+		expect(await via('bun "$0" repo-rules check --json')).toStrictEqual(viaBin);
+	});
+
 	test('коды проводника: чисто 0, нарушение 1, вне git 2', async () => {
 		expect((await spawnIn(['bun', CLI, 'repo-rules', 'check'], clean)).code).toBe(0);
 		expect((await spawnIn(['bun', CLI, 'repo-rules', 'check'], dirty)).code).toBe(1);
