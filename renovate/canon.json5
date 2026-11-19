@@ -20,5 +20,17 @@
 			matchManagers: ['proto'],
 			enabled: false,
 		},
+		{
+			description: 'Образы node и oven/bun в Dockerfile повторяют пины .prototools: их двигает stack sync',
+			matchManagers: ['dockerfile'],
+			matchPackageNames: ['node', 'oven/bun'],
+			enabled: false,
+		},
+		{
+			description: 'Версии node, bun и proto во входах with шагов workflow повторяют пины .prototools: их двигает stack sync',
+			matchDepTypes: ['uses-with'],
+			matchDepNames: ['node', 'bun', 'moonrepo/proto'],
+			enabled: false,
+		},
 	],
 }
