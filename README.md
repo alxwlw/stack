@@ -218,10 +218,10 @@ would fight: Renovate bumps a pin, the next `stack sync` reverts it. The preset 
 floating `v1` tag, so a release updates it everywhere without a PR: the update arrives once the release moves
 the `v1` tag, and until then `#v1` and `@v1` still point at the previous release.
 
-For the `node` and `oven/bun` images the preset is wider than `sync`: Renovate stops moving them in every form
-a Dockerfile can name them, including the ones `sync` does not rewrite (an image pinned by digest, a tag built
-from an `ARG`, an image named in `COPY --from`). Those are moved by hand. A `pnpm@<version>` literal is not
-something Renovate reads at all.
+For the `node` and `oven/bun` images the preset is wider than `sync`: Renovate also stops moving the forms
+`sync` does not rewrite — an image pinned by digest, a tag built from an `ARG`, an image named in
+`COPY --from`. Those are moved by hand. An image under a registry or another namespace is not a pin copy and
+stays with Renovate. A `pnpm@<version>` literal is not something Renovate reads at all.
 
 `stack check` fails when the Renovate config (the first one found, in Renovate's own lookup order)
 doesn't extend the preset with exactly the `#v1` tag — no tag or `#main` would pull an unreleased
