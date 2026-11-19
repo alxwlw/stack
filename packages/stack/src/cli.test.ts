@@ -876,6 +876,10 @@ describe('check с группой repo-rules через настоящий cli',
 		expect(r.code).toBe(0);
 		expect(r.out).toBe(NO_DRIFT);
 		expect(r.err).not.toContain('repo-rules');
+		// Без базы и вне Actions включённая группа дала бы пометку о пропуске diff: её нет.
+		const local = await run(['check'], dir, LOCAL);
+		expect(local.code).toBe(0);
+		expect(local.err).not.toContain('repo-rules');
 	});
 
 	test('--repo на подкаталог git: проверяется весь репозиторий, пути от его корня', async () => {
