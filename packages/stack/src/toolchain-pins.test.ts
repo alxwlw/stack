@@ -251,6 +251,8 @@ test.each([
 	'node-version-file: .nvmrc',
 	'pnpm-version: 11',
 	'# node-version: 24',
+	'constructor: 24',
+	'toString: 24',
 ])('workflow: не копия — %s', (input) => {
 	expect(pinCopies('workflow', step(input))).toStrictEqual([]);
 	expect(rewritePinCopies('workflow', step(input), PINS)).toStrictEqual({

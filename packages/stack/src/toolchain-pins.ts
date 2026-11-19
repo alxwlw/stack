@@ -106,8 +106,8 @@ function workflowCopies(text: string): PinCopy[] {
 	visit(doc, {
 		Pair: (_key, pair, path) => {
 			if (!isScalar(pair.key) || typeof pair.key.value !== 'string') return;
-			const tool = WORKFLOW_KEYS[pair.key.value];
-			if (tool === undefined) return;
+			if (!Object.hasOwn(WORKFLOW_KEYS, pair.key.value)) return;
+			const tool = WORKFLOW_KEYS[pair.key.value] as PinnedTool;
 			// Ключ лежит прямо в карте под ключом `with`: шаг, composite action или вызов reusable workflow.
 			const owner = path.at(-2);
 			if (!isMap(path.at(-1)) || !isPair(owner)) return;
