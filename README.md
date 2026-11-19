@@ -85,11 +85,13 @@ never turns a held item into a stale exception. (`check`'s report-only rules —
 a Renovate config without the canon preset, a leftover Dependabot config, inline versions — are not something `sync` fixes.)
 
 When `pnpm-workspace.yaml` sets `minimumReleaseAge` above zero, `sync` also keeps
-`minimumReleaseAgeExclude` covering the canon's own `@alxwlw/*` versions, so a rollout on the day of
-publication is not rejected by `pnpm install`. A version counts as covered by a bare name,
+`minimumReleaseAgeExclude` covering every Own package's version, including the packages that arrive
+transitively as dependencies of `@alxwlw/stack`, so a rollout on the day of publication is not
+rejected by `pnpm install`. A version counts as covered by a bare name,
 `@alxwlw/*`, or `<name>@<v1> || <v2>` containing it; otherwise `sync` appends ` || <version>` to the
 package's own entry, or adds `<name>@<version>` (creating the list if absent). Other entries,
-their order and comments are left alone. A `catalog: dev` exception on the package holds this too.
+their order and comments are left alone. A `catalog: dev` + `name` exception on the package holds this
+too, for a transitive package as well.
 
 `sync` also keeps `package.json#packageManager` on the canon's pnpm pin whenever that field names
 pnpm (a `+sha512…` suffix on the same version is fine) — otherwise pnpm switches itself to the

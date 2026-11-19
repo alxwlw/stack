@@ -69,6 +69,7 @@ function fixtureSource(): CanonSource {
 		],
 		catalogs: { dev: { oxlint: '1.83.0', typescript: '7.0.2' }, libs: { react: '19.2.7' } },
 		groups: { files: ['moon-tasks'], catalogs: ['libs'], deprecated: ['renovate'], rules: [] },
+		manifest: { version: '0.0.0' },
 	};
 }
 

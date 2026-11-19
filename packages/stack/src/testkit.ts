@@ -8,6 +8,7 @@ import { stringify } from 'yaml';
 import { type Canon, canonDir, canonFor, readCanonSource } from './canon.ts';
 import type { Profile } from './config.ts';
 import { STACK_RENOVATE_PRESET } from './deps.ts';
+import { ownPackages } from './own-packages.ts';
 import { type Read, RENOVATE_CONFIGS, type Repo, repoFromSnapshot } from './repo.ts';
 import {
 	type GitHub,
@@ -26,7 +27,14 @@ export const SCHEMA_PATH = join(import.meta.dir, '..', 'schema.json');
 // Канон для тестов правил. Пины нарочно не равны реальным пинам канона: иначе константа,
 // зашитая в правило, осталась бы незамеченной (engines-node в deps.ts, packageManager в package-manager.ts).
 export function testCanon(over: Partial<Canon> = {}): Canon {
-	return { files: [], catalogs: {}, pins: { node: '25.4.1', pnpm: '10.99.0' }, rules: [], ...over };
+	return {
+		files: [],
+		catalogs: {},
+		pins: { node: '25.4.1', pnpm: '10.99.0' },
+		rules: [],
+		ownPackages: over.ownPackages ?? ownPackages(over.catalogs?.dev, { version: '0.0.0' }),
+		...over,
+	};
 }
 
 // Рукописный pnpm-lock.yaml для настоящего `pnpm peers check --lockfile-only`: вымышленный decl@1.0.0

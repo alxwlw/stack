@@ -15,7 +15,7 @@ import { dirname, join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { parse as parseJsonc } from 'jsonc-parser';
 
-import { ownVersion } from './sync-pr.ts';
+import { ownVersion } from './own-packages.ts';
 import { gitRepo, isolateGitConfig, protoBin, repoDir, UNMET_PEER_LOCK } from './testkit.ts';
 
 const CLI = join(import.meta.dir, 'cli.ts');

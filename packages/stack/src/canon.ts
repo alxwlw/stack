@@ -3,6 +3,8 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { type Profile, PROFILES, type StackConfig, StackConfigError } from './config.ts';
+import { ownManifest, ownPackages, type StackManifest } from './own-packages.ts';
+import type { Wanted } from './registry.ts';
 
 export const SYNC_STRATEGIES = ['verbatim', 'create-if-absent'] as const;
 export type SyncStrategy = (typeof SYNC_STRATEGIES)[number];
@@ -122,6 +124,8 @@ export interface Canon {
 	pins: Pins;
 	/** Включённые через with группы правил, в порядке RULE_GROUPS. */
 	rules: RuleGroup[];
+	/** Свои пакеты: приходят потребителю с каналом, прямо или зависимостью stack. */
+	ownPackages: readonly Wanted[];
 }
 
 // Пины инструментов из .prototools канона: node и pnpm обязательны, прочие строки верхнего уровня допустимы.
@@ -155,9 +159,12 @@ export interface CanonSource {
 	entries: readonly (CanonFile & { content: string })[];
 	catalogs: CanonCatalogs;
 	groups: CanonGroups;
+	/** package.json самого stack: его зависимости — свои пакеты, пришедшие транзитивно. */
+	manifest: StackManifest;
 }
 
-// Единственное место, где canon/ читается с диска: manifest.json и catalogs.json по разу, каждый src по разу.
+// Единственное место, где canon/ и package.json пакета читаются с диска: manifest.json и catalogs.json
+// по разу, каждый src по разу, package.json пакета один раз (не зависит от dir).
 // Имена групп: файловые — поле group манифеста, каталожные — ключи catalogs.json кроме dev, устаревшие и
 // группы правил — константы этого модуля.
 export function readCanonSource(dir: string = canonDir()): CanonSource {
@@ -173,7 +180,7 @@ export function readCanonSource(dir: string = canonDir()): CanonSource {
 		deprecated: DEPRECATED_GROUPS,
 		rules: RULE_GROUPS,
 	};
-	return { entries, catalogs, groups };
+	return { entries, catalogs, groups, manifest: ownManifest() };
 }
 
 // Все имена, допустимые в `with`: файловые, каталожные, устаревшие и группы правил — без повторов,
@@ -227,7 +234,13 @@ export function canonFor(source: CanonSource, cfg: StackConfig): Canon {
 	// Пин pnpm нужен правилу package-manager: поле packageManager — второй источник версии pnpm.
 	if (!pnpm) throw new Error('canon .prototools has no pnpm pin');
 	const rules = RULE_GROUPS.filter((g) => cfg.with.includes(g));
-	return { files, catalogs, pins: { ...rest, node, pnpm }, rules };
+	return {
+		files,
+		catalogs,
+		pins: { ...rest, node, pnpm },
+		rules,
+		ownPackages: ownPackages(source.catalogs.dev, source.manifest),
+	};
 }
 
 export function loadCanon(cfg: StackConfig, dir: string = canonDir()): Canon {

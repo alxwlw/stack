@@ -2,10 +2,10 @@ import { isScalar, isSeq } from 'yaml';
 
 import type { Canon } from './canon.ts';
 import type { Drift } from './findings.ts';
+import { SCOPE } from './own-packages.ts';
 import { type Repo, WORKSPACE_FILE } from './repo.ts';
 
 const KEY = 'minimumReleaseAgeExclude';
-const SCOPE = '@alxwlw/';
 
 // Покрывает ли строка исключения версию пакета: голое имя, `@alxwlw/*` или `<имя>@<список через ||>`.
 function covers(entry: string, name: string, version: string): boolean {
@@ -18,7 +18,7 @@ function covers(entry: string, name: string, version: string): boolean {
 		.some((v) => v.trim() === version);
 }
 
-// Пока в pnpm-workspace.yaml включён minimumReleaseAge, свежий @alxwlw/* из канона pnpm install
+// Пока в pnpm-workspace.yaml включён minimumReleaseAge, свежий свой пакет канона (каталог dev и зависимости stack) pnpm install
 // отвергает в день публикации: sync держит версии канона в minimumReleaseAgeExclude. Чужие записи
 // и их порядок не трогаются, правка — только добавление версии к своей записи или новая запись.
 // Правило называет намерение: позицию новой записи и создание списка (ключа нет, ключ без значения)
@@ -35,8 +35,7 @@ export function planReleaseAgeExcludes(repo: Repo, canon: Canon): Drift[] {
 		isScalar(n) && typeof n.value === 'string' ? n.value : undefined,
 	);
 	const plan: Drift[] = [];
-	for (const [name, version] of Object.entries(canon.catalogs.dev ?? {})) {
-		if (!name.startsWith(SCOPE)) continue;
+	for (const { name, version } of canon.ownPackages) {
 		if (items.some((s) => s !== undefined && covers(s, name, version))) continue;
 		// Существующие элементы не сдвигаются, новые идут в конец: индекс своей записи верен при любом
 		// подмножестве применённых правок.

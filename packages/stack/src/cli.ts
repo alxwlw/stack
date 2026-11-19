@@ -10,10 +10,11 @@ import { allowedLine, isHeld } from './exceptions.ts';
 import { type Finding, isDrift } from './findings.ts';
 import { ghGitHub } from './gh.ts';
 import { initConfig } from './init.ts';
+import { ownVersion } from './own-packages.ts';
 import type { PeersReader } from './peers.ts';
 import { peersBaseline } from './peers-baseline.ts';
 import { npmRegistryReader } from './registry.ts';
-import { ownVersion, type RunProcess, SYNC_PR_WAIT, syncPr, withoutGhToken } from './sync-pr.ts';
+import { type RunProcess, SYNC_PR_WAIT, syncPr, withoutGhToken } from './sync-pr.ts';
 
 function fail(message: string): never {
 	console.error(message);

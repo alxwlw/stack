@@ -282,14 +282,6 @@ export interface SyncPrPorts {
 // Как ATTEMPTS/INTERVAL шага ожидания в sync.yml.
 export const SYNC_PR_WAIT: WaitOptions = { attempts: 12, intervalMs: 10_000 };
 
-// Поле version из package.json пакета: он лежит рядом с src/, как canon/ (canonDir()).
-export function ownVersion(): string {
-	const pkg = JSON.parse(readFileSync(join(import.meta.dir, '..', 'package.json'), 'utf8')) as {
-		version: string;
-	};
-	return pkg.version;
-}
-
 class StepFailed extends Error {}
 
 // sync в процессе, ожидание реестра, установка, хук stack:post-sync, затем publishChanges.
@@ -328,10 +320,7 @@ export async function syncPr(opts: SyncPrOptions, ports: SyncPrPorts): Promise<0
 		}
 
 		if (opts.install) {
-			const wanted = Object.entries(canon.catalogs.dev ?? {})
-				.filter(([name]) => name.startsWith('@alxwlw/'))
-				.map(([name, v]) => ({ name, version: v }));
-			await waitVisible(wanted, ports.registry, opts.wait);
+			await waitVisible(canon.ownPackages, ports.registry, opts.wait);
 		}
 
 		const step = (cmd: string, args: string[], env?: Record<string, string>): void => {

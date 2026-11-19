@@ -44,6 +44,10 @@ _Avoid_: group (a **Group** is a slice switched on through `with`), package fami
 A tool version fixed in the consumer's `.prototools` (node, pnpm and the other proto-managed tools); the canon's own pins are in `canon/files/prototools`, and `loadCanon` returns them as `Canon.pins` (`node` and `pnpm` are required).
 _Avoid_: lock, freeze
 
+**Own package**:
+A package this repository publishes that reaches a Consumer with the Canon: an `@alxwlw/*` Catalog entry of the dev Catalog, or an `@alxwlw/*` dependency of `@alxwlw/stack`. Sync keeps each in `minimumReleaseAgeExclude`, and `stack sync-pr` waits for each in the registry. `ownPackages` in `packages/stack/src/own-packages.ts`.
+_Avoid_: internal package, scoped package
+
 ### Verdicts
 
 **Finding**:
