@@ -10,6 +10,10 @@
 	"bin": {
 		"repo-rules": "src/cli.mjs"
 	},
+	"exports": {
+		".": "./src/main.mjs",
+		"./package.json": "./package.json"
+	},
 	"files": [
 		"src",
 		"!src/**/*.test.ts",

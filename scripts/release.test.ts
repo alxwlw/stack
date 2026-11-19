@@ -17,6 +17,7 @@ import { describe, expect, test } from 'bun:test';
 
 import {
 	checkTag,
+	DEP_FIELDS,
 	publishAll,
 	type Publisher,
 	type ReleasePackage,
@@ -237,6 +238,18 @@ describe('setVersion', () => {
 		expect(catalogs.dev?.['@alxwlw/tsconfig']).toBe('1.2.3');
 	});
 
+	test('двигает зависимости между пакетами репозитория, чужие не трогает', () => {
+		const root = fixtureRoot();
+		const path = join(root, 'packages/stack/package.json');
+		const deps = () =>
+			(JSON.parse(readFileSync(path, 'utf8')) as { dependencies: Record<string, string> })
+				.dependencies;
+		const before = deps();
+		setVersion(root, '1.2.3');
+		expect(deps()).toStrictEqual({ ...before, '@alxwlw/repo-rules': '1.2.3' });
+		expect(Object.keys(deps())).toStrictEqual(Object.keys(before));
+	});
+
 	test('не трогает записи каталога, чужие @alxwlw/*', () => {
 		const root = fixtureRoot();
 		setVersion(root, '1.2.3');
@@ -447,6 +460,25 @@ describe('связность релиза', () => {
 	test('все пакеты репозитория на одной версии', () => {
 		const versions = releasePackages(REPO_ROOT).map((p) => p.version);
 		expect(new Set(versions).size).toBe(1);
+	});
+
+	test('зависимости между пакетами репозитория — точная единая версия', () => {
+		const pkgs = releasePackages(REPO_ROOT);
+		const version = new Map(pkgs.map((p) => [p.name, p.version]));
+		const found: string[] = [];
+		for (const p of pkgs) {
+			const manifest = JSON.parse(
+				readFileSync(join(REPO_ROOT, 'packages', p.dir, 'package.json'), 'utf8'),
+			) as Record<string, Record<string, string> | undefined>;
+			for (const field of DEP_FIELDS) {
+				for (const [name, spec] of Object.entries(manifest[field] ?? {})) {
+					if (!version.has(name)) continue;
+					found.push(`${p.name} ${field} ${name}`);
+					expect(spec).toBe(version.get(name) as string);
+				}
+			}
+		}
+		expect(found).toStrictEqual(['@alxwlw/stack dependencies @alxwlw/repo-rules']);
 	});
 
 	// yaml — зависимость packages/stack (как в dogfood.test.ts); из корня scripts/ он не виден.
