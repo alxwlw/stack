@@ -71,7 +71,7 @@ A line of Check's output saying that part of a rule group was skipped or accepte
 _Avoid_: warning, info finding
 
 **Repo rules**:
-The rules of `@alxwlw/repo-rules` that Check runs in process for a consumer with the `repo-rules` group, at the version of `@alxwlw/stack`. A violation (repo-rules' own word for a place that breaks a rule) is a `repo-rules-violation` finding, an entry higher than reality is `stale-repo-rules-baseline`, and a call that did not run or whose answer cannot be read is `repo-rules-unavailable`. None of the three is held by an exception: the baseline of repo-rules plays that part. `RepoRulesReader`, `readRepoRules` in `packages/stack/src/repo-rules.ts`, `checkRepoRules` in `packages/stack/src/repo-rules-rule.ts`.
+The rules of `@alxwlw/repo-rules` that Check runs in process for a consumer with the `repo-rules` group, at the version of `@alxwlw/stack`. A violation (repo-rules' own word for a place that breaks a rule) is a `repo-rules-violation` finding, an entry higher than reality is `stale-repo-rules-baseline`, and a call that did not run or whose answer cannot be read is `repo-rules-unavailable`. None of the three is held by an exception: the baseline of repo-rules plays that part. `stack sync-pr` lowers the fixed entries of that baseline before its commit and records no growth (`repoRulesDropFixedCall`, `repoRulesDropFixed`). `RepoRulesReader`, `readRepoRules` in `packages/stack/src/repo-rules.ts`, `checkRepoRules` in `packages/stack/src/repo-rules-rule.ts`.
 _Avoid_: lint, policy
 
 ### Commands

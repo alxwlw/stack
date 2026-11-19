@@ -8,6 +8,9 @@ import {
 	DIFF_SKIPPED_NO_BASE,
 	readRepoRules,
 	repoRulesCalls,
+	type RepoRulesDropFixed,
+	repoRulesDropFixed,
+	repoRulesDropFixedCall,
 	repoRulesPart,
 	type RepoRulesRun,
 } from './repo-rules.ts';
@@ -250,4 +253,29 @@ test('настоящий repo-rules: каталог вне git — unavailable �
 	expect((part as { unavailable: string }).unavailable.startsWith('git rev-parse failed')).toBe(
 		true,
 	);
+});
+
+test('repoRulesDropFixedCall: корень и режим', () => {
+	expect(repoRulesDropFixedCall('/r')).toStrictEqual(['-C', '/r', 'baseline', '--drop-fixed']);
+});
+
+const LOWERED = 'repo-rules baseline: lowered 2 entr(ies) in .repo-rules-baseline.json';
+test.each<[string, RepoRulesRun, RepoRulesDropFixed]>([
+	['код 0 со строкой', { code: 0, out: LOWERED, err: '' }, { out: [LOWERED], err: [] }],
+	['код 0 без вывода', { code: 0, out: '', err: '' }, { out: [], err: [] }],
+	[
+		'код 0: пустые строки отброшены, err не читается',
+		{ code: 0, out: 'a\n\nb\n', err: 'x' },
+		{ out: ['a', 'b'], err: [] },
+	],
+	[
+		'код 2: первая непустая строка err без префикса',
+		{ code: 2, out: 'x', err: '\nrepo-rules: boom\nsecond' },
+		{ out: [], err: ['boom'] },
+	],
+	['код 2: строка без префикса', { code: 2, out: '', err: 'plain' }, { out: [], err: ['plain'] }],
+	['код 2 с пустым err', { code: 2, out: '', err: '' }, { out: [], err: ['exited with 2'] }],
+	['код 1 — тоже сбой', { code: 1, out: 'x', err: '' }, { out: [], err: ['exited with 1'] }],
+])('repoRulesDropFixed: %s', (_name, run, want) => {
+	expect(repoRulesDropFixed(run)).toStrictEqual(want);
 });

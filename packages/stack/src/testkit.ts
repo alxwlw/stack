@@ -12,6 +12,7 @@ import { ownPackages } from './own-packages.ts';
 import type { PeersReader } from './peers.ts';
 import type { Served } from './registry.ts';
 import { type Read, RENOVATE_CONFIGS, type Repo, repoFromSnapshot } from './repo.ts';
+import type { RepoRulesReader } from './repo-rules.ts';
 import {
 	type GitHub,
 	type NewPr,
@@ -440,6 +441,7 @@ export async function runSyncPr(
 		served?: Served | ((name: string, version: string) => Served);
 		github?: GitHub;
 		peers?: PeersReader;
+		repoRules?: RepoRulesReader;
 	} = {},
 ) {
 	const journal: string[] = [];
@@ -479,6 +481,11 @@ export async function runSyncPr(
 			peers: (root) => {
 				journal.push('peers');
 				return handlers.peers?.(root) ?? { status: 0, signal: null, stdout: '{}', stderr: '' };
+			},
+			// Вызов порта repo-rules виден в журнале; по умолчанию режим ничего не меняет.
+			repoRules: (argv, env) => {
+				journal.push(`repo-rules ${argv.join(' ')}`);
+				return handlers.repoRules?.(argv, env) ?? { code: 0, out: '', err: '' };
 			},
 		},
 	);
