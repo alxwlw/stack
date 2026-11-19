@@ -16,7 +16,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { parse as parseJsonc } from 'jsonc-parser';
 
 import { ownVersion } from './own-packages.ts';
-import { gitRepo, isolateGitConfig, protoBin, repoDir, UNMET_PEER_LOCK } from './testkit.ts';
+import { git, gitRepo, isolateGitConfig, protoBin, repoDir, UNMET_PEER_LOCK } from './testkit.ts';
 
 const CLI = join(import.meta.dir, 'cli.ts');
 
@@ -733,5 +733,163 @@ describe('stack repo-rules', () => {
 			.map((i) => i.path);
 		expect(imports).toContain('@alxwlw/repo-rules');
 		expect(imports.filter((p) => p.includes('repo-rules/'))).toStrictEqual([]);
+	});
+});
+
+describe('check с группой repo-rules через настоящий cli', () => {
+	const LOCAL = { GITHUB_ACTIONS: '', GITHUB_EVENT_NAME: '', GITHUB_BASE_REF: '' };
+	const PR = { GITHUB_ACTIONS: 'true', GITHUB_EVENT_NAME: 'pull_request', GITHUB_BASE_REF: 'main' };
+	const PUSH = { GITHUB_ACTIONS: 'true', GITHUB_EVENT_NAME: 'push', GITHUB_BASE_REF: '' };
+	const ONLY = "test.only('x', () => {});\n";
+	const TWO_EXPECTS = 'expect(1).toBe(1);\nexpect(2).toBe(2);\n';
+	const TWO_DISABLES =
+		'// eslint-disable-next-line\nexport const a = 1;\n// eslint-disable-next-line\nexport const b = 2;\n';
+	const BASELINE = '.repo-rules-baseline.json';
+	const NO_DRIFT = 'canon: no drift\n';
+	const REMOVED_LINE = 'repo-rules-violation: a.test.ts — removed-assertions: −1 / +0 assertions';
+
+	let restore: () => void;
+	beforeAll(() => {
+		restore = isolateGitConfig();
+	});
+	afterAll(() => restore());
+
+	// Репозиторий под git: init (с группой или без), sync, по желанию baseline repo-rules; всё закоммичено и
+	// отправлено в origin/main. Пакета @alxwlw/repo-rules в манифестах нет.
+	async function rulesRepo(
+		files: Record<string, string>,
+		opts: { group?: boolean; baseline?: boolean } = {},
+	): Promise<string> {
+		const { dir } = gitRepo({ ...BARE, ...files });
+		const withGroup = opts.group === false ? [] : ['--with', 'repo-rules'];
+		expect((await run(['init', '--profile', 'node', ...withGroup], dir)).code).toBe(0);
+		expect((await run(['sync'], dir)).code).toBe(0);
+		git(dir, 'add', '-A');
+		if (opts.baseline !== false) {
+			expect((await spawnIn(['bun', CLI, 'repo-rules', 'baseline', '--init'], dir)).code).toBe(0);
+			git(dir, 'add', '-A');
+		}
+		git(dir, 'commit', '-m', 'canon');
+		git(dir, 'push', 'origin', 'main');
+		return dir;
+	}
+
+	// Ветка PR: удалена одна из двух проверок, коммит не отправлен.
+	async function removedAssertion(): Promise<string> {
+		const dir = await rulesRepo({ 'a.test.ts': TWO_EXPECTS });
+		writeFileSync(join(dir, 'a.test.ts'), 'expect(1).toBe(1);\n');
+		git(dir, 'add', '-A');
+		git(dir, 'commit', '-m', 'drop a check');
+		return dir;
+	}
+
+	test('приёмка 1: чистый baseline — no drift и пометка о пропуске diff', async () => {
+		const dir = await rulesRepo({ 'src/a.ts': TWO_DISABLES });
+		const r = await run(['check'], dir, LOCAL);
+		expect(r.code).toBe(0);
+		expect(r.out).toBe(NO_DRIFT);
+		expect(r.err).toContain('repo-rules diff: skipped (no --base outside GitHub Actions)');
+	});
+
+	test('приёмка 1: новое нарушение и устаревшая запись baseline — код 1', async () => {
+		const dir = await rulesRepo({ 'src/a.ts': TWO_DISABLES });
+		writeFileSync(join(dir, 'src/a.ts'), '// eslint-disable-next-line\nexport const a = 1;\n');
+		writeFileSync(join(dir, 'c.test.ts'), ONLY);
+		git(dir, 'add', '-A');
+		const r = await run(['check'], dir, LOCAL);
+		expect(r.code).toBe(1);
+		expect(r.err).toContain('repo-rules-violation: c.test.ts:1 — focused-skipped-tests: ');
+		expect(r.err).toContain(
+			'stale-repo-rules-baseline: src/a.ts — suppression-reason: recorded 2, now 1; lower it with: stack repo-rules baseline',
+		);
+		expect(r.err).toContain('stack sync does not fix these');
+		expect(r.out).not.toContain('canon: no drift');
+	});
+
+	test('приёмка 2: PR-джоб сообщает удалённую проверку', async () => {
+		const dir = await removedAssertion();
+		const r = await run(['check'], dir, PR);
+		expect(r.code).toBe(1);
+		expect(r.err).toContain(REMOVED_LINE);
+		expect(r.err).toContain(
+			'repo-rules diff: intended? add a commit trailer "Tests-Removed: <reason>" in the range',
+		);
+	});
+
+	test('приёмка 2: вне PR — пропуск с пометкой, код 0', async () => {
+		const dir = await removedAssertion();
+		const r = await run(['check'], dir, PUSH);
+		expect(r.code).toBe(0);
+		expect(r.err).toContain('repo-rules diff: skipped (not a pull request)');
+		expect(r.out).toBe(NO_DRIFT);
+	});
+
+	test('--base локально: с базой — нарушение, без неё — пометка', async () => {
+		const dir = await removedAssertion();
+		const withBase = await run(['check', '--base', 'origin/main'], dir, LOCAL);
+		expect(withBase.code).toBe(1);
+		expect(withBase.err).toContain(REMOVED_LINE);
+		const without = await run(['check'], dir, LOCAL);
+		expect(without.code).toBe(0);
+		expect(without.err).toContain('skipped (no --base outside GitHub Actions)');
+	});
+
+	test('baseline не разбирается — repo-rules-unavailable, не no drift', async () => {
+		const dir = await rulesRepo({});
+		writeFileSync(join(dir, BASELINE), 'not json');
+		const r = await run(['check'], dir, LOCAL);
+		expect(r.code).toBe(1);
+		expect(r.err).toContain('repo-rules-unavailable: repo-rules check — ');
+		expect(r.err).toContain('not JSON');
+		expect(r.out).not.toContain('canon: no drift');
+	});
+
+	test('базовой ветки нет — repo-rules-unavailable у diff, check отработал', async () => {
+		const dir = await rulesRepo({});
+		const r = await run(['check'], dir, { ...PR, GITHUB_BASE_REF: 'gone' });
+		expect(r.code).toBe(1);
+		expect(r.err).toContain('repo-rules-unavailable: repo-rules diff — git merge-base failed');
+		expect(r.err).not.toContain('repo-rules check');
+	});
+
+	test('каталог не под git — repo-rules-unavailable', async () => {
+		const dir = repoDir(BARE);
+		expect((await run(['init', '--profile', 'node', '--with', 'repo-rules'], dir)).code).toBe(0);
+		expect((await run(['sync'], dir)).code).toBe(0);
+		const r = await run(['check'], dir, LOCAL);
+		expect(r.code).toBe(1);
+		expect(r.err).toContain('repo-rules-unavailable: repo-rules check — git rev-parse failed');
+	});
+
+	test('группа без файла baseline — нарушения становятся находками', async () => {
+		const dir = await rulesRepo({ 'c.test.ts': ONLY }, { baseline: false });
+		const r = await run(['check'], dir, LOCAL);
+		expect(r.code).toBe(1);
+		expect(r.err).toContain('repo-rules-violation: c.test.ts:1 — focused-skipped-tests: ');
+	});
+
+	test('группа выключена: repo-rules не запускается, --base не мешает', async () => {
+		const dir = await rulesRepo({ 'c.test.ts': ONLY }, { group: false, baseline: false });
+		const cfg = join(dir, '.stack.jsonc');
+		writeFileSync(cfg, `// repo-rules: not yet\n${readFileSync(cfg, 'utf8')}`);
+		const r = await run(['check', '--base', 'origin/main'], dir, PR);
+		expect(r.code).toBe(0);
+		expect(r.out).toBe(NO_DRIFT);
+		expect(r.err).not.toContain('repo-rules');
+	});
+
+	test('--repo на подкаталог git: проверяется весь репозиторий, пути от его корня', async () => {
+		const { dir } = gitRepo({
+			'x.test.ts': ONLY,
+			'app/package.json': BARE['package.json'],
+			'app/pnpm-workspace.yaml': BARE['pnpm-workspace.yaml'],
+		});
+		const app = join(dir, 'app');
+		expect((await run(['init', '--profile', 'node', '--with', 'repo-rules'], app)).code).toBe(0);
+		expect((await run(['sync'], app)).code).toBe(0);
+		git(dir, 'add', '-A');
+		const r = await run(['check'], app, LOCAL);
+		expect(r.code).toBe(1);
+		expect(r.err).toContain('repo-rules-violation: x.test.ts:1 — focused-skipped-tests: ');
 	});
 });

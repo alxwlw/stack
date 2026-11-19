@@ -17,6 +17,8 @@ import { type PeersOutcome, peersOutcome, type PeersReader } from './peers.ts';
 import { checkPeers } from './peers-rule.ts';
 import { planReleaseAgeExcludes } from './release-age.ts';
 import { loadRepo, LOCKFILE, type Repo } from './repo.ts';
+import { readRepoRules, type RepoRulesOutcome, type RepoRulesPort } from './repo-rules.ts';
+import { checkRepoRules, repoRulesNotes } from './repo-rules-rule.ts';
 
 // План дрейфа: всё, что sync умеет закрыть, в порядке применения — файлы, каталоги, release-age,
 // packageManager, ветка по умолчанию moon. Правки одного файла друг от друга не зависят: sync применяет любое их подмножество.
@@ -31,13 +33,15 @@ export function plan(repo: Repo, canon: Canon): Drift[] {
 }
 
 // Находки в порядке: план, нечитаемые файлы загрузчика, правила «только отчёт» из deps.ts и moon,
-// правило группы peers, если она включена; затем протухшие исключения. Все они проходят через
-// исключения. peers — исход `pnpm peers check`, его получает checkRepo.
+// правила групп peers и repo-rules, если они включены (в этом порядке); затем протухшие исключения.
+// Все они проходят через исключения. peers — исход `pnpm peers check`, repoRules — исход двух вызовов
+// repo-rules; оба получает checkRepo.
 export function check(
 	repo: Repo,
 	canon: Canon,
 	exceptions: Exception[],
 	peers?: PeersOutcome,
+	repoRules?: RepoRulesOutcome,
 ): Finding[] {
 	const r = resolve(
 		[
@@ -50,6 +54,7 @@ export function check(
 			...checkMoonToolchains(repo, canon),
 			...checkMoonDefaultBranch(repo),
 			...(canon.rules.includes('peers') ? checkPeers(repo, peers) : []),
+			...(canon.rules.includes('repo-rules') ? checkRepoRules(repoRules) : []),
 		],
 		exceptions,
 	);
@@ -60,20 +65,42 @@ export function planRepo(repoRoot: string, canon: Canon): Drift[] {
 	return plan(loadRepo(repoRoot, canon), canon);
 }
 
+/** Порты `checkRepo`: каждый нужен только своей группе. */
+export interface CheckPorts {
+	peers?: PeersReader;
+	repoRules?: RepoRulesPort;
+}
+/** Итог check: находки (блокируют, если не удержаны) и пометки (выход не меняют). */
+export interface CheckReport {
+	findings: Finding[];
+	notes: string[];
+}
+
 // pnpm запускается, только если группа peers включена и лок есть: без лока правило отвечает само.
+// repo-rules — только если включена группа: два вызова через порт, пометки идут отдельно от находок.
 export function checkRepo(
 	repoRoot: string,
 	canon: Canon,
 	exceptions: Exception[],
-	readPeers?: PeersReader,
-): Finding[] {
+	ports: CheckPorts = {},
+): CheckReport {
 	const repo = loadRepo(repoRoot, canon);
 	let peers: PeersOutcome | undefined;
 	if (canon.rules.includes('peers') && repo.paths.has(LOCKFILE)) {
-		if (readPeers === undefined) throw new Error('checkRepo: peers group needs a PeersReader');
-		peers = peersOutcome(readPeers(repoRoot));
+		if (ports.peers === undefined) throw new Error('checkRepo: peers group needs a PeersReader');
+		peers = peersOutcome(ports.peers(repoRoot));
 	}
-	return check(repo, canon, exceptions, peers);
+	let repoRules: RepoRulesOutcome | undefined;
+	if (canon.rules.includes('repo-rules')) {
+		if (ports.repoRules === undefined) {
+			throw new Error('checkRepo: repo-rules group needs a RepoRulesPort');
+		}
+		repoRules = readRepoRules(repoRoot, ports.repoRules);
+	}
+	return {
+		findings: check(repo, canon, exceptions, peers, repoRules),
+		notes: repoRulesNotes(repoRules),
+	};
 }
 
 export interface SyncResult {

@@ -90,9 +90,9 @@ for (const profile of ['node', 'contracts', 'infra'] as const) {
 		// Не planRepo: у node живое исключение держит запись каталога, и план после sync не пуст.
 		expect(sync(dir, cfg).applied).toEqual([]);
 		// Правила deps.ts в план не входят: для них check зелёный по факту фикстуры, не по построению.
-		expect(checkRepo(dir, loadCanon(cfg), cfg.exceptions).filter((f) => !f.suppressedBy)).toEqual(
-			[],
-		);
+		expect(
+			checkRepo(dir, loadCanon(cfg), cfg.exceptions).findings.filter((f) => !f.suppressedBy),
+		).toEqual([]);
 	});
 }
 
@@ -100,14 +100,16 @@ test('check краснеет на каждой категории нарушен
 	const { dir, cfg } = syncedFixture('node');
 
 	writeFileSync(join(dir, '.editorconfig'), 'сломали\n');
-	expect(checkRepo(dir, loadCanon(cfg), cfg.exceptions).map((f) => f.code)).toContain('file-drift');
+	expect(checkRepo(dir, loadCanon(cfg), cfg.exceptions).findings.map((f) => f.code)).toContain(
+		'file-drift',
+	);
 
 	const ws = readFileSync(join(dir, 'pnpm-workspace.yaml'), 'utf8').replace(
 		/oxlint: .*/,
 		'oxlint: 1.0.0',
 	);
 	writeFileSync(join(dir, 'pnpm-workspace.yaml'), ws);
-	expect(checkRepo(dir, loadCanon(cfg), cfg.exceptions).map((f) => f.code)).toContain(
+	expect(checkRepo(dir, loadCanon(cfg), cfg.exceptions).findings.map((f) => f.code)).toContain(
 		'catalog-drift',
 	);
 
@@ -115,17 +117,17 @@ test('check краснеет на каждой категории нарушен
 		join(dir, 'packages/app/package.json'),
 		'{ "name": "app", "devDependencies": { "oxlint": "1.70.0" } }',
 	);
-	expect(checkRepo(dir, loadCanon(cfg), cfg.exceptions).map((f) => f.code)).toContain(
+	expect(checkRepo(dir, loadCanon(cfg), cfg.exceptions).findings.map((f) => f.code)).toContain(
 		'inline-version',
 	);
 
 	writeFileSync(join(dir, 'package.json'), '{ "name": "f", "engines": { "node": "^24" } }');
-	expect(checkRepo(dir, loadCanon(cfg), cfg.exceptions).map((f) => f.code)).toContain(
+	expect(checkRepo(dir, loadCanon(cfg), cfg.exceptions).findings.map((f) => f.code)).toContain(
 		'engines-node',
 	);
 
 	writeFileSync(join(dir, 'package.json'), '{ "name": "f", "packageManager": "pnpm@11.1.2" }');
-	expect(checkRepo(dir, loadCanon(cfg), cfg.exceptions).map((f) => f.code)).toContain(
+	expect(checkRepo(dir, loadCanon(cfg), cfg.exceptions).findings.map((f) => f.code)).toContain(
 		'package-manager',
 	);
 });
@@ -154,7 +156,7 @@ test('infra: появился pnpm-workspace.yaml — синхронизация
 // не полагаясь при этом на checkRepo() ради текста причины (иначе тест пройдёт при любой причине).
 test('node: исключение inline-version подавляет находку, а не прячет профиль от check', () => {
 	const { dir, cfg } = syncedFixture('node');
-	const findings = checkRepo(dir, loadCanon(cfg), cfg.exceptions);
+	const { findings } = checkRepo(dir, loadCanon(cfg), cfg.exceptions);
 	const knip = findings.find(
 		(f) => f.code === 'inline-version' && f.target === 'packages/app/package.json:knip',
 	);

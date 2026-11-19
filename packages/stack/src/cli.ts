@@ -16,6 +16,7 @@ import { ownVersion } from './own-packages.ts';
 import type { PeersReader } from './peers.ts';
 import { peersBaseline } from './peers-baseline.ts';
 import { npmRegistryReader } from './registry.ts';
+import type { RepoRulesReader } from './repo-rules.ts';
 import { type RunProcess, SYNC_PR_WAIT, syncPr, withoutGhToken } from './sync-pr.ts';
 
 function fail(message: string): never {
@@ -87,6 +88,19 @@ const pnpmPeers: PeersReader = (cwd) => {
 	return { status: r.status, signal: r.signal, stdout: r.stdout, stderr: r.stderr };
 };
 
+// Боевой adapter порта repo-rules: main не бросает, вывод собирается в строки без записи в поток.
+const inProcessRepoRules: RepoRulesReader = (argv, env) => {
+	const out: string[] = [];
+	const err: string[] = [];
+	const code = repoRulesMain(
+		argv,
+		env,
+		(s) => void out.push(s),
+		(s) => void err.push(s),
+	);
+	return { code, out: out.join('\n'), err: err.join('\n') };
+};
+
 // Проводник: аргументы после `repo-rules` уходят в repo-rules как есть, флаги stack здесь не разбираются.
 // Версия правил — версия самого stack: пакет берётся из зависимостей stack, не из репозитория потребителя.
 if (Bun.argv[2] === 'repo-rules') {
@@ -146,7 +160,11 @@ try {
 		for (const line of stdout) console.log(line);
 	} else if (command === 'check') {
 		const cfg = readStackConfig(repoRoot);
-		const findings = checkRepo(repoRoot, loadCanon(cfg), cfg.exceptions, pnpmPeers);
+		const { findings, notes } = checkRepo(repoRoot, loadCanon(cfg), cfg.exceptions, {
+			peers: pnpmPeers,
+			repoRules: { read: inProcessRepoRules, env: process.env, base: values.base },
+		});
+		for (const n of notes) console.warn(n);
 		const blocking = findings.filter((f) => !isHeld(f));
 		for (const f of findings.filter(isHeld)) console.warn(allowedLine(f));
 		for (const f of blocking) console.error(`${f.code}: ${f.target} — ${f.message}`);
