@@ -16,6 +16,7 @@ test.each([
 	['apps/api/Dockerfile.dockerignore', undefined],
 	['apps/api/dockerfile', undefined],
 	['apps/api/MyDockerfile', undefined],
+	['apps/api/.Dockerfile', undefined],
 	['.github/workflows/sub/ci.yml', undefined],
 	['.github/workflows/notes.txt', undefined],
 	['.github/actions/setup/other.yml', undefined],
@@ -263,6 +264,25 @@ test.each([
 	['ошибка разбора', 'jobs: [1, 2\nwith:\n  node-version: 24\n'],
 	['пустой файл', ''],
 ])('workflow: %s — копий нет, текст не меняется', (_name, text) => {
+	expect(pinCopies('workflow', text)).toStrictEqual([]);
+	expect(rewritePinCopies('workflow', text, PINS)).toStrictEqual({ text, changes: [] });
+});
+
+test('замена копии, меняющей длину, не сдвигает следующие: dockerfile', () => {
+	expect(
+		rewritePinCopies('dockerfile', 'FROM node:9-alpine\nRUN npm i -g pnpm@1.0.0\n', PINS).text,
+	).toBe('FROM node:26-alpine\nRUN npm i -g pnpm@12.21.0\n');
+});
+
+test('замена копии, меняющей длину, не сдвигает следующие: workflow', () => {
+	const wf = (a: string, b: string) =>
+		`jobs:\n  t:\n    steps:\n      - uses: a/b@v1\n        with:\n          node-version: ${a}\n          bun-version: ${b}\n`;
+	expect(rewritePinCopies('workflow', wf('9', '1'), PINS).text).toBe(wf('26', '1'));
+	expect(rewritePinCopies('workflow', wf('9', '1.0.0'), PINS).text).toBe(wf('26', '1.4.4'));
+});
+
+test('workflow: скаляр с YAML-escape — не копия, текст не меняется', () => {
+	const text = step('node-version: "\\x32\\x34"');
 	expect(pinCopies('workflow', text)).toStrictEqual([]);
 	expect(rewritePinCopies('workflow', text, PINS)).toStrictEqual({ text, changes: [] });
 });

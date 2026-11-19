@@ -120,6 +120,8 @@ function workflowCopies(text: string): PinCopy[] {
 			if (typeof source !== 'string' || !VERSION.test(source)) return;
 			const plain = value.type === 'PLAIN';
 			const start = value.range[0] + (plain ? 0 : 1);
+			// YAML-escape в двойных кавычках: `source` короче сырого текста, замена по смещениям испортила бы строку.
+			if (text.slice(start, start + source.length) !== source) return;
 			copies.push({
 				tool,
 				version: source,
