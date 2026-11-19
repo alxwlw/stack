@@ -55,13 +55,16 @@ jobs:
           registry: ${{ inputs.registry }}
       # Основное ожидание — в job publish: он зелёный, только когда все версии есть в реестре и их tarball отдаётся, и
       # rollout зовёт sync после этого. Здесь короткая страховка от отставания CDN у раннера
-      # потребителя (в 1.6.0 все sync упали в bunx на «No version matching»). Ждём только stack: без
-      # него bunx не стартует. @alxwlw/*-записи каталога dev ждёт сама команда (SYNC_PR_WAIT в
+      # потребителя (в 1.6.0 все sync упали в bunx на «No version matching»). Ждём то, что bunx
+      # ставит до старта команды: stack и каждую зависимость @alxwlw/* из versions[VERSION].dependencies
+      # его же packument (свой пакет, например repo-rules), версия — значение зависимости. Источник
+      # списка — манифест stack, шаг его не дублирует. Версия stack без таких зависимостей ждёт один
+      # stack. @alxwlw/*-записи каталога dev ждёт сама команда (SYNC_PR_WAIT в
       # packages/stack/src/sync-pr.ts) тем же числом попыток.
       # Опрашиваем ту же abbreviated-запись (URL и Accept), которую следом запросит bunx. Версия в
       # packument ещё не значит, что tarball отдаётся (rollout 1.12.0: tarball 404 при видимом
       # packument), поэтому ждём и tarball: HEAD на dist.tarball из packument, тот URL, который
-      # следом скачает bunx. В ::error:: идёт причина последней попытки.
+      # следом скачает bunx. В ::error:: идёт пакет, которого не дождались, и причина последней попытки.
       - name: дождаться версии в npm
         env:
           VERSION: ${{ inputs.version }}
@@ -69,20 +72,35 @@ jobs:
           INTERVAL: '10'
         run: |
           accept='application/vnd.npm.install-v1+json; q=1.0, application/json; q=0.8, */*'
-          for i in $(seq 1 "$ATTEMPTS"); do
-            if ! doc=$(curl -fsS --max-time 30 -H "Accept: $accept" "https://registry.npmjs.org/@alxwlw%2fstack"); then
+          # check <пакет> <версия>: в doc — packument, в why — причина отказа.
+          check() {
+            local url
+            if ! doc=$(curl -fsS --max-time 30 -H "Accept: $accept" "https://registry.npmjs.org/${1/\//%2f}"); then
               why='реестр не ответил'
-            elif ! url=$(printf '%s' "$doc" | node -e 'const t = JSON.parse(require("fs").readFileSync(0, "utf8")).versions?.[process.env.VERSION]?.dist?.tarball; if (typeof t !== "string") process.exit(1); console.log(t)'); then
+            elif ! url=$(printf '%s' "$doc" | PKG_VERSION="$2" node -e 'const t = JSON.parse(require("fs").readFileSync(0, "utf8")).versions?.[process.env.PKG_VERSION]?.dist?.tarball; if (typeof t !== "string") process.exit(1); console.log(t)'); then
               why='нет в packument'
             elif ! curl -fsS --max-time 30 -I "$url" >/dev/null; then
               why='в packument есть, tarball не отдаётся'
             else
-              echo "@alxwlw/stack@$VERSION есть в реестре, tarball отдаётся"
-              exit 0
+              echo "$1@$2 есть в реестре, tarball отдаётся"
+              return 0
+            fi
+            return 1
+          }
+          for i in $(seq 1 "$ATTEMPTS"); do
+            target="@alxwlw/stack@$VERSION"
+            if check "@alxwlw/stack" "$VERSION"; then
+              deps=$(printf '%s' "$doc" | node -e 'const d = JSON.parse(require("fs").readFileSync(0, "utf8")).versions?.[process.env.VERSION]?.dependencies ?? {}; for (const [n, v] of Object.entries(d)) if (n.startsWith("@alxwlw/") && typeof v === "string") console.log(n + " " + v)')
+              missing=0
+              while read -r name ver; do
+                [ -n "$name" ] || continue
+                if ! check "$name" "$ver"; then target="$name@$ver"; missing=1; break; fi
+              done <<< "$deps"
+              if [ "$missing" = 0 ]; then exit 0; fi
             fi
             if [ "$i" -lt "$ATTEMPTS" ]; then sleep "$INTERVAL"; fi
           done
-          echo "::error::за $ATTEMPTS попыток в реестре не появилась версия @alxwlw/stack@$VERSION ($why)"
+          echo "::error::за $ATTEMPTS попыток в реестре не появилась версия $target ($why)"
           exit 1
       # Команда — пакета той же версии (>= 1.11.0, первый релиз с sync-pr); dispatch более старой версии
       # падает с ошибкой использования (код 2: версии до 1.11.0 не знают --base) — так задумано. INSTALL приходит только от копий
