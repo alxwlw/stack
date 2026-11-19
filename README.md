@@ -148,7 +148,7 @@ own. `repo-rules` has to be the first argument; the directory is set by its own 
 
 `profile` (required, set once by `init`) picks which canon files apply at all. `with` is a list of
 opt-in groups layered on top — extra files, extra catalog entries, or an extra check of `stack check`
-(`peers`), that not every repo on a profile needs.
+(`peers`, `repo-rules`), that not every repo on a profile needs.
 
 | Profile     | For                                                                                                                                                                                                                                                                             |
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -314,8 +314,9 @@ current rules is a finding. Three findings come out of the group:
 None of them can be held by an exception. To turn the gate off, drop `repo-rules` from `with`.
 
 The `diff` part compares the branch with a base: `--base <ref>` names it. In GitHub Actions on a
-`pull_request` the base is `origin/$GITHUB_BASE_REF`. On other events, and locally without `--base`, the
-part is skipped with a note on stderr; a note never changes the exit code. A commit trailer
+`pull_request` or `pull_request_target` the base is `origin/$GITHUB_BASE_REF`. On other events, and locally
+without `--base`, the part is skipped with a note on stderr; a note never changes the exit code. The
+`history` step of `check.yml` runs on `pull_request` only. A commit trailer
 `Tests-Removed: <reason>` in the range accepts a removal of assertions.
 
 The group checks the whole git repository that holds the `--repo` directory, and the paths in findings

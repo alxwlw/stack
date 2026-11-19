@@ -67,7 +67,7 @@ The peer-dependency issues a consumer with the `peers` group already has, record
 _Avoid_: allowlist, snapshot, exceptions list
 
 **Note**:
-A line of Check's output saying that part of a rule group was skipped or accepted (the `diff` part outside a pull request, a `Tests-Removed` trailer); it never changes the exit code and no exception applies to it. `CheckReport.notes` in `packages/stack/src/check.ts`, `repoRulesNotes` in `packages/stack/src/repo-rules-rule.ts`.
+A line of Check's output saying that part of a rule group was skipped or accepted (the `diff` part outside a pull request, a `Tests-Removed` trailer), or a hint under a finding (the `Tests-Removed` hint under a removed-assertions violation); it never changes the exit code and no exception applies to it. `CheckReport.notes` in `packages/stack/src/check.ts`, `repoRulesNotes` in `packages/stack/src/repo-rules-rule.ts`.
 _Avoid_: warning, info finding
 
 **Repo rules**:
