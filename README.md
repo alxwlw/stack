@@ -86,8 +86,7 @@ a Renovate config without the canon preset, a leftover Dependabot config, inline
 
 `sync` also rewrites **pin copies** — versions of node, bun, pnpm and proto repeated outside `.prototools`:
 
-- in a Dockerfile (a file named Dockerfile, `Dockerfile.<suffix>` or `<name>.Dockerfile`, anywhere in the
-  tree): the tag of a `node` or `oven/bun` image in `FROM`, and a `pnpm@<version>` literal;
+- in a Dockerfile (a file named Dockerfile, `Dockerfile.<suffix>` or `<name>.Dockerfile`, but not a `.dockerignore` file, anywhere in the tree outside `node_modules`, `dist`, `build` and hidden directories): the tag of a `node` or `oven/bun` image in `FROM`, and a `pnpm@<version>` literal;
 - in the workflows and composite actions of the `.github` directory: the `proto-version`, `node-version` and
   `bun-version` inputs directly under a `with`.
 
@@ -102,7 +101,7 @@ finding, and `sync` then leaves that file alone.
 Not a pin copy, and never touched: a tag without a version (`node:lts`) or built from a variable
 (`node:${NODE_VERSION}`), an image pinned by digest, an image under a registry or another namespace, an image
 named in `COPY --from`, a version range (`26.x`, `latest`), a list of versions or an expression (`${{ … }}`),
-`node-version-file`, a matrix entry, and a Dockerfile in a hidden directory.
+`node-version-file` and a matrix entry.
 
 When `pnpm-workspace.yaml` sets `minimumReleaseAge` above zero, `sync` also keeps
 `minimumReleaseAgeExclude` covering every Own package's version, including the packages that arrive
@@ -253,9 +252,9 @@ hold the file back with an exception (`{ "file": "<path>", "reason": "…" }`) a
 
 ## Exceptions
 
-A drifted or missing canon **file**, or a catalog entry that's missing or off-version, can be held
-back by an exception in `.stack.jsonc` — one exception per file or per catalog entry, `reason`
-required on both shapes. A held item is suppressed in `check` and left untouched by `sync`:
+A drifted or missing canon **file**, a catalog entry that's missing or off-version, or a Dockerfile or workflow
+whose pin copies differ from `.prototools`, can be held back by an exception in `.stack.jsonc` — one exception
+per file or per catalog entry, `reason` required on both shapes. A held item is suppressed in `check` and left untouched by `sync`:
 
 ```jsonc
 {
