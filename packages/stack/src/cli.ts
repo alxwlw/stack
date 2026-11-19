@@ -3,6 +3,8 @@ import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 
+import { main as repoRulesMain } from '@alxwlw/repo-rules';
+
 import { assertKnownGroups, loadCanon, readCanonSource } from './canon.ts';
 import { checkRepo, syncOutput, syncRepo } from './check.ts';
 import { type Profile, PROFILES, readStackConfig, StackConfigError } from './config.ts';
@@ -85,10 +87,28 @@ const pnpmPeers: PeersReader = (cwd) => {
 	return { status: r.status, signal: r.signal, stdout: r.stdout, stderr: r.stderr };
 };
 
+// Проводник: аргументы после `repo-rules` уходят в repo-rules как есть, флаги stack здесь не разбираются.
+// Версия правил — версия самого stack: пакет берётся из зависимостей stack, не из репозитория потребителя.
+if (Bun.argv[2] === 'repo-rules') {
+	process.exit(
+		repoRulesMain(
+			Bun.argv.slice(3),
+			process.env,
+			(s) => process.stdout.write(`${s}\n`),
+			(s) => process.stderr.write(`${s}\n`),
+		),
+	);
+}
+
 const { values, positionals } = parseCliArgs();
 
 const repoRoot = values.repo ?? process.cwd();
 const command = positionals[0];
+if (positionals.includes('repo-rules')) {
+	fail(
+		'repo-rules takes its own arguments and must come first: stack repo-rules [-C <dir>] <command>',
+	);
+}
 
 try {
 	if (command === 'init') {
@@ -151,7 +171,7 @@ try {
 		process.exit(r.code);
 	} else {
 		fail(
-			`unknown command "${command ?? ''}". Available: init, sync, check, sync-pr, peers-baseline`,
+			`unknown command "${command ?? ''}". Available: init, sync, check, sync-pr, peers-baseline, repo-rules`,
 		);
 	}
 } catch (error) {

@@ -66,7 +66,7 @@ test('check до sync — код 1, после sync — код 0', async () => {
 test('неизвестная команда — код 2', async () => {
 	const r = await run(['помой-посуду'], repoDir(BARE));
 	expect(r.code).toBe(2);
-	expect(r.err).toContain('Available: init, sync, check, sync-pr, peers-baseline');
+	expect(r.err).toContain('Available: init, sync, check, sync-pr, peers-baseline, repo-rules');
 });
 
 test('sync-pr без GH_TOKEN или STACK_APP_SLUG — код 2 до sync, файлы не тронуты', async () => {
@@ -620,4 +620,96 @@ test('init и check отвергают опечатку в with одной и т
 	const line = (err: string) => err.split('\n').find((l) => l.includes('unknown group'));
 	expect(line(init.err)).toContain('unknown group "typo" in "with", expected one of: ');
 	expect(line(init.err)).toBe(line(check.err));
+});
+
+const RR_BIN = join(import.meta.dir, '../../repo-rules/src/cli.mjs');
+
+// Без добавки --repo: проводник и бинарник repo-rules получают аргументы как есть.
+async function spawnIn(cmd: string[], cwd: string) {
+	const proc = Bun.spawn(cmd, { cwd, stdout: 'pipe', stderr: 'pipe' });
+	const [out, err, code] = await Promise.all([
+		new Response(proc.stdout).text(),
+		new Response(proc.stderr).text(),
+		proc.exited,
+	]);
+	return { code, out, err };
+}
+
+describe('stack repo-rules', () => {
+	let restore: () => void;
+	let clean: string;
+	let dirty: string;
+	let plain: string;
+	beforeAll(() => {
+		restore = isolateGitConfig();
+		clean = gitRepo({ 'a.ts': 'export const a = 1;\n' }).dir;
+		dirty = gitRepo({ 'a.test.ts': "test.only('x', () => {});\n" }).dir;
+		plain = repoDir({});
+	});
+	afterAll(() => restore());
+
+	test('приёмка 3: stack repo-rules baseline --init создаёт baseline без пакета в манифестах', async () => {
+		// Свой репозиторий: baseline делает общий dirty чистым для остальных тестов.
+		const { dir } = gitRepo({ 'a.test.ts': "test.only('x', () => {});\n" });
+		const r = await spawnIn(['bun', CLI, 'repo-rules', 'baseline', '--init'], dir);
+		expect(r.code).toBe(0);
+		expect(r.out).toContain('repo-rules baseline: wrote .repo-rules-baseline.json (');
+		expect(existsSync(join(dir, '.repo-rules-baseline.json'))).toBe(true);
+		expect(existsSync(join(dir, 'package.json'))).toBe(false);
+	});
+
+	// Каждая строка: аргументы и каталог. Вывод и код проводника равны выводу и коду бинарника.
+	const SAME: [string, () => { args: string[]; cwd: string }][] = [
+		['--version', () => ({ args: ['--version'], cwd: clean })],
+		['--help', () => ({ args: ['--help'], cwd: clean })],
+		['check, чисто', () => ({ args: ['check'], cwd: clean })],
+		['check, нарушение', () => ({ args: ['check'], cwd: dirty })],
+		['check --json', () => ({ args: ['check', '--json'], cwd: dirty })],
+		['-C из другого каталога', () => ({ args: ['-C', dirty, 'check'], cwd: plain })],
+		['diff --base', () => ({ args: ['diff', '--base', 'HEAD', '--json'], cwd: clean })],
+		['без команды', () => ({ args: [], cwd: clean })],
+		['неизвестная команда', () => ({ args: ['nope'], cwd: clean })],
+		['флаг stack --repo', () => ({ args: ['--repo', clean, 'check'], cwd: clean })],
+		['вне git', () => ({ args: ['check'], cwd: plain })],
+	];
+	test.each(SAME)('stack repo-rules как бинарник: %s', async (_name, make) => {
+		const { args, cwd } = make();
+		const viaStack = await spawnIn(['bun', CLI, 'repo-rules', ...args], cwd);
+		const viaBin = await spawnIn(['node', RR_BIN, ...args], cwd);
+		expect(viaStack).toStrictEqual(viaBin);
+	});
+
+	test('коды проводника: чисто 0, нарушение 1, вне git 2', async () => {
+		expect((await spawnIn(['bun', CLI, 'repo-rules', 'check'], clean)).code).toBe(0);
+		expect((await spawnIn(['bun', CLI, 'repo-rules', 'check'], dirty)).code).toBe(1);
+		const outside = await spawnIn(['bun', CLI, 'repo-rules', 'check'], plain);
+		expect(outside.code).toBe(2);
+		expect(outside.err).toStartWith('repo-rules: git rev-parse failed');
+	});
+
+	test('версия проводника — версия stack, даже когда у репозитория свой repo-rules в node_modules', async () => {
+		const dir = repoDir({
+			'node_modules/@alxwlw/repo-rules/package.json':
+				'{"name":"@alxwlw/repo-rules","version":"0.0.1","type":"module","exports":{".":"./src/main.mjs"}}',
+			'node_modules/@alxwlw/repo-rules/src/main.mjs':
+				'export const main = (_a, _e, out) => (out("0.0.1"), 0);\nexport const run = main;\n',
+		});
+		const r = await spawnIn(['bun', CLI, 'repo-rules', '--version'], dir);
+		expect(r).toStrictEqual({ code: 0, out: `${ownVersion()}\n`, err: '' });
+	});
+
+	test('repo-rules не первым аргументом — код 2 с подсказкой', async () => {
+		const r = await spawnIn(['bun', CLI, '--repo', clean, 'repo-rules', 'check'], clean);
+		expect(r.code).toBe(2);
+		expect(r.err).toContain('must come first: stack repo-rules [-C <dir>] <command>');
+		expect(r.err).not.toContain('unknown command');
+	});
+
+	test('cli.ts берёт repo-rules по имени пакета, не по пути в соседний каталог', () => {
+		const imports = new Bun.Transpiler({ loader: 'ts' })
+			.scanImports(readFileSync(CLI, 'utf8').replace(/^#!.*\n/, ''))
+			.map((i) => i.path);
+		expect(imports).toContain('@alxwlw/repo-rules');
+		expect(imports.filter((p) => p.includes('repo-rules/'))).toStrictEqual([]);
+	});
 });

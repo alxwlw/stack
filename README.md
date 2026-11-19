@@ -135,6 +135,13 @@ Exit codes: `0` — the file is written; `1` — `pnpm peers check` could not an
 usage or configuration error (the `peers` group is off, the file is missing, already there with
 `--init`, or does not parse — it is never overwritten then).
 
+`stack repo-rules <arguments>` runs the repo-rules of this `@alxwlw/stack` version: everything after
+`repo-rules` goes to it unchanged, so a repo does not declare `@alxwlw/repo-rules` in its manifests to
+use it. The rules are the same version as `@alxwlw/stack`, even when the repo has an older copy of its
+own. `repo-rules` has to be the first argument; the directory is set by its own `-C <dir>`, and the
+`--repo` flag of stack does not apply to it. Examples: `stack repo-rules baseline --init`,
+`stack repo-rules baseline --allow-grow`. Exit codes are those of repo-rules: `0`, `1`, `2`.
+
 ## Profiles and groups
 
 `profile` (required, set once by `init`) picks which canon files apply at all. `with` is a list of
