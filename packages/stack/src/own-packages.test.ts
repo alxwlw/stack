@@ -3,8 +3,8 @@ import { join } from 'node:path';
 
 import { expect, test } from 'bun:test';
 
-import { PROFILES } from './config.ts';
 import { loadCanon, readCanonSource } from './canon.ts';
+import { PROFILES } from './config.ts';
 import { ownPackages, ownVersion } from './own-packages.ts';
 
 const manifest = {
