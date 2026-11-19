@@ -84,6 +84,26 @@ as `allowed (<reason>): …` and moves on, and `check` reports the same item as 
 never turns a held item into a stale exception. (`check`'s report-only rules — `engines.node`,
 a Renovate config without the canon preset, a leftover Dependabot config, inline versions — are not something `sync` fixes.)
 
+`sync` also rewrites **pin copies** — versions of node, bun, pnpm and proto repeated outside `.prototools`:
+
+- in a Dockerfile (a file named `Dockerfile`, `Dockerfile.<suffix>` or `<name>.Dockerfile`, anywhere in the
+  tree): the tag of a `node` or `oven/bun` image in `FROM`, and a `pnpm@<version>` literal;
+- in the workflows and composite actions of the `.github` directory: the `proto-version`, `node-version` and
+  `bun-version` inputs directly under a `with`.
+
+A copy is compared at its own precision and keeps it, together with the tag suffix: with the pins `26.13.1` and
+`1.4.4`, `node:26.11.1-alpine` becomes `node:26.13.1-alpine`, `node:24-slim` becomes `node:26-slim`, and
+`oven/bun:1.4-alpine` is left alone. `check` reports one `toolchain-pin` finding per file, and `sync` rewrites
+every copy in that file, leaving comments, quotes and line endings as they were. The copies follow the
+`.prototools` the repo has after `sync`: the canon's pins, or the repo's own pins when an exception holds
+`.prototools`. An exception whose `file` is the path of the Dockerfile or workflow (with a `reason`) holds its
+finding, and `sync` then leaves that file alone.
+
+Not a pin copy, and never touched: a tag without a version (`node:lts`) or built from a variable
+(`node:${NODE_VERSION}`), an image pinned by digest, an image under a registry or another namespace, an image
+named in `COPY --from`, a version range (`26.x`, `latest`), a list of versions or an expression (`${{ … }}`),
+`node-version-file`, a matrix entry, and a Dockerfile in a hidden directory.
+
 When `pnpm-workspace.yaml` sets `minimumReleaseAge` above zero, `sync` also keeps
 `minimumReleaseAgeExclude` covering every Own package's version, including the packages that arrive
 transitively as dependencies of `@alxwlw/stack`, so a rollout on the day of publication is not
@@ -217,6 +237,12 @@ Upgrading an existing consumer: on the first `stack/v<version>` PR after the mov
 on `renovate-preset` if the repo already has its own Renovate config without the preset (add
 `github>alxwlw/stack//renovate/canon.json5#v1` to its `extends`), and on `dependabot-config` if
 `.github/dependabot.yml` (or `.yaml`) exists (move its rules into the Renovate config and delete the file).
+
+Upgrading to the release that checks pin copies: the first `stack/v<version>` PR rewrites the Dockerfiles and
+workflows whose copies lag behind `.prototools`. The rewrite can change a major inside an image (node, or the
+pnpm it installs), and the tag of a freshly pinned version may not be in the image registry yet. CI that does not
+build the image on a pull request shows neither, so build the image from the PR branch before merging it — or
+hold the file back with an exception (`{ "file": "<path>", "reason": "…" }`) added in that same PR.
 
 ## Exceptions
 

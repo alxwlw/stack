@@ -44,6 +44,10 @@ _Avoid_: group (a **Group** is a slice switched on through `with`), package fami
 A tool version fixed in the consumer's `.prototools` (node, pnpm and the other proto-managed tools); the canon's own pins are in `canon/files/prototools`, and `loadCanon` returns them as `Canon.pins` (`node` and `pnpm` are required).
 _Avoid_: lock, freeze
 
+**Pin copy**:
+A version of a pinned tool (node, bun, pnpm, proto) repeated outside `.prototools`: the tag of a `node` or `oven/bun` image in a Dockerfile's `FROM`, a `pnpm@<version>` literal in a Dockerfile, or a `proto-version`, `node-version` or `bun-version` input directly under a `with` in a workflow or a composite action. It is compared with the Pin at its own precision (`24` against `26.13.1` differs, `1.4` against `1.4.4` does not); a file with a copy that differs is one `toolchain-pin` Finding — a Drift whose Change rewrites every copy in the file and keeps the precision and the tag suffix. The Pin is the canon's, or the consumer's own when an Exception holds `.prototools`. `pinCopies`, `rewritePinCopies` in `packages/stack/src/toolchain-pins.ts`; `planToolchainPins` in `packages/stack/src/toolchain-pins-rule.ts`.
+_Avoid_: duplicate pin, hardcoded version, pin site
+
 **Own package**:
 A package this repository publishes that reaches a Consumer with the Canon: an `@alxwlw/*` Catalog entry of the dev Catalog, or an `@alxwlw/*` dependency of `@alxwlw/stack`. Sync keeps each in `minimumReleaseAgeExclude`, and `stack sync-pr` waits for each in the registry. `ownPackages` in `packages/stack/src/own-packages.ts`.
 _Avoid_: internal package, scoped package
