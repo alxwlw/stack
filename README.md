@@ -282,10 +282,12 @@ of the canon; new entries stay findings for the PR's CI.
 For a private npm registry, pass its host and, optionally, the **name** of the job's env var that
 holds the token. The action writes a reference (`${NODE_AUTH_TOKEN}`), never the value, to a user-level
 npmrc of the job — pnpm >= 11.15 ignores env-var credentials in a committed project `.npmrc`. That file
-lives in `$RUNNER_TEMP` and the later steps of the job find it through `NPM_CONFIG_USERCONFIG`: it holds the
-previous user-level config (`~/.npmrc`) minus the auth lines of this registry, plus this job's line. The
-shared `~/.npmrc` is never written: on a self-hosted runner it outlives the job, and a line for the same
-registry from another job would win, since pnpm takes the last line of a key.
+lives in the runner's temp directory and the later steps of the job find it through `NPM_CONFIG_USERCONFIG`:
+it holds the previous user-level config (`~/.npmrc`) minus the auth lines of this registry, plus this job's
+line. The shared `~/.npmrc` is never written: on a self-hosted runner it outlives the job, and a line for the
+same registry from another job would win, since pnpm takes the last line of a key. pnpm, npm and bun read
+the job's file instead of `~/.npmrc`, so a later step that adds npm config writes it to the file that
+`NPM_CONFIG_USERCONFIG` names, not to `~/.npmrc`.
 
 ```yaml
 jobs:

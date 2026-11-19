@@ -93,7 +93,7 @@ test('без ~/.npmrc: файл джоба с одной строкой токе
 
 test('строки того же реестра в ~/.npmrc от других джобов уходят из файла джоба, прочее остаётся, ~/.npmrc не тронут', () => {
 	const shared = [
-		'@liqcx:registry=https://npm.pkg.github.com',
+		'@acme:registry=https://npm.pkg.github.com',
 		'//npm.pkg.github.com/:_authToken=${GT_READ}',
 		'//registry.example/:_authToken=${OTHER}',
 		// Последней — строка другого джоба, с пробелами вокруг `=`: ключ тот же.
@@ -101,10 +101,19 @@ test('строки того же реестра в ~/.npmrc от других д
 		'',
 	].join('\n');
 	const j = job(shared);
-	const r = runStep(j, { REGISTRY: 'npm.pkg.github.com', TOKEN_VAR: 'GT_READ' });
+	// Значения переменных в окружении шага: в файл джоба уходит только ссылка ${GT_READ}.
+	const r = runStep(j, {
+		REGISTRY: 'npm.pkg.github.com',
+		TOKEN_VAR: 'GT_READ',
+		GT_READ: 'secret-value-gt',
+		STACK_REGISTRY_TOKEN: 'secret-value-default',
+	});
 	expect(r.status).toBe(0);
+	expect(readFileSync(r.exported.NPM_CONFIG_USERCONFIG ?? '', 'utf8')).not.toContain(
+		'secret-value',
+	);
 	expect(lines(r.exported.NPM_CONFIG_USERCONFIG ?? '')).toStrictEqual([
-		'@liqcx:registry=https://npm.pkg.github.com',
+		'@acme:registry=https://npm.pkg.github.com',
 		'//registry.example/:_authToken=${OTHER}',
 		'//npm.pkg.github.com/:_authToken=${GT_READ}',
 	]);
@@ -145,6 +154,8 @@ test('registry-token-var без registry и неверное имя переме
 	}
 });
 
+// Сквозной тест держит главное — pnpm читает файл джоба, а не ~/.npmrc. Фильтр чужих строк он не
+// держит (своя строка в файле джоба и так последняя): это делает тест точного списка строк выше.
 test('pnpm шлёт токен этого джоба, хотя последняя строка ключа в ~/.npmrc — чужая', async () => {
 	const seen: (string | null)[] = [];
 	const server = Bun.serve({

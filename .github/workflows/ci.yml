@@ -24,18 +24,23 @@ jobs:
       STACK_REGISTRY_TOKEN: not-a-real-token
     steps:
       - uses: actions/checkout@v7
+      - name: снимок общего ~/.npmrc до setup
+        run: |
+          if [ -f "$HOME/.npmrc" ]; then sha256sum < "$HOME/.npmrc"; else echo absent; fi > "$RUNNER_TEMP/home-npmrc.before"
       - uses: ./.github/actions/setup
         with:
           install: false
           registry: npm.pkg.github.com
           registry-token-var: TEST_TOKEN
-      - name: в ~/.npmrc ссылка на переменную, а не её значение
+      - name: в npmrc джоба ссылка на переменную, а не её значение
         run: |
+          # Файл джоба лежит в RUNNER_TEMP, общий ~/.npmrc раннера не пишется (DX-211).
+          case "$NPM_CONFIG_USERCONFIG" in "$RUNNER_TEMP"/*) ;; *) exit 1 ;; esac
           # shellcheck disable=SC2016 # ${TEST_TOKEN} должен остаться литералом
-          grep -qxF '//npm.pkg.github.com/:_authToken=${TEST_TOKEN}' "$HOME/.npmrc"
-          if grep -qF 'not-a-real-token' "$HOME/.npmrc"; then exit 1; fi
+          grep -qxF '//npm.pkg.github.com/:_authToken=${TEST_TOKEN}' "$NPM_CONFIG_USERCONFIG"
+          if grep -qF 'not-a-real-token' "$NPM_CONFIG_USERCONFIG"; then exit 1; fi
           # умолчание не вмешалось: строка с токеном одна
-          test "$(grep -c '^//npm.pkg.github.com/:_authToken=' "$HOME/.npmrc")" = 1
+          test "$(grep -c '^//npm.pkg.github.com/:_authToken=' "$NPM_CONFIG_USERCONFIG")" = 1
       - name: пути к бинарникам экспортированы
         run: test -x "$ACTIONLINT_BIN" && test -x "$SHELLCHECK_BIN"
       - name: повторный вызов
@@ -47,7 +52,7 @@ jobs:
       - name: строка не задублировалась
         run: |
           # shellcheck disable=SC2016
-          test "$(grep -cxF '//npm.pkg.github.com/:_authToken=${TEST_TOKEN}' "$HOME/.npmrc")" = 1
+          test "$(grep -cxF '//npm.pkg.github.com/:_authToken=${TEST_TOKEN}' "$NPM_CONFIG_USERCONFIG")" = 1
       - name: только registry — умолчание имени переменной
         uses: ./.github/actions/setup
         with:
@@ -58,13 +63,17 @@ jobs:
         with:
           install: false
           registry: npm.example.com
-      - name: в ~/.npmrc ссылка на STACK_REGISTRY_TOKEN, одна строка, значения нет
+      - name: в npmrc джоба ссылка на STACK_REGISTRY_TOKEN, одна строка, значения нет; ~/.npmrc прежний
         run: |
           # shellcheck disable=SC2016 # ${STACK_REGISTRY_TOKEN} должен остаться литералом
-          grep -qxF '//npm.example.com/:_authToken=${STACK_REGISTRY_TOKEN}' "$HOME/.npmrc"
+          grep -qxF '//npm.example.com/:_authToken=${STACK_REGISTRY_TOKEN}' "$NPM_CONFIG_USERCONFIG"
           # shellcheck disable=SC2016
-          test "$(grep -cxF '//npm.example.com/:_authToken=${STACK_REGISTRY_TOKEN}' "$HOME/.npmrc")" = 1
-          if grep -qF 'not-a-real-token' "$HOME/.npmrc"; then exit 1; fi
+          test "$(grep -cxF '//npm.example.com/:_authToken=${STACK_REGISTRY_TOKEN}' "$NPM_CONFIG_USERCONFIG")" = 1
+          # первый реестр пережил вызовы со вторым
+          # shellcheck disable=SC2016
+          test "$(grep -cxF '//npm.pkg.github.com/:_authToken=${TEST_TOKEN}' "$NPM_CONFIG_USERCONFIG")" = 1
+          if grep -qF 'not-a-real-token' "$NPM_CONFIG_USERCONFIG"; then exit 1; fi
+          if [ -f "$HOME/.npmrc" ]; then sha256sum < "$HOME/.npmrc"; else echo absent; fi | cmp - "$RUNNER_TEMP/home-npmrc.before"
       - id: bad-var
         continue-on-error: true
         uses: ./.github/actions/setup
