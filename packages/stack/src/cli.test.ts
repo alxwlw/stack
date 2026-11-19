@@ -924,7 +924,7 @@ describe('check с группой repo-rules через настоящий cli',
 			return { code: r.status, out: r.stdout.trim() };
 		};
 
-		// origin с PR: feature убирает одну проверку из a.test.ts, main после ответвления ушёл на коммит вперёд,
+		// origin с PR: feature убирает одну проверку из тестового файла фикстуры, main после ответвления ушёл на коммит вперёд,
 		// merge-коммит лежит в refs/pull/1/merge, как у GitHub. Возвращает путь bare-remote.
 		async function prOrigin(opts: { group?: boolean; baseline?: boolean } = {}): Promise<string> {
 			const dir = await rulesRepo({ 'a.test.ts': TWO_EXPECTS }, opts);
