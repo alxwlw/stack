@@ -6,6 +6,9 @@
 	// Заменяет, а не дополняет ignorePaths из config:recommended.
 	// fixtures/ — семя для тестов, версии в нём не двигаются.
 	ignorePaths: ['**/node_modules/**', 'fixtures/**'],
+	// pnpm 12 по умолчанию отвергает версии моложе суток (minimumReleaseAge 1440): без этой границы бот
+	// предлагает свежий релиз, и `pnpm install` в CI его PR падает (#54: oxfmt 0.79.0 через 3 ч после публикации).
+	minimumReleaseAge: '1 day',
 	proto: {
 		// Дополняет '**/.prototools' по умолчанию: канон-файл назван без точки.
 		managerFilePatterns: ['/^packages/stack/canon/files/prototools$/'],
