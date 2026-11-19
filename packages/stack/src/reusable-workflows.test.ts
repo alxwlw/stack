@@ -25,6 +25,29 @@ test('reusable check.yml: вход gitleaks выключен по умолчан
 	expect(checkout?.with?.['fetch-depth']).toBe("${{ inputs.gitleaks && '0' || '1' }}");
 });
 
+test('reusable check.yml: шаг history — только pull_request, между checkout и setup, входы прежние', () => {
+	const wf = parseYaml(readFileSync(join(ROOT, '.github', 'workflows', 'check.yml'), 'utf8')) as {
+		on?: { workflow_call?: { inputs?: Record<string, unknown> } };
+		jobs?: Record<string, { steps?: { id?: string; uses?: string; if?: string; run?: string }[] }>;
+	};
+	expect(Object.keys(wf.on?.workflow_call?.inputs ?? {})).toStrictEqual([
+		'install',
+		'version',
+		'gitleaks',
+		'registry',
+	]);
+	const steps = Object.values(wf.jobs ?? {}).flatMap((j) => j.steps ?? []);
+	const history = steps.find((s) => s.id === 'history');
+	expect(history?.if).toBe("github.event_name == 'pull_request'");
+	const at = steps.findIndex((s) => s.id === 'history');
+	const checkout = steps.findIndex((s) => s.uses?.startsWith('actions/checkout@'));
+	const setup = steps.findIndex((s) => s.uses?.startsWith('alxwlw/stack/.github/actions/setup@'));
+	expect(checkout).toBeGreaterThanOrEqual(0);
+	expect(at).toBeGreaterThan(checkout);
+	expect(setup).toBeGreaterThan(at);
+	expect(history?.run).not.toContain('${{');
+});
+
 // Reusable workflow, который зовёт канон-файл packages/stack/canon/files/workflow-renovate.yml.
 test('reusable renovate.yml: workflow_call с обязательным token, action на полной версии', () => {
 	const wf = parseYaml(

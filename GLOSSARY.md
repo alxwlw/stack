@@ -19,7 +19,7 @@ The kind of repository a consumer declares, `node`, `contracts` or `infra`; it d
 _Avoid_: preset, flavour, template
 
 **Group**:
-A named opt-in slice of the canon, switched on through `with` in `.stack.jsonc`. There are four kinds: a **file group** (the `group` field of a manifest entry), a **catalog group** (a key of `canon/catalogs.json` other than `dev`, which every consumer gets), a **rule group** (switches on a rule of `stack check` rather than a file or a catalog: `RULE_GROUPS`, enabled ones in `Canon.rules`; the only one is `peers`) and a **deprecated group** (accepted for old configs, enables nothing). Names come from `readCanonSource().groups` in `packages/stack/src/canon.ts`; `knownGroups` lists all four kinds.
+A named opt-in slice of the canon, switched on through `with` in `.stack.jsonc`. There are four kinds: a **file group** (the `group` field of a manifest entry), a **catalog group** (a key of `canon/catalogs.json` other than `dev`, which every consumer gets), a **rule group** (switches on a rule of `stack check` rather than a file or a catalog: `RULE_GROUPS`, enabled ones in `Canon.rules`; there are two: `peers` and `repo-rules`) and a **deprecated group** (accepted for old configs, enables nothing). Names come from `readCanonSource().groups` in `packages/stack/src/canon.ts`; `knownGroups` lists all four kinds.
 _Avoid_: feature, module, flag
 
 ### What the canon holds
@@ -66,10 +66,18 @@ _Avoid_: ignore, override, waiver
 The peer-dependency issues a consumer with the `peers` group already has, recorded in the file `PEERS_BASELINE` names, at the consumer's root, as `PeerEntry` records: importer, peer, kind (`unmet`, `missing`, `conflict`), the package that declares the peer, and for `unmet` the line of the version found (`versionLine`: the major, `0.minor`, or `0.0.patch`). Check compares what `pnpm peers check --lockfile-only --json` reports (`peersOutcome`, read through the `PeersReader` port) with it (`comparePeers`): an issue not recorded is a `peer-dependency` finding, a record no longer reported is `stale-peer-baseline`, and no lockfile or no usable pnpm answer is `peers-unavailable`. None of the three is held by an exception: the baseline plays that part. `packages/stack/src/peers.ts`, `checkPeers` in `packages/stack/src/peers-rule.ts`.
 _Avoid_: allowlist, snapshot, exceptions list
 
+**Note**:
+A line of Check's output saying that part of a rule group was skipped or accepted (the `diff` part outside a pull request, a `Tests-Removed` trailer), or a hint under a finding (the `Tests-Removed` hint under a removed-assertions violation); it never changes the exit code and no exception applies to it. `CheckReport.notes` in `packages/stack/src/check.ts`, `repoRulesNotes` in `packages/stack/src/repo-rules-rule.ts`.
+_Avoid_: warning, info finding
+
+**Repo rules**:
+The rules of `@alxwlw/repo-rules` that Check runs in process for a consumer with the `repo-rules` group, at the version of `@alxwlw/stack`. A violation (repo-rules' own word for a place that breaks a rule) is a `repo-rules-violation` finding, an entry higher than reality is `stale-repo-rules-baseline`, and a call that did not run or whose answer cannot be read is `repo-rules-unavailable`. None of the three is held by an exception: the baseline of repo-rules plays that part. `RepoRulesReader`, `readRepoRules` in `packages/stack/src/repo-rules.ts`, `checkRepoRules` in `packages/stack/src/repo-rules-rule.ts`.
+_Avoid_: lint, policy
+
 ### Commands
 
 **Check**:
-Reports every finding of a consumer and fails when any is not held by an exception. `stack check`, `checkRepo` in `packages/stack/src/check.ts`.
+Reports every finding of a consumer and fails when any is not held by an exception; it also returns notes (`CheckReport`), which do not change the exit code. `stack check`, `checkRepo` in `packages/stack/src/check.ts`.
 _Avoid_: lint, audit, verify
 
 **Sync**:

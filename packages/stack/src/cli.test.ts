@@ -16,28 +16,17 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { parse as parseJsonc } from 'jsonc-parser';
 
 import { ownVersion } from './own-packages.ts';
-import { gitRepo, isolateGitConfig, protoBin, repoDir, UNMET_PEER_LOCK } from './testkit.ts';
-
-const CLI = join(import.meta.dir, 'cli.ts');
-
-async function run(args: string[], cwd: string, env: Record<string, string> = {}) {
-	const proc = Bun.spawn(['bun', CLI, ...args, '--repo', cwd], {
-		stdout: 'pipe',
-		stderr: 'pipe',
-		env: { ...process.env, ...env },
-	});
-	const [out, err] = await Promise.all([
-		new Response(proc.stdout).text(),
-		new Response(proc.stderr).text(),
-	]);
-	return { code: await proc.exited, out, err };
-}
-
-// Репозиторий до init: package.json с engines на реальном каноне и пустой workspace.
-const BARE = {
-	'package.json': '{ "name": "r", "engines": { "node": ">=26.8.1" } }',
-	'pnpm-workspace.yaml': 'packages:\n  - packages/*\n',
-};
+import {
+	BARE,
+	CLI,
+	gitRepo,
+	isolateGitConfig,
+	protoBin,
+	repoDir,
+	runCli as run,
+	spawnIn,
+	UNMET_PEER_LOCK,
+} from './testkit.ts';
 
 test('init создаёт конфигурацию, повторный init — код 2', async () => {
 	const dir = repoDir(BARE);
@@ -623,17 +612,6 @@ test('init и check отвергают опечатку в with одной и т
 });
 
 const RR_BIN = join(import.meta.dir, '../../repo-rules/src/cli.mjs');
-
-// Без добавки --repo: проводник и бинарник repo-rules получают аргументы как есть.
-async function spawnIn(cmd: string[], cwd: string) {
-	const proc = Bun.spawn(cmd, { cwd, stdout: 'pipe', stderr: 'pipe' });
-	const [out, err, code] = await Promise.all([
-		new Response(proc.stdout).text(),
-		new Response(proc.stderr).text(),
-		proc.exited,
-	]);
-	return { code, out, err };
-}
 
 describe('stack repo-rules', () => {
 	let restore: () => void;

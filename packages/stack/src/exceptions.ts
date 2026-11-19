@@ -100,6 +100,10 @@ const ADDRESS: { [C in FindingCode]: ((f: FindingOf<C>) => Address) | 'unsuppres
 	'peer-dependency': 'unsuppressible',
 	'stale-peer-baseline': 'unsuppressible',
 	'peers-unavailable': 'unsuppressible',
+	// Исключение для находок repo-rules — сам baseline; отказ от гейта — убрать группу из with.
+	'repo-rules-violation': 'unsuppressible',
+	'stale-repo-rules-baseline': 'unsuppressible',
+	'repo-rules-unavailable': 'unsuppressible',
 };
 
 export function addressOf(f: Finding): Address | undefined {

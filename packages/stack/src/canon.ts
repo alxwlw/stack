@@ -143,7 +143,7 @@ export function canonDir(): string {
 const DEPRECATED_GROUPS: readonly string[] = ['renovate'];
 
 // Группа правила включает правило `stack check`, файлов и каталогов не даёт.
-export const RULE_GROUPS = ['peers'] as const;
+export const RULE_GROUPS = ['peers', 'repo-rules'] as const;
 export type RuleGroup = (typeof RULE_GROUPS)[number];
 
 export interface CanonGroups {

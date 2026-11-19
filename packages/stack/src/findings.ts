@@ -25,7 +25,10 @@ export type Finding = FindingBase &
 					| 'stale-exception'
 					| 'peer-dependency'
 					| 'stale-peer-baseline'
-					| 'peers-unavailable';
+					| 'peers-unavailable'
+					| 'repo-rules-violation'
+					| 'stale-repo-rules-baseline'
+					| 'repo-rules-unavailable';
 		  }
 	);
 export type FindingCode = Finding['code'];

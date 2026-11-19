@@ -33,6 +33,16 @@ jobs:
         with:
           # gitleaks нужна вся история; строки, а не числа: `0 || 1` в выражениях дало бы 1.
           fetch-depth: ${{ inputs.gitleaks && '0' || '1' }}
+      # Группа repo-rules в PR: её diff нужна история до merge-base с базовой веткой, а checkout выше берёт
+      # один коммит и не создаёт origin/<база>. Без группы и вне PR шаг ничего не скачивает; полный клон
+      # (gitleaks) уже содержит все ветки. blob:none — коммиты и деревья сразу, содержимое файлов git diff
+      # дозагружает сам. Сбой fetch роняет шаг: недостающая история не читается как «чисто».
+      - id: history
+        if: github.event_name == 'pull_request'
+        run: |
+          if grep -q '"repo-rules"' .stack.jsonc 2>/dev/null && [ "$(git rev-parse --is-shallow-repository)" = true ]; then
+            git fetch --no-tags --filter=blob:none --unshallow origin "+refs/heads/$GITHUB_BASE_REF:refs/remotes/origin/$GITHUB_BASE_REF"
+          fi
       - uses: alxwlw/stack/.github/actions/setup@v1
         with:
           install: ${{ inputs.install }}

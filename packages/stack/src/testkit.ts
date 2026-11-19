@@ -385,3 +385,35 @@ export const opts = (dir: string, over: Partial<PublishOptions> = {}): PublishOp
 	appSlug: 'acme-bot',
 	...over,
 });
+
+export const CLI = join(import.meta.dir, 'cli.ts');
+
+export async function runCli(args: string[], cwd: string, env: Record<string, string> = {}) {
+	const proc = Bun.spawn(['bun', CLI, ...args, '--repo', cwd], {
+		stdout: 'pipe',
+		stderr: 'pipe',
+		env: { ...process.env, ...env },
+	});
+	const [out, err] = await Promise.all([
+		new Response(proc.stdout).text(),
+		new Response(proc.stderr).text(),
+	]);
+	return { code: await proc.exited, out, err };
+}
+
+// Репозиторий до init: package.json с engines на реальном каноне и пустой workspace.
+export const BARE = {
+	'package.json': '{ "name": "r", "engines": { "node": ">=26.8.1" } }',
+	'pnpm-workspace.yaml': 'packages:\n  - packages/*\n',
+};
+
+// Без добавки --repo: проводник и бинарник repo-rules получают аргументы как есть.
+export async function spawnIn(cmd: string[], cwd: string) {
+	const proc = Bun.spawn(cmd, { cwd, stdout: 'pipe', stderr: 'pipe' });
+	const [out, err, code] = await Promise.all([
+		new Response(proc.stdout).text(),
+		new Response(proc.stderr).text(),
+		proc.exited,
+	]);
+	return { code, out, err };
+}
