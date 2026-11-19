@@ -3,6 +3,7 @@ import { join } from 'node:path';
 
 import { expect, test } from 'bun:test';
 
+import { PROFILES } from './config.ts';
 import { loadCanon, readCanonSource } from './canon.ts';
 import { ownPackages, ownVersion } from './own-packages.ts';
 
@@ -51,4 +52,14 @@ test('ownVersion — version из packages/stack/package.json', () => {
 	};
 	expect(ownVersion()).toBe(pkg.version);
 	expect(ownVersion()).toMatch(/^\d+\.\d+\.\d+/);
+});
+
+test.each([...PROFILES])('canonFor: ownPackages не зависят от профиля %s и групп', (profile) => {
+	const base = loadCanon({ profile: 'node', with: [], exceptions: [] }).ownPackages;
+	expect(base.length).toBeGreaterThan(0);
+	const groups = readCanonSource().groups;
+	const withAll = [...groups.catalogs, ...groups.rules];
+	expect(withAll.length).toBeGreaterThan(0);
+	expect(loadCanon({ profile, with: [], exceptions: [] }).ownPackages).toStrictEqual(base);
+	expect(loadCanon({ profile, with: withAll, exceptions: [] }).ownPackages).toStrictEqual(base);
 });

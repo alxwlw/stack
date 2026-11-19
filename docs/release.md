@@ -70,8 +70,8 @@ dispatch is counted and its message is dropped, because it can name the consumer
 
 On the consumer side the reusable `sync.yml` keeps a short safety wait (12 attempts) only for
 `@alxwlw/stack@X.Y.Z`, which `bunx` needs, in case the consumer's runner sees the registry later than the
-publisher did, then runs `bunx @alxwlw/stack@X.Y.Z sync-pr`; the command waits for the `@alxwlw/*` entries
-of the canon's `dev` catalog (12 attempts) before `pnpm install`, then opens the PR.
+publisher did, then runs `bunx @alxwlw/stack@X.Y.Z sync-pr`; the command waits for every Own package, the
+`@alxwlw/*` entries of the canon's `dev` catalog and the `@alxwlw/*` dependencies of `@alxwlw/stack` (12 attempts) before `pnpm install`, then opens the PR.
 
 ### VERSION arrives with the tag prefix
 

@@ -114,8 +114,8 @@ is the only way to create the config file in the first place. Every command acce
 
 `stack sync-pr [--base <branch>] [--no-install]` is meant for the sync workflow (it commits the whole
 tree and force-pushes) and does the whole consumer side of a release in one command: `stack sync`;
-when the repo has a root `package.json`, a wait until the `@alxwlw/*` entries of the canon's `dev`
-catalog are listed in the npm registry and their tarballs answer a HEAD with 200 (skipped with `--no-install`),
+when the repo has a root `package.json`, a wait until every Own package (the `@alxwlw/*` entries of the canon's `dev`
+catalog and the `@alxwlw/*` dependencies of `@alxwlw/stack`) is listed in the npm registry and its tarball answers a HEAD with 200 (skipped with `--no-install`),
 `proto install`, `pnpm install --no-frozen-lockfile` (skipped with `--no-install`) and the
 `stack:post-sync` hook; then the changed files one by one, a commit by the GitHub App's bot on
 `stack/v<version>`, a force-push and a PR (or the open one, reused). After the PR it closes the open

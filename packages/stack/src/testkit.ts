@@ -32,7 +32,7 @@ export function testCanon(over: Partial<Canon> = {}): Canon {
 		catalogs: {},
 		pins: { node: '25.4.1', pnpm: '10.99.0' },
 		rules: [],
-		ownPackages: over.ownPackages ?? ownPackages(over.catalogs?.dev, { version: '0.0.0' }),
+		ownPackages: ownPackages(over.catalogs?.dev, { version: '0.0.0' }),
 		...over,
 	};
 }
