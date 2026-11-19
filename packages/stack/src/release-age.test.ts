@@ -289,3 +289,50 @@ test('ключ без значения с комментарием — комм�
 	expect(list(out)).toEqual(['@alxwlw/stack@1.10.0']);
 	expect(out).toContain('# держим');
 });
+
+const transitive = testCanon({
+	catalogs: { dev: { '@alxwlw/stack': '1.2.3' } },
+	ownPackages: [
+		{ name: '@alxwlw/stack', version: '1.2.3' },
+		{ name: '@alxwlw/repo-rules', version: '1.2.3' },
+	],
+});
+
+const wsTransitive = (extra: string) =>
+	`packages:\n  - packages/*\n\ncatalogs:\n  dev:\n    '@alxwlw/stack': 1.2.3\n${extra}`;
+
+test('свой пакет вне каталога dev получает запись', () => {
+	const found = drift(wsTransitive(AGE), transitive);
+	expect(found.map((f) => f.target)).toStrictEqual([
+		'minimumReleaseAgeExclude.@alxwlw/stack',
+		'minimumReleaseAgeExclude.@alxwlw/repo-rules',
+	]);
+	expect(found[1]?.change).toStrictEqual({
+		kind: 'yaml-append',
+		file: 'pnpm-workspace.yaml',
+		path: ['minimumReleaseAgeExclude'],
+		value: '@alxwlw/repo-rules@1.2.3',
+	});
+});
+
+test.each(['@alxwlw/*', '@alxwlw/repo-rules'])(
+	'запись %s покрывает свой пакет вне каталога',
+	(entry) => {
+		const text = wsTransitive(`${AGE}${KEY}:\n  - '@alxwlw/stack@1.2.3'\n  - '${entry}'\n`);
+		expect(drift(text, transitive)).toStrictEqual([]);
+	},
+);
+
+test('находку для пакета вне каталога удерживает исключение catalog+name', () => {
+	const text = wsTransitive(AGE);
+	const exception = { catalog: 'dev', name: '@alxwlw/repo-rules', reason: 'держим' };
+	const found = check(testRepo(transitive, { 'pnpm-workspace.yaml': text }), transitive, [
+		exception,
+	]);
+	const mine = found.filter((f) => f.code === 'release-age-exclude');
+	expect(mine.find((f) => f.target.endsWith('@alxwlw/repo-rules'))?.suppressedBy?.reason).toBe(
+		'держим',
+	);
+	expect(found.some((f) => f.code === 'stale-exception')).toBe(false);
+	expect(rendered(text, transitive, [exception])).not.toContain('@alxwlw/repo-rules');
+});

@@ -13,12 +13,12 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { parse as parseYaml } from 'yaml';
 
 import { loadCanon } from './canon.ts';
+import { ownVersion } from './own-packages.ts';
 import type { PeerEntry, PeersReader } from './peers.ts';
 import type { Served } from './registry.ts';
 import {
 	type GitHub,
 	type NewPr,
-	ownVersion,
 	prBody,
 	type RunProcess,
 	SYNC_PR_WAIT,
@@ -327,10 +327,9 @@ describe('publishChanges', () => {
 const HOOK = 'pnpm run stack:post-sync|VERSION=1.2.3';
 
 // Ожидаемые обращения к реестру — из канона, а не литералом.
-const wantedServed = loadCanon({ profile: 'node', with: [], exceptions: [] }).catalogs.dev;
-const SERVED = Object.entries(wantedServed ?? {})
-	.filter(([name]) => name.startsWith('@alxwlw/'))
-	.map(([name, v]) => `served ${name}@${v}`);
+const SERVED = loadCanon({ profile: 'node', with: [], exceptions: [] }).ownPackages.map(
+	(p) => `served ${p.name}@${p.version}`,
+);
 
 const NODE_PKG = JSON.stringify({ name: 'app', scripts: { 'stack:post-sync': 'true' } });
 
@@ -385,7 +384,7 @@ async function runSyncPr(
 	over: Partial<SyncPrOptions> = {},
 	handlers: {
 		run?: (line: string) => number | undefined;
-		served?: Served;
+		served?: Served | ((name: string, version: string) => Served);
 		github?: GitHub;
 		peers?: PeersReader;
 	} = {},
@@ -418,7 +417,8 @@ async function runSyncPr(
 				},
 				served: async (name, version) => {
 					journal.push(`served ${name}@${version}`);
-					return handlers.served ?? 'served';
+					const served = handlers.served ?? 'served';
+					return typeof served === 'function' ? served(name, version) : served;
 				},
 			},
 			print: (stream, line) => (stream === 'out' ? out : err).push(line),
@@ -562,6 +562,19 @@ describe('syncPr', () => {
 		expect(r.journal.length).toBeGreaterThan(0);
 	});
 
+	test('реестр не показал транзитивный свой пакет — код 1, пакет назван, процессов нет', async () => {
+		const { dir } = gitRepo({ '.stack.jsonc': '{ "profile": "node" }', 'package.json': NODE_PKG });
+		const r = await runSyncPr(
+			dir,
+			{},
+			{ served: (name) => (name === '@alxwlw/repo-rules' ? 'unlisted' : 'served') },
+		);
+		expect(r.code).toBe(1);
+		expect(r.err.at(-1)).toContain(`@alxwlw/repo-rules@${ownVersion()}`);
+		expect(r.journal.every((l) => l.startsWith('served '))).toBe(true);
+		expect(r.journal).toContain(`served @alxwlw/repo-rules@${ownVersion()}`);
+	});
+
 	test('ошибка .stack.jsonc — код 2, ничего не запускается', async () => {
 		const { dir } = gitRepo({
 			'.stack.jsonc': '{ "profile": "node", "wiht": [] }',
@@ -633,13 +646,5 @@ describe('syncPr', () => {
 		expect(r.code).toBe(0);
 		expect(r.journal).not.toContain('peers');
 		expect(r.journal.at(-1)).toBe(HOOK);
-	});
-
-	test('ownVersion — version из packages/stack/package.json', () => {
-		const pkg = JSON.parse(readFileSync(join(import.meta.dir, '..', 'package.json'), 'utf8')) as {
-			version: string;
-		};
-		expect(ownVersion()).toBe(pkg.version);
-		expect(ownVersion()).toMatch(/^\d+\.\d+\.\d+/);
 	});
 });

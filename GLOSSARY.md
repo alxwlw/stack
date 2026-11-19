@@ -44,6 +44,10 @@ _Avoid_: group (a **Group** is a slice switched on through `with`), package fami
 A tool version fixed in the consumer's `.prototools` (node, pnpm and the other proto-managed tools); the canon's own pins are in `canon/files/prototools`, and `loadCanon` returns them as `Canon.pins` (`node` and `pnpm` are required).
 _Avoid_: lock, freeze
 
+**Own package**:
+A package this repository publishes that reaches a Consumer with the Canon: an `@alxwlw/*` Catalog entry of the dev Catalog, or an `@alxwlw/*` dependency of `@alxwlw/stack`. Sync keeps each in `minimumReleaseAgeExclude`, and `stack sync-pr` waits for each in the registry. `ownPackages` in `packages/stack/src/own-packages.ts`.
+_Avoid_: internal package, scoped package
+
 ### Verdicts
 
 **Finding**:
@@ -79,7 +83,7 @@ _Avoid_: regenerate, refresh
 ### Releasing
 
 **Lockstep version**:
-The single version number shared by the four packages (`@alxwlw/stack`, `@alxwlw/oxlint-config`, `@alxwlw/tsconfig`, `@alxwlw/repo-rules`) and by the `@alxwlw/*` entries of the dev catalog. `setVersion` in `scripts/release.ts`.
+The single version number shared by the four packages (`@alxwlw/stack`, `@alxwlw/oxlint-config`, `@alxwlw/tsconfig`, `@alxwlw/repo-rules`) and by the `@alxwlw/*` entries of the dev catalog; a dependency of one package on another carries the same exact version. `setVersion` in `scripts/release.ts`.
 _Avoid_: unified version, monorepo version
 
 **Floating major tag**:

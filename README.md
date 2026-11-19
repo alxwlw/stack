@@ -85,11 +85,13 @@ never turns a held item into a stale exception. (`check`'s report-only rules —
 a Renovate config without the canon preset, a leftover Dependabot config, inline versions — are not something `sync` fixes.)
 
 When `pnpm-workspace.yaml` sets `minimumReleaseAge` above zero, `sync` also keeps
-`minimumReleaseAgeExclude` covering the canon's own `@alxwlw/*` versions, so a rollout on the day of
-publication is not rejected by `pnpm install`. A version counts as covered by a bare name,
+`minimumReleaseAgeExclude` covering every Own package's version, including the packages that arrive
+transitively as dependencies of `@alxwlw/stack`, so a rollout on the day of publication is not
+rejected by `pnpm install`. A version counts as covered by a bare name,
 `@alxwlw/*`, or `<name>@<v1> || <v2>` containing it; otherwise `sync` appends ` || <version>` to the
 package's own entry, or adds `<name>@<version>` (creating the list if absent). Other entries,
-their order and comments are left alone. A `catalog: dev` exception on the package holds this too.
+their order and comments are left alone. A `catalog: dev` + `name` exception on the package holds this
+too, for a transitive package as well.
 
 `sync` also keeps `package.json#packageManager` on the canon's pnpm pin whenever that field names
 pnpm (a `+sha512…` suffix on the same version is fine) — otherwise pnpm switches itself to the
@@ -112,8 +114,9 @@ is the only way to create the config file in the first place. Every command acce
 
 `stack sync-pr [--base <branch>] [--no-install]` is meant for the sync workflow (it commits the whole
 tree and force-pushes) and does the whole consumer side of a release in one command: `stack sync`;
-when the repo has a root `package.json`, a wait until the `@alxwlw/*` entries of the canon's `dev`
-catalog are listed in the npm registry and their tarballs answer a HEAD with 200 (skipped with `--no-install`),
+when the repo has a root `package.json`, a wait until every Own package (the `@alxwlw/*` entries of
+the canon's `dev` catalog and the `@alxwlw/*` dependencies of `@alxwlw/stack`) is listed in the npm
+registry and its tarball answers a HEAD with 200 (skipped with `--no-install`),
 `proto install`, `pnpm install --no-frozen-lockfile` (skipped with `--no-install`) and the
 `stack:post-sync` hook; then the changed files one by one, a commit by the GitHub App's bot on
 `stack/v<version>`, a force-push and a PR (or the open one, reused). After the PR it closes the open
@@ -132,6 +135,13 @@ Exit codes: `0` — the file is written; `1` — `pnpm peers check` could not an
 `pnpm-lock.yaml`, pnpm missing or failing), or there are new entries and no `--allow-grow`; `2` — a
 usage or configuration error (the `peers` group is off, the file is missing, already there with
 `--init`, or does not parse — it is never overwritten then).
+
+`stack repo-rules <arguments>` runs the repo-rules of this `@alxwlw/stack` version: everything after
+`repo-rules` goes to it unchanged, so a repo does not declare `@alxwlw/repo-rules` in its manifests to
+use it. The rules are the same version as `@alxwlw/stack`, even when the repo has an older copy of its
+own. `repo-rules` has to be the first argument; the directory is set by its own `-C <dir>`, and the
+`--repo` flag of stack does not apply to it. Examples: `stack repo-rules baseline --init`,
+`stack repo-rules baseline --allow-grow`. Exit codes are those of repo-rules: `0`, `1`, `2`.
 
 ## Profiles and groups
 
@@ -376,9 +386,10 @@ branch and reuses the open PR instead of opening a second one. After a rollout t
 and re-dispatching an old version does not close the PR of a newer one.
 
 `sync.yml` keeps only the App token, the checkout, the setup action and a short wait until
-`@alxwlw/stack@<version>` is listed in the npm registry and its tarball answers a HEAD with 200; everything after that is `stack sync-pr`. It
-needs a version that has the command, 1.11.0 or later: re-dispatching an older version fails with a
-usage error (exit code 2).
+`@alxwlw/stack@<version>` and every Own package among its dependencies (which `bunx` installs) are
+listed in the npm registry and their tarballs answer a HEAD with 200; everything after that is
+`stack sync-pr`. It needs a version that has the command, 1.11.0 or later: re-dispatching an older
+version fails with a usage error (exit code 2).
 
 The work is done by the [`alxwlw-stack-bot`](https://github.com/apps/alxwlw-stack-bot) GitHub App,
 which a consumer installs on its own repositories. It asks for exactly what opening that PR and closing the ones it replaces takes —

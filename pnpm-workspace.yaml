@@ -1,6 +1,9 @@
 packages:
   - packages/*
 
+# stack depends on repo-rules at its exact version: without this pnpm resolves it from the registry, which fails on a release branch.
+linkWorkspacePackages: true
+
 catalogs:
   dev:
     dependency-cruiser: 18.8.0

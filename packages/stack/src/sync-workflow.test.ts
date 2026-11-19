@@ -31,17 +31,21 @@ const callStep = syncSteps?.[callIdx];
 /**
  * `body` — тело ответа реестра для stack; `undefined` — curl падает, как `curl -f` на 404/5xx.
  * `tarball` — ответ на пробу tarball (запрос, чей последний аргумент кончается на `.tgz`).
+ * `others` — packument других пакетов по имени без скоупа (`repo-rules`); без записи отдаётся `body`.
  */
 function runWait(
 	body: string | undefined,
 	attempts: string,
 	interval = '0',
 	tarball: 200 | 404 = 200,
+	others: Record<string, string> = {},
 ): { status: number | null; calls: string[]; out: string; sleeps: string[] } {
 	const dir = mkdtempSync(join(tmpdir(), 'sync-wait-'));
 	const calls = join(dir, 'calls');
 	const reply = body === undefined ? 'exit 22' : `cat '${join(dir, 'body.json')}'`;
 	if (body !== undefined) writeFileSync(join(dir, 'body.json'), body);
+	for (const [name, text] of Object.entries(others))
+		writeFileSync(join(dir, `body-${name}.json`), text);
 	// Проба tarball: в журнал `${метод} ${все аргументы}` (HEAD — только при ровно `-I` среди аргументов); лишний заголовок виден в журнале.
 	const probe = tarball === 200 ? 'exit 0' : 'exit 22';
 	writeFileSync(
@@ -57,6 +61,7 @@ function runWait(
 			'fi',
 			// Запрос packument: в журнал `PACKUMENT ${все аргументы}` — Accept и лимит времени видны в журнале.
 			`echo "PACKUMENT $*" >> '${calls}'`,
+			`if [ -f '${dir}'/body-"\${last##*%2f}".json ]; then cat '${dir}'/body-"\${last##*%2f}".json; exit 0; fi`,
 			reply,
 			'',
 		].join('\n'),
@@ -166,6 +171,41 @@ test('шаг ожидания выходит на первой попытке, �
 	expect(r.status).toBe(0);
 	expect(r.calls).toStrictEqual([PACKUMENT, `${HEAD} ${TARBALL}`]);
 	expect(r.sleeps).toStrictEqual([]);
+});
+
+const RR_TARBALL = 'https://registry.npmjs.org/@alxwlw/repo-rules/-/repo-rules-1.2.3.tgz';
+const RR_PACKUMENT = PACKUMENT.replace('%2fstack', '%2frepo-rules');
+// stack той версии, которая тянет свой пакет repo-rules: bunx ставит его до старта команды.
+const withDeps = `{"versions":{"1.2.3":{"dist":{"tarball":"${TARBALL}"},"dependencies":{"@alxwlw/repo-rules":"1.2.3","json5":"^2.2.3"}}}}`;
+const rrHas = `{"versions":{"1.2.3":{"dist":{"tarball":"${RR_TARBALL}"}}}}`;
+
+test('stack с зависимостью @alxwlw/repo-rules: ждёт и её, чужие зависимости не опрашивает', () => {
+	const r = runWait(withDeps, '3', '0', 200, { 'repo-rules': rrHas });
+	expect(r.status).toBe(0);
+	expect(r.calls).toStrictEqual([
+		PACKUMENT,
+		`${HEAD} ${TARBALL}`,
+		RR_PACKUMENT,
+		`${HEAD} ${RR_TARBALL}`,
+	]);
+});
+
+test('repo-rules той версии ещё нет в реестре — шаг не выходит с 0 и называет @alxwlw/repo-rules', () => {
+	const lacksRr = '{"versions":{"1.2.2":{}}}';
+	const r = runWait(withDeps, '2', '0', 200, { 'repo-rules': lacksRr });
+	expect(r.status).toBe(1);
+	expect(r.out).toContain(
+		'::error::за 2 попыток в реестре не появилась версия @alxwlw/repo-rules@1.2.3 (нет в packument)',
+	);
+});
+
+test('stack без зависимостей @alxwlw/*: ждёт один stack, как до появления repo-rules', () => {
+	const r = runWait(
+		`{"versions":{"1.2.3":{"dist":{"tarball":"${TARBALL}"},"dependencies":{"json5":"^2.2.3"}}}}`,
+		'3',
+	);
+	expect(r.status).toBe(0);
+	expect(r.calls).toStrictEqual([PACKUMENT, `${HEAD} ${TARBALL}`]);
 });
 
 test('версия в packument, tarball 404 — ждёт и падает после ATTEMPTS попыток', () => {

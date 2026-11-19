@@ -117,18 +117,34 @@ export function waitPublished(
 	return waitVisible(wanted, registry, opts);
 }
 
+/** Поля манифеста, где пакет репозитория может зависеть от другого пакета репозитория. */
+export const DEP_FIELDS = [
+	'dependencies',
+	'devDependencies',
+	'peerDependencies',
+	'optionalDependencies',
+] as const;
+
 /**
- * Проставляет одну lockstep-версию всем пакетам и её же — записям `@alxwlw/*`
+ * Проставляет одну lockstep-версию всем пакетам, каждой зависимости между ними (`DEP_FIELDS`:
+ * pnpm при расхождении молча берёт пакет из реестра) и записям `@alxwlw/*`
  * в `canon/catalogs.json`. Фикстуры не трогает: в них только семя, каталоги приносит sync в тестах.
  */
 export function setVersion(root: string, version: string): void {
 	if (!SEMVER_RE.test(version)) {
 		throw new Error(`version is not semver: "${version}"`);
 	}
-	for (const { dir: pkg } of releasePackages(root)) {
+	const pkgs = releasePackages(root);
+	const names = new Set(pkgs.map((p) => p.name));
+	for (const { dir: pkg } of pkgs) {
 		const path = join(root, 'packages', pkg, 'package.json');
 		const data = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>;
 		data.version = version;
+		for (const field of DEP_FIELDS) {
+			const deps = data[field] as Record<string, string> | undefined;
+			if (!deps) continue;
+			for (const name of Object.keys(deps)) if (names.has(name)) deps[name] = version;
+		}
 		writeFileSync(path, `${JSON.stringify(data, null, '\t')}\n`);
 	}
 	const catalogsPath = join(root, 'packages', 'stack', 'canon', 'catalogs.json');

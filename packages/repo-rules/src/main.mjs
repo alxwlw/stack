@@ -135,3 +135,23 @@ export function run(argv, env, out, err) {
 	out(`repo-rules baseline: wrote ${BASELINE_FILE} (${total} entr(ies))`);
 	return 0;
 }
+
+/**
+ * `run` that never throws: the one place an error becomes a line and exit code 2 (the bin and
+ * `stack repo-rules` both call it).
+ * @param {string[]} argv
+ * @param {NodeJS.ProcessEnv} env
+ * @param {(s: string) => void} out  stdout line
+ * @param {(s: string) => void} err  stderr line
+ * @returns {number} exit code
+ */
+export function main(argv, env, out, err) {
+	try {
+		return run(argv, env, out, err);
+	} catch (e) {
+		// 2, never 0 or 1: an error must not read as «clean» or as «violations found».
+		if (e instanceof RepoRulesError) err(`repo-rules: ${e.message}`);
+		else err(`repo-rules: internal error: ${/** @type {Error} */ (e).stack ?? e}`);
+		return 2;
+	}
+}

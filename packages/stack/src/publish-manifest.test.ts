@@ -10,9 +10,11 @@
  * auto-correct fails the suite before it can reach the registry.
  */
 import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { expect, test } from 'bun:test';
+import { parseAllDocuments } from 'yaml';
 
 import { releasePackages } from '../../../scripts/release.ts';
 
@@ -45,3 +47,29 @@ for (const pkg of packages) {
 		// Таймаут 30 с: npm ходит в реестр, на CI-раннере это упирается в 5 с по умолчанию.
 	}, 30_000);
 }
+
+test('repo-rules импортируется по имени пакета: main и run', async () => {
+	const m = (await import('@alxwlw/repo-rules')) as Record<string, unknown>;
+	expect(Object.keys(m).sort()).toStrictEqual(['main', 'run']);
+});
+
+test('lockfile связывает repo-rules из workspace, а не из реестра', () => {
+	type Lock = {
+		importers: Record<
+			string,
+			{ dependencies?: Record<string, { specifier: string; version: string }> }
+		>;
+	};
+	// pnpm 12 пишет lockfile из двух документов: окружение (packageManager) и проект; нужен второй.
+	const docs = parseAllDocuments(readFileSync(join(ROOT, 'pnpm-lock.yaml'), 'utf8')).map(
+		(d) => d.toJS() as Lock,
+	);
+	const lock = docs.find((d) => d.importers['packages/stack'] !== undefined);
+	const own = JSON.parse(readFileSync(join(ROOT, 'packages/stack/package.json'), 'utf8')) as {
+		version: string;
+	};
+	expect(lock?.importers['packages/stack']?.dependencies?.['@alxwlw/repo-rules']).toStrictEqual({
+		specifier: own.version,
+		version: 'link:../repo-rules',
+	});
+});

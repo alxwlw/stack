@@ -17,6 +17,18 @@ repo-rules [-C <dir>] baseline [--init] [--allow-grow]
 
 `-C <dir>` runs in that directory (any place inside the repository). `--json` prints `{ violations, stale, notes }` instead of text lines. `--help` prints the usage; a missing or unknown command prints it on stderr and exits 2.
 
+## Programmatic use
+
+The package exports `main` and `run` from its entry point (the `exports` field closes deep imports; only `.` and `./package.json` resolve).
+
+```js
+import { main, run } from '@alxwlw/repo-rules';
+
+const code = main(['check', '--json'], process.env, console.log, console.error);
+```
+
+Both have the signature `(argv, env, out, err) => number`: `argv` is the argument list without the program name, `out` and `err` receive one line per call, the result is the exit code. `main` never throws: an error becomes one `repo-rules: …` line on `err` and code 2. `run` lets an error propagate (a thrown `RepoRulesError` or an internal error); use it when you want to handle the error yourself.
+
 ## Rules
 
 | Rule                          | Flags                                                                                                                                                                                                                                                                                                                                                                                                                                                            |

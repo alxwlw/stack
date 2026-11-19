@@ -20,15 +20,19 @@ package and nothing is published; and `rollout.yml` would dispatch any successfu
 ## Cut a release
 
 1. Branch from a fresh `main`.
-2. Run `bun scripts/release.ts version X.Y.Z`. It writes `version` into every `packages/*/package.json`
-   and the same version into each `@alxwlw/*` entry of `canon/catalogs.json`. `release.ts` finds every
-   `packages/*` directory with a `package.json` by itself, and the `publish` job publishes whatever it
-   finds, so a new package needs no workflow edit. Nothing else lists the packages: the consumer-side wait
-   covers only `@alxwlw/stack`, and `stack sync-pr` waits for the `@alxwlw/*` entries of
-   `canon/catalogs.json` itself.
-3. Run the repository gates: `bun test`, `pnpm exec oxlint --type-aware`, `pnpm exec oxfmt --check .`,
+2. Run `bun scripts/release.ts version X.Y.Z`. It writes `version` into every `packages/*/package.json`,
+   the same version into every dependency one of these packages has on another, and the same version
+   into each `@alxwlw/*` entry of `canon/catalogs.json`. `release.ts` finds every `packages/*`
+   directory with a `package.json` by itself, and the `publish` job publishes whatever it finds, so a
+   new package needs no workflow edit. Nothing else lists the packages: the consumer-side wait covers
+   `@alxwlw/stack` and every Own package among its dependencies, and `stack sync-pr`
+   waits for the Own packages, the `@alxwlw/*` entries of the `dev` catalog and the `@alxwlw/*`
+   dependencies of `@alxwlw/stack`.
+3. Run `pnpm install --lockfile-only`: the lockfile stores the specifier of a dependency between the
+   packages, and CI with `--frozen-lockfile` fails on a stale one.
+4. Run the repository gates: `bun test`, `pnpm exec oxlint --type-aware`, `pnpm exec oxfmt --check .`,
    `pnpm exec tsc --build`, `proto run actionlint -- -color`.
-4. Open a PR titled `chore(release): X.Y.Z` and merge it.
+5. Open a PR titled `chore(release): X.Y.Z` and merge it.
 
 ## Tag and publish
 
@@ -65,10 +69,12 @@ secret (`owner/repo`, one per line); the App credentials are `STACK_BOT_APP_ID` 
 This repository is public, so the log carries counters only: `dispatched: N, failed: M`. A failed
 dispatch is counted and its message is dropped, because it can name the consumer.
 
-On the consumer side the reusable `sync.yml` keeps a short safety wait (12 attempts) only for
-`@alxwlw/stack@X.Y.Z`, which `bunx` needs, in case the consumer's runner sees the registry later than the
-publisher did, then runs `bunx @alxwlw/stack@X.Y.Z sync-pr`; the command waits for the `@alxwlw/*` entries
-of the canon's `dev` catalog (12 attempts) before `pnpm install`, then opens the PR.
+On the consumer side the reusable `sync.yml` keeps a short safety wait (12 attempts) for
+`@alxwlw/stack@X.Y.Z` and for every Own package among its dependencies, which `bunx` installs, in case
+the consumer's runner sees the registry later than the publisher did, then runs
+`bunx @alxwlw/stack@X.Y.Z sync-pr`; the command waits for every Own package, the `@alxwlw/*` entries of
+the canon's `dev` catalog and the `@alxwlw/*` dependencies of `@alxwlw/stack` (12 attempts) before
+`pnpm install`, then opens the PR.
 
 ### VERSION arrives with the tag prefix
 

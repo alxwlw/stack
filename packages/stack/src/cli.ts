@@ -3,6 +3,8 @@ import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 
+import { main as repoRulesMain } from '@alxwlw/repo-rules';
+
 import { assertKnownGroups, loadCanon, readCanonSource } from './canon.ts';
 import { checkRepo, syncOutput, syncRepo } from './check.ts';
 import { type Profile, PROFILES, readStackConfig, StackConfigError } from './config.ts';
@@ -10,10 +12,11 @@ import { allowedLine, isHeld } from './exceptions.ts';
 import { type Finding, isDrift } from './findings.ts';
 import { ghGitHub } from './gh.ts';
 import { initConfig } from './init.ts';
+import { ownVersion } from './own-packages.ts';
 import type { PeersReader } from './peers.ts';
 import { peersBaseline } from './peers-baseline.ts';
 import { npmRegistryReader } from './registry.ts';
-import { ownVersion, type RunProcess, SYNC_PR_WAIT, syncPr, withoutGhToken } from './sync-pr.ts';
+import { type RunProcess, SYNC_PR_WAIT, syncPr, withoutGhToken } from './sync-pr.ts';
 
 function fail(message: string): never {
 	console.error(message);
@@ -84,10 +87,46 @@ const pnpmPeers: PeersReader = (cwd) => {
 	return { status: r.status, signal: r.signal, stdout: r.stdout, stderr: r.stderr };
 };
 
+// Проводник: аргументы после `repo-rules` уходят в repo-rules как есть, флаги stack здесь не разбираются.
+// Версия правил — версия самого stack: пакет берётся из зависимостей stack, не из репозитория потребителя.
+if (Bun.argv[2] === 'repo-rules') {
+	// Вывод собирается и дописывается до выхода: process.exit сразу после write обрывает канал на 128 КиБ.
+	let out = '';
+	let err = '';
+	const code = repoRulesMain(
+		Bun.argv.slice(3),
+		process.env,
+		(s) => void (out += `${s}\n`),
+		(s) => void (err += `${s}\n`),
+	);
+	// Ошибка записи (диск полон, канал закрыт) — одна строка и код 2, как в бинарнике repo-rules.
+	let writeError: Error | undefined;
+	const flush = (stream: NodeJS.WriteStream, text: string) =>
+		new Promise<void>((resolve) => {
+			if (text)
+				stream.write(text, (e) => {
+					writeError ??= e ?? undefined;
+					resolve();
+				});
+			else resolve();
+		});
+	await Promise.all([flush(process.stdout, out), flush(process.stderr, err)]);
+	if (writeError) {
+		process.stderr.write(`repo-rules: ${writeError.message}\n`);
+		process.exit(2);
+	}
+	process.exit(code);
+}
+
 const { values, positionals } = parseCliArgs();
 
 const repoRoot = values.repo ?? process.cwd();
 const command = positionals[0];
+if (positionals.includes('repo-rules')) {
+	fail(
+		'repo-rules takes its own arguments and must come first: stack repo-rules [-C <dir>] <command>',
+	);
+}
 
 try {
 	if (command === 'init') {
@@ -150,7 +189,7 @@ try {
 		process.exit(r.code);
 	} else {
 		fail(
-			`unknown command "${command ?? ''}". Available: init, sync, check, sync-pr, peers-baseline`,
+			`unknown command "${command ?? ''}". Available: init, sync, check, sync-pr, peers-baseline, repo-rules`,
 		);
 	}
 } catch (error) {
