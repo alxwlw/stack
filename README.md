@@ -114,8 +114,9 @@ is the only way to create the config file in the first place. Every command acce
 
 `stack sync-pr [--base <branch>] [--no-install]` is meant for the sync workflow (it commits the whole
 tree and force-pushes) and does the whole consumer side of a release in one command: `stack sync`;
-when the repo has a root `package.json`, a wait until every Own package (the `@alxwlw/*` entries of the canon's `dev`
-catalog and the `@alxwlw/*` dependencies of `@alxwlw/stack`) is listed in the npm registry and its tarball answers a HEAD with 200 (skipped with `--no-install`),
+when the repo has a root `package.json`, a wait until every Own package (the `@alxwlw/*` entries of
+the canon's `dev` catalog and the `@alxwlw/*` dependencies of `@alxwlw/stack`) is listed in the npm
+registry and its tarball answers a HEAD with 200 (skipped with `--no-install`),
 `proto install`, `pnpm install --no-frozen-lockfile` (skipped with `--no-install`) and the
 `stack:post-sync` hook; then the changed files one by one, a commit by the GitHub App's bot on
 `stack/v<version>`, a force-push and a PR (or the open one, reused). After the PR it closes the open
@@ -385,9 +386,10 @@ branch and reuses the open PR instead of opening a second one. After a rollout t
 and re-dispatching an old version does not close the PR of a newer one.
 
 `sync.yml` keeps only the App token, the checkout, the setup action and a short wait until
-`@alxwlw/stack@<version>` is listed in the npm registry and its tarball answers a HEAD with 200; everything after that is `stack sync-pr`. It
-needs a version that has the command, 1.11.0 or later: re-dispatching an older version fails with a
-usage error (exit code 2).
+`@alxwlw/stack@<version>` and every Own package among its dependencies (which `bunx` installs) are
+listed in the npm registry and their tarballs answer a HEAD with 200; everything after that is
+`stack sync-pr`. It needs a version that has the command, 1.11.0 or later: re-dispatching an older
+version fails with a usage error (exit code 2).
 
 The work is done by the [`alxwlw-stack-bot`](https://github.com/apps/alxwlw-stack-bot) GitHub App,
 which a consumer installs on its own repositories. It asks for exactly what opening that PR and closing the ones it replaces takes —

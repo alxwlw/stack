@@ -19,8 +19,9 @@ function covers(entry: string, name: string, version: string): boolean {
 }
 
 // Пока в pnpm-workspace.yaml включён minimumReleaseAge, свежий свой пакет канона (каталог dev и
-// зависимости stack) pnpm install отвергает в день публикации: sync держит версии канона в minimumReleaseAgeExclude. Чужие записи
-// и их порядок не трогаются, правка — только добавление версии к своей записи или новая запись.
+// зависимости stack) pnpm install отвергает в день публикации: sync держит версии канона в
+// minimumReleaseAgeExclude. Чужие записи и их порядок не трогаются, правка — только добавление
+// версии к своей записи или новая запись.
 // Правило называет намерение: позицию новой записи и создание списка (ключа нет, ключ без значения)
 // решает применитель, поэтому находки не зависят друг от друга и любую из них можно удержать.
 export function planReleaseAgeExcludes(repo: Repo, canon: Canon): Drift[] {
