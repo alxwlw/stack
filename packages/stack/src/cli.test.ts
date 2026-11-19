@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import {
 	chmodSync,
 	existsSync,
@@ -14,6 +15,7 @@ import { dirname, join } from 'node:path';
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { parse as parseJsonc } from 'jsonc-parser';
+import { parse as parseYaml } from 'yaml';
 
 import { ownVersion } from './own-packages.ts';
 import { git, gitRepo, isolateGitConfig, protoBin, repoDir, UNMET_PEER_LOCK } from './testkit.ts';
@@ -895,5 +897,131 @@ describe('check с группой repo-rules через настоящий cli',
 		const r = await run(['check'], app, LOCAL);
 		expect(r.code).toBe(1);
 		expect(r.err).toContain('repo-rules-violation: x.test.ts:1 — focused-skipped-tests: ');
+	});
+
+	describe('check.yml: история для diff группы repo-rules', () => {
+		// Скрипт шага history берётся из check.yml и исполняется как на runner: bash -e -c в корне checkout.
+		const historyScript = (): string => {
+			const wf = parseYaml(
+				readFileSync(join(import.meta.dir, '../../../.github/workflows/check.yml'), 'utf8'),
+			) as { jobs: Record<string, { steps: { id?: string; run?: string }[] }> };
+			const step = Object.values(wf.jobs)
+				.flatMap((j) => j.steps)
+				.find((s) => s.id === 'history');
+			if (!step?.run) throw new Error('check.yml has no history step');
+			return step.run;
+		};
+		const step = (cwd: string, baseRef = 'main') => {
+			const r = spawnSync('bash', ['-e', '-c', historyScript()], {
+				cwd,
+				encoding: 'utf8',
+				env: { ...process.env, GITHUB_BASE_REF: baseRef },
+			});
+			return { code: r.status, err: r.stderr };
+		};
+		const probe = (cwd: string, ...args: string[]) => {
+			const r = spawnSync('git', args, { cwd, encoding: 'utf8' });
+			return { code: r.status, out: r.stdout.trim() };
+		};
+
+		// origin с PR: feature убирает одну проверку из a.test.ts, main после ответвления ушёл на коммит вперёд,
+		// merge-коммит лежит в refs/pull/1/merge, как у GitHub. Возвращает путь bare-remote.
+		async function prOrigin(opts: { group?: boolean; baseline?: boolean } = {}): Promise<string> {
+			const dir = await rulesRepo({ 'a.test.ts': TWO_EXPECTS }, opts);
+			git(dir, 'checkout', '-b', 'feature');
+			writeFileSync(join(dir, 'a.test.ts'), 'expect(1).toBe(1);\n');
+			git(dir, 'commit', '-am', 'drop a check');
+			git(dir, 'checkout', 'main');
+			writeFileSync(join(dir, 'later.txt'), 'main moved on\n');
+			git(dir, 'add', 'later.txt');
+			git(dir, 'commit', '-m', 'main moves on');
+			git(dir, 'push', 'origin', 'main');
+			git(dir, 'checkout', '--detach', 'main');
+			git(dir, 'merge', '--no-ff', 'feature', '-m', 'merge pr');
+			git(dir, 'push', 'origin', 'HEAD:refs/pull/1/merge');
+			const remote = git(dir, 'remote', 'get-url', 'origin').trim();
+			git(remote, 'config', 'uploadpack.allowFilter', 'true');
+			return remote;
+		}
+
+		// Каталог, каким его оставляет actions/checkout в PR-джобе с fetch-depth 1: один коммит, HEAD — merge-коммит,
+		// origin/<база> нет.
+		function shallowPrCheckout(remote: string): string {
+			const work = mkdtempSync(join(tmpdir(), 'stack-pr-'));
+			git(work, 'init', '-b', 'main');
+			git(work, 'remote', 'add', 'origin', `file://${remote}`);
+			git(
+				work,
+				'fetch',
+				'--no-tags',
+				'--depth=1',
+				'origin',
+				'+refs/pull/1/merge:refs/remotes/pull/1/merge',
+			);
+			git(work, 'checkout', '--force', 'refs/remotes/pull/1/merge');
+			return work;
+		}
+
+		test('группа включена: после шага stack check видит удалённую проверку', async () => {
+			const work = shallowPrCheckout(await prOrigin());
+			expect(probe(work, 'rev-parse', '--is-shallow-repository').out).toBe('true');
+			const s = step(work);
+			expect(s.code).toBe(0);
+			expect(probe(work, 'rev-parse', '--is-shallow-repository').out).toBe('false');
+			expect(probe(work, 'merge-base', 'origin/main', 'HEAD').code).toBe(0);
+			const r = await run(['check'], work, PR);
+			expect(r.code).toBe(1);
+			expect(r.err).toContain(REMOVED_LINE);
+		});
+
+		test('контроль: без шага тот же checkout — repo-rules-unavailable', async () => {
+			const work = shallowPrCheckout(await prOrigin());
+			const r = await run(['check'], work, PR);
+			expect(r.code).toBe(1);
+			expect(r.err).toContain('repo-rules-unavailable: repo-rules diff — git merge-base failed');
+		});
+
+		test('группа выключена: шаг ничего не скачивает', async () => {
+			const work = shallowPrCheckout(await prOrigin({ group: false, baseline: false }));
+			expect(step(work).code).toBe(0);
+			expect(probe(work, 'rev-parse', '--is-shallow-repository').out).toBe('true');
+			expect(probe(work, 'rev-parse', '--verify', '-q', 'origin/main').code).toBe(1);
+		});
+
+		test('нет .stack.jsonc: шаг проходит и ничего не скачивает', async () => {
+			const work = shallowPrCheckout(await prOrigin({ group: false, baseline: false }));
+			rmSync(join(work, '.stack.jsonc'));
+			expect(step(work).code).toBe(0);
+			expect(probe(work, 'rev-parse', '--is-shallow-repository').out).toBe('true');
+		});
+
+		test('слово repo-rules только в комментарии: лишний fetch, падения нет', async () => {
+			const work = shallowPrCheckout(await prOrigin({ group: false, baseline: false }));
+			const cfg = join(work, '.stack.jsonc');
+			writeFileSync(cfg, `// "repo-rules" later\n${readFileSync(cfg, 'utf8')}`);
+			expect(step(work).code).toBe(0);
+			expect(probe(work, 'rev-parse', '--is-shallow-repository').out).toBe('false');
+			const r = await run(['check'], work, PR);
+			expect(r.code).toBe(0);
+			expect(r.out).toBe(NO_DRIFT);
+		});
+
+		test('полный клон: шаг не зовёт --unshallow', async () => {
+			const remote = await prOrigin();
+			const work = mkdtempSync(join(tmpdir(), 'stack-full-'));
+			git(work, 'clone', `file://${remote}`, '.');
+			git(work, 'fetch', 'origin', '+refs/pull/1/merge:refs/remotes/pull/1/merge');
+			git(work, 'checkout', '--force', 'refs/remotes/pull/1/merge');
+			const s = step(work);
+			expect(s.code).toBe(0);
+			expect(s.err).toBe('');
+		});
+
+		test('базовой ветки нет на origin: шаг падает', async () => {
+			const work = shallowPrCheckout(await prOrigin());
+			const s = step(work, 'gone');
+			expect(s.code).not.toBe(0);
+			expect(s.err).toContain("couldn't find remote ref");
+		});
 	});
 });

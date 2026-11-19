@@ -322,6 +322,9 @@ The group checks the whole git repository that holds the `--repo` directory, and
 are relative to the git root. For the rules themselves see
 [`packages/repo-rules/README.md`](packages/repo-rules/README.md).
 
+In a pull request job the reusable `check.yml` fetches the history this part needs; see
+[History for the repo-rules `diff`](#history-for-the-repo-rules-diff).
+
 A repo that already wires repo-rules by hand keeps the same baseline file. The rules of the new version
 may find more: `stack repo-rules baseline --allow-grow` records the growth, and it shows in the PR diff.
 
@@ -373,6 +376,16 @@ the action with `registry` only and set `STACK_REGISTRY_TOKEN` in the job env fr
 The action also exports `ACTIONLINT_BIN` / `SHELLCHECK_BIN` — the real binaries behind the proto
 shims, which race each other when run in parallel — only for those two tools, and only when the
 repository-root `.prototools` pins them.
+
+### History for the repo-rules `diff`
+
+With the `repo-rules` group in `.stack.jsonc`, the reusable `check.yml` fetches the history of the base
+branch itself in a `pull_request` job (`git fetch --filter=blob:none --unshallow`): commits and trees at
+once, file contents on demand. The step needs the credentials that `actions/checkout` leaves in place by
+default, for the fetch and for the later on-demand downloads. Without the group, and on other events, the
+checkout stays as it was and nothing is fetched. If the base branch cannot be fetched, the job fails at
+that step. A workflow that calls `stack check` itself, without `check.yml`, provides the history itself:
+`fetch-depth: 0`, or `--base <ref>` naming a ref that exists in the clone.
 
 ### Secret scanning
 
