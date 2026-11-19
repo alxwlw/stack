@@ -23,20 +23,23 @@ test.skipIf(root)('нечитаемый каталог в дереве: сним
 	}
 });
 
-test.skipIf(root)('нечитаемый каталог при pnpm-workspace.yaml: вложенный package.json в снимке', () => {
-	const dir = repoDir({
-		'pnpm-workspace.yaml': 'packages:\n  - packages/*\n',
-		'packages/a/package.json': '{}',
-		'data/pg/f': 'x',
-	});
-	chmodSync(join(dir, 'data/pg'), 0o000);
-	try {
-		const snapshot = readSnapshot(dir, testCanon());
-		expect(snapshot.get('packages/a/package.json')).toStrictEqual({ text: '{}' });
-	} finally {
-		chmodSync(join(dir, 'data/pg'), 0o755);
-	}
-});
+test.skipIf(root)(
+	'нечитаемый каталог при pnpm-workspace.yaml: вложенный package.json в снимке',
+	() => {
+		const dir = repoDir({
+			'pnpm-workspace.yaml': 'packages:\n  - packages/*\n',
+			'packages/a/package.json': '{}',
+			'data/pg/f': 'x',
+		});
+		chmodSync(join(dir, 'data/pg'), 0o000);
+		try {
+			const snapshot = readSnapshot(dir, testCanon());
+			expect(snapshot.get('packages/a/package.json')).toStrictEqual({ text: '{}' });
+		} finally {
+			chmodSync(join(dir, 'data/pg'), 0o755);
+		}
+	},
+);
 
 test('обход не заходит в скрытые каталоги и SKIP, но читает workflow и action .github', () => {
 	const dir = repoDir({
