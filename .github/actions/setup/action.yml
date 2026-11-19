@@ -1,6 +1,6 @@
 name: setup
 description: >-
-  proto-тулчейн по .prototools; по желанию — токен приватного npm-реестра в user-level ~/.npmrc и
+  proto-тулчейн по .prototools; по желанию — токен приватного npm-реестра в npmrc джоба (NPM_CONFIG_USERCONFIG) и
   pnpm install
 inputs:
   install:
@@ -15,7 +15,7 @@ inputs:
   registry-token-var:
     description: >-
       ИМЯ env-переменной джобы с токеном реестра. Пусто при непустом registry — берётся
-      STACK_REGISTRY_TOKEN; без registry — ошибка. В ~/.npmrc пишется ссылка ${ИМЯ}, не значение:
+      STACK_REGISTRY_TOKEN; без registry — ошибка. В npmrc джоба пишется ссылка ${ИМЯ}, не значение:
       pnpm >= 11.15 игнорирует env-креды в закоммиченном проектном .npmrc.
     default: ''
 runs:
@@ -24,7 +24,7 @@ runs:
     - uses: moonrepo/setup-toolchain@261c62cb5b0f580c7be7c8cd0f023a2e96756095 # v0
       with:
         auto-install: true
-    - name: токен реестра в ~/.npmrc
+    - name: токен реестра в npmrc джоба
       if: inputs.registry != '' || inputs.registry-token-var != ''
       shell: bash
       env:
@@ -45,9 +45,20 @@ runs:
           echo "::error::registry — хост без схемы и завершающего /, получено: $REGISTRY"
           exit 1
         fi
-        line="//${REGISTRY}/:_authToken=\${${TOKEN_VAR}}"
-        touch "$HOME/.npmrc"
-        grep -qxF "$line" "$HOME/.npmrc" || echo "$line" >> "$HOME/.npmrc"
+        key="//${REGISTRY}/:_authToken="
+        line="${key}\${${TOKEN_VAR}}"
+        # Общий ~/.npmrc не трогаем: на self-hosted раннере он живёт между джобами всех репозиториев, и
+        # строка того же ключа от другого джоба перебивала бы эту — pnpm берёт последнюю (DP-662, DX-211).
+        # Свой файл на джоб: прежний user-level конфиг без строк этого ключа плюс своя строка.
+        base="${NPM_CONFIG_USERCONFIG:-$HOME/.npmrc}"
+        own="${RUNNER_TEMP:?RUNNER_TEMP не задан}/stack-setup.npmrc"
+        tmp="$(mktemp "$own.XXXXXX")"
+        if [ -f "$base" ]; then
+          awk -v key="$key" '{ l = $0; gsub(/[ \t]/, "", l); if (index(l, key) != 1) print }' "$base" > "$tmp"
+        fi
+        echo "$line" >> "$tmp"
+        mv -f "$tmp" "$own"
+        echo "NPM_CONFIG_USERCONFIG=$own" >> "$GITHUB_ENV"
     - name: пути к actionlint и shellcheck
       shell: bash
       run: |

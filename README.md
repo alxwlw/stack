@@ -280,8 +280,14 @@ of the canon; new entries stay findings for the PR's CI.
 `moonrepo/setup-toolchain`) and runs `pnpm install --frozen-lockfile` unless `install: false`.
 
 For a private npm registry, pass its host and, optionally, the **name** of the job's env var that
-holds the token. The action writes a reference (`${NODE_AUTH_TOKEN}`), never the value, to the user-level
-`~/.npmrc` — pnpm >= 11.15 ignores env-var credentials in a committed project `.npmrc`:
+holds the token. The action writes a reference (`${NODE_AUTH_TOKEN}`), never the value, to a user-level
+npmrc of the job — pnpm >= 11.15 ignores env-var credentials in a committed project `.npmrc`. That file
+lives in the runner's temp directory and the later steps of the job find it through `NPM_CONFIG_USERCONFIG`:
+it holds the previous user-level config (`~/.npmrc`) minus the auth lines of this registry, plus this job's
+line. The shared `~/.npmrc` is never written: on a self-hosted runner it outlives the job, and a line for the
+same registry from another job would win, since pnpm takes the last line of a key. pnpm, npm and bun read
+the job's file instead of `~/.npmrc`, so a later step that adds npm config writes it to the file that
+`NPM_CONFIG_USERCONFIG` names, not to `~/.npmrc`.
 
 ```yaml
 jobs:
@@ -297,7 +303,7 @@ jobs:
           registry-token-var: NODE_AUTH_TOKEN
 ```
 
-`registry-token-var` may be left out — with `registry` set, the action points `~/.npmrc` at the env
+`registry-token-var` may be left out — with `registry` set, the action points the job's npmrc at the env
 var `STACK_REGISTRY_TOKEN` (pnpm reads it), so the job only declares that variable; `registry-token-var` without
 `registry` fails the step.
 
@@ -306,7 +312,7 @@ The project `.npmrc` must still map the scope to the registry (e.g.
 
 The reusable workflows `check.yml`, `sync.yml` and `renovate.yml` pass this through: each takes an
 optional `registry` input (host without scheme, default empty) and an optional `registry-token`
-secret. With `registry` empty they behave as before and `~/.npmrc` is untouched. The canon files
+secret. With `registry` empty they behave as before and no npmrc is written. The canon files
 synced into a consumer wire them to the repository variable `STACK_REGISTRY` and the secret
 `STACK_REGISTRY_TOKEN`, so a repo opts in by setting those two (for `acme/app`: variable
 `STACK_REGISTRY=npm.pkg.github.com`, secret `STACK_REGISTRY_TOKEN`). `check.yml` and `sync.yml` call

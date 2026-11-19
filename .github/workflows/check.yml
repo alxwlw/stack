@@ -26,7 +26,7 @@ jobs:
   check:
     runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
     env:
-      # Значение не печатается и не пишется в ~/.npmrc: setup по умолчанию берёт эту переменную и кладёт туда ссылку ${STACK_REGISTRY_TOKEN}.
+      # Значение не печатается и не пишется на диск: setup по умолчанию берёт эту переменную и кладёт в npmrc джоба ссылку ${STACK_REGISTRY_TOKEN}.
       STACK_REGISTRY_TOKEN: ${{ secrets.registry-token }}
     steps:
       - uses: actions/checkout@v7
