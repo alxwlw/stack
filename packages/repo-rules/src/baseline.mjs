@@ -118,6 +118,29 @@ export function growth(prev, next) {
 }
 
 /**
+ * `prev` lowered to what `next` has: an entry that is gone is removed, one that shrank takes the lower
+ * count; one that grew keeps its count and a new one is not added.
+ * @param {Counts} prev
+ * @param {Counts} next
+ * @returns {{ counts: Counts, fixed: { rule: RepoRule, path: string, from: number, to: number }[] }}
+ */
+export function dropFixed(prev, next) {
+	const counts = emptyCounts();
+	/** @type {{ rule: RepoRule, path: string, from: number, to: number }[]} */
+	const fixed = [];
+	for (const rule of REPO_RULES) {
+		for (const [path, from] of Object.entries(prev[rule])) {
+			const to = next[rule][path] ?? 0;
+			if (to < from) {
+				fixed.push({ rule, path, from, to });
+				if (to > 0) counts[rule][path] = to;
+			} else counts[rule][path] = from;
+		}
+	}
+	return { counts, fixed };
+}
+
+/**
  * Keys sorted, the existing file's indentation kept (tab or two spaces), trailing newline.
  * @param {string} root
  * @param {Counts} counts

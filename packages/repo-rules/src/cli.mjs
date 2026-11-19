@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // @ts-check
-/** Bin entry: `repo-rules check | diff --base <ref> | baseline [--init] [--allow-grow]`. */
+/** Bin entry: `repo-rules check | diff --base <ref> | baseline [--init] [--allow-grow] | baseline --drop-fixed`. */
 import { main } from './main.mjs';
 
 // Attached before the first write: a closed pipe (EPIPE) or a full disk (ENOSPC) on stdout is one

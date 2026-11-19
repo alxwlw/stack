@@ -6,6 +6,7 @@ import { parseArgs } from 'node:util';
 import {
 	BASELINE_FILE,
 	compare,
+	dropFixed,
 	emptyCounts,
 	growth,
 	loadBaseline,
@@ -18,7 +19,8 @@ import { scan } from './scan.mjs';
 
 const USAGE = `usage: repo-rules [-C <dir>] check [--json]
        repo-rules [-C <dir>] diff [--base <ref>] [--json]
-       repo-rules [-C <dir>] baseline [--init] [--allow-grow]`;
+       repo-rules [-C <dir>] baseline [--init] [--allow-grow]
+       repo-rules [-C <dir>] baseline --drop-fixed`;
 
 /** @param {string[]} argv */
 function parseOptions(argv) {
@@ -31,6 +33,7 @@ function parseOptions(argv) {
 			base: { type: 'string' },
 			init: { type: 'boolean' },
 			'allow-grow': { type: 'boolean' },
+			'drop-fixed': { type: 'boolean' },
 			help: { type: 'boolean', short: 'h' },
 			version: { type: 'boolean' },
 		},
@@ -119,6 +122,17 @@ export function run(argv, env, out, err) {
 	}
 
 	// Last command: `baseline`.
+	if (values['drop-fixed']) {
+		if (values.init || values['allow-grow'])
+			throw new RepoRulesError('--drop-fixed does not go with --init or --allow-grow');
+		const recorded = loadBaseline(root);
+		if (!recorded) return 0;
+		const { counts, fixed } = dropFixed(recorded, scan(root, cfg).actual);
+		if (!fixed.length) return 0;
+		writeBaseline(root, counts);
+		out(`repo-rules baseline: lowered ${fixed.length} entr(ies) in ${BASELINE_FILE}`);
+		return 0;
+	}
 	const prev = loadBaseline(root);
 	if (values.init && prev) throw new RepoRulesError(`${BASELINE_FILE} already exists`);
 	if (!values.init && !prev)
