@@ -683,10 +683,12 @@ describe('stack repo-rules', () => {
 		const files: Record<string, string> = {};
 		for (let i = 0; i < 3000; i++) files[`f${i}.test.ts`] = `test.only('x${i}', () => {});\n`;
 		const { dir } = gitRepo(files);
-		const viaStack = await spawnIn(['bun', CLI, 'repo-rules', 'check', '--json'], dir);
-		const viaBin = await spawnIn(['node', RR_BIN, 'check', '--json'], dir);
-		expect(viaBin.out.length).toBeGreaterThan(300_000);
-		expect(viaStack).toStrictEqual(viaBin);
+		// Читатель через shell-канал: Response().text() выбирает канал слишком быстро и обрезания не видит.
+		const bytes = async (cmd: string) =>
+			(await spawnIn(['sh', '-c', `${cmd} | wc -c`, CLI, RR_BIN], dir)).out.trim();
+		const viaBin = await bytes('node "$1" check --json');
+		expect(Number(viaBin)).toBeGreaterThan(300_000);
+		expect(await bytes('bun "$0" repo-rules check --json')).toBe(viaBin);
 	}, 60_000);
 
 	test('коды проводника: чисто 0, нарушение 1, вне git 2', async () => {
