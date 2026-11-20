@@ -409,7 +409,7 @@ turn their violations into findings. Without the group no tool is run and nothin
 ```bash
 # .stack.jsonc: "with": ["guardrails"]
 proto install   # locally: the versions pinned in .prototools
-proto trust     # only when .prototools vendors proto plugins
+proto trust     # locally, for any .prototools: proto ignores the pins of one it does not trust
 ```
 
 The inputs are the tracked files of the working tree. Untracked files, ignored files and a worktree inside the
@@ -428,9 +428,13 @@ otherwise from `proto bin`; its version must equal the pin, so a stale variable 
 `.prototools` (proto then ignores the pins) is never read as clean. shellcheck also runs inside actionlint,
 on the `run:` steps of the workflows, at the pinned version; pyflakes inside actionlint is switched off.
 
-The threshold is the output of the tool, after the repo's own decisions about a single rule: the shellcheck
-config file, directives in the code and the ignored paths in the actionlint config all apply. `error` and
-`warning` are findings; `info` and `style` are not, inside actionlint too. Two findings come out of the group:
+The threshold is the output of the tool, after the repo's own decisions about a single rule. For scripts, the
+shellcheck config file and directives in the code apply. For workflows, only directives in the code and the
+ignored paths in the actionlint config apply: actionlint runs shellcheck without reading its config file.
+`error` and `warning` are findings; `info` and `style` are not, inside actionlint too. `stack` runs the tools
+without the `SHELLCHECK_OPTS` variable of the caller, so it cannot move the threshold. A shellcheck config file
+above the repository root, such as one in the home directory, is still read by shellcheck locally; it is not
+part of the repo, and the CI run does not have it. Two findings come out of the group:
 
 | Code                     | When                                                                                                                                                                                   |
 | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -439,9 +443,9 @@ config file, directives in the code and the ignored paths in the actionlint conf
 
 None of them can be held by an exception. To turn the gate off, drop `guardrails` from `with`.
 
-Each tool also leaves one note on stderr: `guardrails <tool> <version>: <m> file(s), <n> finding(s)`,
-`guardrails <tool>: skipped (no files)` or `guardrails <tool>: unavailable`. A note never changes the exit
-code.
+Inside a git repository each tool also leaves one note on stderr: `guardrails <tool> <version>: <m> file(s),
+<n> finding(s)`, `guardrails <tool>: skipped (no files)` or `guardrails <tool>: unavailable`. Outside git there
+are no notes, only the `guardrails-unavailable` finding. A note never changes the exit code.
 
 To run the tools by hand at the pinned versions:
 
@@ -449,6 +453,10 @@ To run the tools by hand at the pinned versions:
 proto run shellcheck -- <files>
 proto run actionlint -- -shellcheck="$(proto bin shellcheck)" -pyflakes=
 ```
+
+These commands are for a plain shell. In an AI agent environment `proto bin` prints JSON lines instead of a
+path, and actionlint then runs without shellcheck and reports nothing for the `run:` steps; there,
+`stack check` is the way to reproduce the exact run.
 
 ## CI
 

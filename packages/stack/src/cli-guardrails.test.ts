@@ -92,6 +92,20 @@ describe('check с группой guardrails через настоящий cli',
 	);
 
 	test(
+		'SHELLCHECK_OPTS из окружения не сдвигает порог',
+		async () => {
+			const dir = await guardRepo(BAD_FILES);
+			const r = await run(['check'], dir, { ...tools, SHELLCHECK_OPTS: '-S error' });
+			expect(r.code).toBe(1);
+			expect(violations(r.err)).toContainEqual(
+				expect.stringContaining('scripts/a.sh:2 — shellcheck SC2164: '),
+			);
+			expect(r.out).not.toContain('canon: no drift');
+		},
+		TIMEOUT,
+	);
+
+	test(
 		'чистый репозиторий: код 0 и no drift, канонные workflow проходят actionlint',
 		async () => {
 			const dir = await guardRepo(CLEAN_FILES);
@@ -132,6 +146,8 @@ describe('check с группой guardrails через настоящий cli',
 			expect(r.err).toContain(
 				'guardrails-unavailable: git ls-files — fatal: not a git repository (or any of the parent directories): .git',
 			);
+			expect(r.err).not.toContain('guardrails actionlint');
+			expect(r.err).not.toContain('guardrails shellcheck');
 			expect(r.out).not.toContain('canon: no drift');
 			rmSync(dir, { recursive: true, force: true });
 		},

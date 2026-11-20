@@ -284,7 +284,7 @@ test('checkRepo: .prototools репозитория доходит до чита
 	const results: Record<string, GuardrailRun> = {
 		'git ls-files -z': { code: 0, out: '.prototools\0a.sh\0', err: '' },
 		'/x/sc --version': { code: 0, out: 'version: 0.11.0\n', err: '' },
-		'/x/sc -f json1 a.sh': {
+		'/x/sc -f json1 -- a.sh': {
 			code: 1,
 			err: '',
 			out: JSON.stringify({

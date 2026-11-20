@@ -80,6 +80,10 @@ test('protoBinPath: голый путь, NDJSON, ошибки', () => {
 			err: 'Error: proto::locate::missing_executable\n\n  × Unable to find …\n',
 		}),
 	).toEqual({ unavailable: 'Error: proto::locate::missing_executable' });
+	// message ошибки с пустой первой строкой: причина берётся из failureReason, не из пустой строки.
+	expect(protoBinPath({ code: 1, out: '{"type":"error","message":"\\nx"}\n', err: '' })).toEqual({
+		unavailable: 'exited with 1',
+	});
 	expect('unavailable' in (protoBinPath(ok('')) as object)).toBe(true);
 	expect('unavailable' in (protoBinPath(ok('{not json\n')) as object)).toBe(true);
 });
@@ -173,6 +177,7 @@ test('locateTool: proto упал; проба печатает мусор; про
 
 test('настоящий proto: бинарники ровно версий пинов корня репозитория', () => {
 	const pins = repoPins(readFileSync(join(ROOT, '.prototools'), 'utf8'));
+	if ('unavailable' in pins) throw new Error(pins.unavailable);
 	const port: GuardrailsPort = {
 		run: spawnRunner(ROOT),
 		env: { ...process.env, ACTIONLINT_BIN: '', SHELLCHECK_BIN: '' },
@@ -182,8 +187,8 @@ test('настоящий proto: бинарники ровно версий пи�
 	if ('unavailable' in a || 'unavailable' in s) {
 		throw new Error(JSON.stringify({ a, s }));
 	}
-	expect(a.version).toBe('1.7.12');
-	expect(s.version).toBe('0.11.0');
+	expect(a.version).toBe(pins.actionlint ?? '');
+	expect(s.version).toBe(pins.shellcheck ?? '');
 	expect(existsSync(a.bin)).toBe(true);
 	expect(existsSync(s.bin)).toBe(true);
 }, 30_000);

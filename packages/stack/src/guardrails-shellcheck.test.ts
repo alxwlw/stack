@@ -19,7 +19,13 @@ const json = (comments: unknown[]): string => JSON.stringify({ comments });
 const run = (code: number, out: string, err = ''): GuardrailRun => ({ code, out, err });
 
 test('shellcheckArgv: json1 и файлы как есть', () => {
-	expect(shellcheckArgv(['a.sh', 'with space'])).toEqual(['-f', 'json1', 'a.sh', 'with space']);
+	expect(shellcheckArgv(['a.sh', 'with space'])).toEqual([
+		'-f',
+		'json1',
+		'--',
+		'a.sh',
+		'with space',
+	]);
 });
 
 test('QUIET_LEVELS: info и style', () => {
@@ -128,6 +134,11 @@ test('shellcheck: файл без расширения и имя с пробел
 	expect(rows.filter((r) => r.path === 'with space')).toEqual([
 		{ rule: 'SC2128', path: 'with space', line: 2 },
 	]);
+}, 30_000);
+
+test('shellcheck: файл с именем флага в корне проверяется', () => {
+	const v = check({ '-x': '#!/bin/bash\ncd dir\n' }, ['-x']);
+	expect(pick(v)).toEqual([{ rule: 'SC2164', path: '-x', line: 2 }]);
 }, 30_000);
 
 test('shellcheck: source без -x — info, не находка', () => {

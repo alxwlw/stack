@@ -151,6 +151,7 @@ test('shellScripts: расширения и шебанги, порядок вх�
 		'.envrc': 'export A=1\n',
 		'bin/crlf': '#!/bin/sh\r\n',
 		'bin/long': `#!/usr/bin/env${' '.repeat(300)}bash\n`,
+		'bin/mid': `#!/usr/bin/env${' '.repeat(200)}bash\n`,
 	});
 	try {
 		const paths = [
@@ -166,6 +167,7 @@ test('shellScripts: расширения и шебанги, порядок вх�
 			'.envrc',
 			'bin/crlf',
 			'bin/long',
+			'bin/mid',
 		];
 		expect(shellScripts(dir, paths)).toStrictEqual([
 			'a.sh',
@@ -174,6 +176,7 @@ test('shellScripts: расширения и шебанги, порядок вх�
 			'bin/run',
 			'with space',
 			'bin/crlf',
+			'bin/mid',
 		]);
 	} finally {
 		rmSync(dir, { recursive: true, force: true });

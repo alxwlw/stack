@@ -94,7 +94,7 @@ test('только скрипт — shellcheck запущен, actionlint skippe
 	expect(f.calls).toStrictEqual([
 		['git', ['ls-files', '-z']],
 		['/x/sc', ['--version']],
-		['/x/sc', ['-f', 'json1', 'a.sh']],
+		['/x/sc', ['-f', 'json1', '--', 'a.sh']],
 	]);
 });
 
@@ -177,7 +177,7 @@ test('скрипты и workflow, нет пина actionlint — actionlint не
 	expect(f.calls).toStrictEqual([
 		['git', ['ls-files', '-z']],
 		['/x/sc', ['--version']],
-		['/x/sc', ['-f', 'json1', 'a.sh', 'scripts/b.bash']],
+		['/x/sc', ['-f', 'json1', '--', 'a.sh', 'scripts/b.bash']],
 	]);
 });
 
@@ -301,5 +301,5 @@ test('отслеживаемый скрипт, которого нет на ди
 		},
 	});
 	expect(f.calls).toHaveLength(3);
-	expect(f.calls.at(-1)).toStrictEqual(['/x/sc', ['-f', 'json1', 'a.sh']]);
+	expect(f.calls.at(-1)).toStrictEqual(['/x/sc', ['-f', 'json1', '--', 'a.sh']]);
 });

@@ -40,10 +40,13 @@ export function failureReason(run: GuardrailRun): string {
 	return first ?? `exited with ${run.code}`;
 }
 
-// Адаптер порта: процесс в корне репозитория. Не запустился — код -1 и причина в stderr.
+// Адаптер порта: процесс в корне репозитория, окружение родителя без SHELLCHECK_OPTS (иначе чужие
+// флаги сдвинут порог). Не запустился — код -1 и причина в stderr.
 export function spawnRunner(root: string): GuardrailRunner {
+	const env = { ...process.env };
+	delete env.SHELLCHECK_OPTS;
 	return (cmd, argv) => {
-		const r = spawnSync(cmd, argv, { cwd: root, encoding: 'utf8', maxBuffer: 1 << 30 });
+		const r = spawnSync(cmd, argv, { cwd: root, env, encoding: 'utf8', maxBuffer: 1 << 30 });
 		if (r.error) return { code: -1, out: '', err: `${cmd}: ${r.error.message}` };
 		return { code: r.status ?? -1, out: r.stdout, err: r.stderr };
 	};

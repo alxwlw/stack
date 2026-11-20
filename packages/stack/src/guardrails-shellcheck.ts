@@ -10,8 +10,9 @@ import {
 export const QUIET_LEVELS: ReadonlySet<string> = new Set(['info', 'style']);
 
 // Без -x, -S и --norc: решения репозитория (.shellcheckrc, директивы) действуют, порог — в разборе.
+// `--` перед путями: файл с именем `-x` или `--norc` в корне не должен читаться как флаг.
 export function shellcheckArgv(files: readonly string[]): string[] {
-	return ['-f', 'json1', ...files];
+	return ['-f', 'json1', '--', ...files];
 }
 
 const SHAPE = 'output has an unexpected shape: comments';
