@@ -4,16 +4,17 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { parse as parseYaml } from 'yaml';
 
 import {
 	BARE,
 	CLI,
 	git,
 	gitRepo,
+	historyStep as step,
 	isolateGitConfig,
 	repoDir,
 	runCli as run,
+	shallowPrCheckout,
 	spawnIn,
 } from './testkit.ts';
 
@@ -179,25 +180,6 @@ describe('check с группой repo-rules через настоящий cli',
 	});
 
 	describe('check.yml: история для diff группы repo-rules', () => {
-		// Скрипт шага history берётся из check.yml и исполняется как на runner: bash -e -c в корне checkout.
-		const historyScript = (): string => {
-			const wf = parseYaml(
-				readFileSync(join(import.meta.dir, '../../../.github/workflows/check.yml'), 'utf8'),
-			) as { jobs: Record<string, { steps: { id?: string; run?: string }[] }> };
-			const step = Object.values(wf.jobs)
-				.flatMap((j) => j.steps)
-				.find((s) => s.id === 'history');
-			if (!step?.run) throw new Error('check.yml has no history step');
-			return step.run;
-		};
-		const step = (cwd: string, baseRef = 'main') => {
-			const r = spawnSync('bash', ['-e', '-c', historyScript()], {
-				cwd,
-				encoding: 'utf8',
-				env: { ...process.env, GITHUB_BASE_REF: baseRef },
-			});
-			return { code: r.status, err: r.stderr };
-		};
 		const probe = (cwd: string, ...args: string[]) => {
 			const r = spawnSync('git', args, { cwd, encoding: 'utf8' });
 			return { code: r.status, out: r.stdout.trim() };
@@ -221,24 +203,6 @@ describe('check с группой repo-rules через настоящий cli',
 			const remote = git(dir, 'remote', 'get-url', 'origin').trim();
 			git(remote, 'config', 'uploadpack.allowFilter', 'true');
 			return remote;
-		}
-
-		// Каталог, каким его оставляет actions/checkout в PR-джобе с fetch-depth 1: один коммит, HEAD — merge-коммит,
-		// origin/<база> нет.
-		function shallowPrCheckout(remote: string): string {
-			const work = mkdtempSync(join(tmpdir(), 'stack-pr-'));
-			git(work, 'init', '-b', 'main');
-			git(work, 'remote', 'add', 'origin', `file://${remote}`);
-			git(
-				work,
-				'fetch',
-				'--no-tags',
-				'--depth=1',
-				'origin',
-				'+refs/pull/1/merge:refs/remotes/pull/1/merge',
-			);
-			git(work, 'checkout', '--force', 'refs/remotes/pull/1/merge');
-			return work;
 		}
 
 		test('группа включена: после шага stack check видит удалённую проверку', async () => {
