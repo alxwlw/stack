@@ -139,8 +139,8 @@ tree and force-pushes) and does the whole consumer side of a release in one comm
 when the repo has a root `package.json`, a wait until every Own package (the `@alxwlw/*` entries of
 the canon's `dev` catalog and the `@alxwlw/*` dependencies of `@alxwlw/stack`) is listed in the npm
 registry and its tarball answers a HEAD with 200 (skipped with `--no-install`),
-`proto install`, `pnpm install --no-frozen-lockfile` (skipped with `--no-install`) and the
-`stack:post-sync` hook; with the `repo-rules` group — in a repo with no root `package.json` and with
+`proto install`, `pnpm install --no-frozen-lockfile` and `pnpm dedupe` (both skipped with
+`--no-install`) and the `stack:post-sync` hook; with the `repo-rules` group — in a repo with no root `package.json` and with
 `--no-install` too — it lowers the fixed entries of the repo-rules baseline; then the changed files one by one, a commit by the GitHub App's bot on
 `stack/v<version>`, a force-push and a PR (or the open one, reused). After the PR it closes the open
 sync-PRs of the bot for older versions on the same base, with a comment that links this version's PR, and
@@ -254,6 +254,8 @@ workflows whose copies lag behind `.prototools`. The rewrite can change a major 
 pnpm it installs), and the tag of a freshly pinned version may not be in the image registry yet. CI that does not
 build the image on a pull request shows neither, so build the image from the PR branch before merging it — or
 hold the file back with an exception (`{ "file": "<path>", "reason": "…" }`) added in that same PR.
+The lockfile diff of that PR can also carry packages the canon does not touch: `pnpm dedupe` collapses whatever
+was already duplicated on the base branch.
 
 ## Exceptions
 
@@ -511,13 +513,16 @@ replaces the copy.
 
 A consumer can add a repo-owned finishing step: a `stack:post-sync` script in the root
 `package.json`. A repo with a `package.json` gets, in this order, `proto install` (the pins the sync
-just raised must be installed first), `pnpm install` (unless `--no-install`) and then
-`pnpm run stack:post-sync` if the script exists, so regenerated files land in the same sync PR. Only
+just raised must be installed first), `pnpm install` and `pnpm dedupe` (unless `--no-install`) and then
+`pnpm run stack:post-sync` if the script exists, so regenerated files land in the same sync PR. The lockfile of
+the PR is therefore deduplicated before the hook runs: a hook that only ran `pnpm dedupe` is no longer needed,
+and one that changes manifests and reinstalls still dedupes after its own install. `pnpm dedupe` is a full
+install, so the root lifecycle scripts (`preinstall`, `install`, `postinstall`, `prepare`) run a second time. Only
 after the hook does the command look for changed files. The script gets `VERSION` (the stack version,
 without `v`) in its environment. The hook runs with or without `--no-install`, so it decides itself
-whether it needs dependencies. A failing `proto install`, install or hook, or an unreadable
+whether it needs dependencies. A failing `proto install`, install, dedupe or hook, or an unreadable
 `package.json`, fails the job: no commit and no PR, rather than a PR without the finishing. Without
-the script the command only runs `proto install` and the install; without a `package.json` it does
+the script the command only runs `proto install`, the install and the dedupe; without a `package.json` it does
 nothing of that.
 
 ## License

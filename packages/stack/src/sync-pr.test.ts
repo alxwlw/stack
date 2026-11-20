@@ -392,7 +392,7 @@ describe('syncPr', () => {
 		});
 	});
 
-	test('порядок шагов: sync, ожидание реестра, proto install, pnpm install, хук с VERSION, публикация', async () => {
+	test('порядок шагов: sync, ожидание реестра, proto install, pnpm install, pnpm dedupe, хук с VERSION, публикация', async () => {
 		const { dir } = gitRepo({ '.stack.jsonc': '{ "profile": "node" }', 'package.json': NODE_PKG });
 		const r = await runSyncPr(dir);
 		expect(r.code).toBe(0);
@@ -400,6 +400,7 @@ describe('syncPr', () => {
 			...SERVED,
 			'proto install',
 			'pnpm install --no-frozen-lockfile',
+			'pnpm dedupe',
 			HOOK,
 		]);
 		expect(r.github.created).toHaveLength(1);
@@ -431,7 +432,7 @@ describe('syncPr', () => {
 		expect(r.github.created).toHaveLength(1);
 	});
 
-	test('--no-install: ни ожидания, ни pnpm install; proto install и хук идут', async () => {
+	test('--no-install: ни ожидания, ни pnpm install, ни pnpm dedupe; proto install и хук идут', async () => {
 		const { dir } = gitRepo({ '.stack.jsonc': '{ "profile": "node" }', 'package.json': NODE_PKG });
 		const r = await runSyncPr(dir, { install: false });
 		expect(r.code).toBe(0);
@@ -444,7 +445,12 @@ describe('syncPr', () => {
 			'package.json': JSON.stringify({ name: 'app' }),
 		});
 		const r = await runSyncPr(dir);
-		expect(r.journal).toEqual([...SERVED, 'proto install', 'pnpm install --no-frozen-lockfile']);
+		expect(r.journal).toEqual([
+			...SERVED,
+			'proto install',
+			'pnpm install --no-frozen-lockfile',
+			'pnpm dedupe',
+		]);
 	});
 
 	test('хук упал — код 1, публикации нет', async () => {
@@ -473,7 +479,7 @@ describe('syncPr', () => {
 		expect(r.err.at(-1)).toBe('sync-pr: `proto install` exited with 1');
 	});
 
-	test('pnpm install упал — код 1, хук не зовётся', async () => {
+	test('pnpm install упал — код 1, ни dedupe, ни хук не зовутся', async () => {
 		const { dir } = gitRepo({ '.stack.jsonc': '{ "profile": "node" }', 'package.json': NODE_PKG });
 		const r = await runSyncPr(
 			dir,
@@ -483,6 +489,48 @@ describe('syncPr', () => {
 		expect(r.code).toBe(1);
 		expect(r.journal).toEqual([...SERVED, 'proto install', 'pnpm install --no-frozen-lockfile']);
 		expect(r.err.at(-1)).toBe('sync-pr: `pnpm install --no-frozen-lockfile` exited with 1');
+	});
+
+	test('pnpm dedupe упал — код 1, хук не зовётся, публикации нет', async () => {
+		const { dir } = gitRepo({ '.stack.jsonc': '{ "profile": "node" }', 'package.json': NODE_PKG });
+		const r = await runSyncPr(dir, {}, { run: (l) => (l === 'pnpm dedupe' ? 1 : 0) });
+		expect(r.code).toBe(1);
+		expect(r.journal).toStrictEqual([
+			...SERVED,
+			'proto install',
+			'pnpm install --no-frozen-lockfile',
+			'pnpm dedupe',
+		]);
+		expect(r.err.at(-1)).toBe('sync-pr: `pnpm dedupe` exited with 1');
+		expect(r.github.calls).toStrictEqual([]);
+		expect(git(dir, 'branch', '--list', 'stack/v1.2.3')).toBe('');
+	});
+
+	// Приёмка 6: install оставил в lockfile дубликаты — хук видит lockfile уже после dedupe, и в коммит идёт он.
+	test('lockfile после dedupe: его видит хук, и он попадает в коммит sync-PR', async () => {
+		const { dir, remote } = gitRepo({
+			'.stack.jsonc': '{ "profile": "node" }',
+			'package.json': NODE_PKG,
+		});
+		const lock = join(dir, 'pnpm-lock.yaml');
+		const duplicated = "lockfileVersion: '9.0'\n# ms@2.1.1, ms@2.1.3\n";
+		const deduped = "lockfileVersion: '9.0'\n# ms@2.1.3\n";
+		let seenByHook = '';
+		const r = await runSyncPr(
+			dir,
+			{},
+			{
+				run: (line) => {
+					if (line === 'pnpm install --no-frozen-lockfile') writeFileSync(lock, duplicated);
+					if (line === 'pnpm dedupe') writeFileSync(lock, deduped);
+					if (line === 'pnpm run stack:post-sync') seenByHook = readFileSync(lock, 'utf8');
+					return undefined;
+				},
+			},
+		);
+		expect(r.code).toBe(0);
+		expect(seenByHook).toBe(deduped);
+		expect(git(remote, 'show', 'stack/v1.2.3:pnpm-lock.yaml')).toBe(deduped);
 	});
 
 	test('реестр не показал версию — код 1, процессов нет', async () => {
@@ -538,6 +586,7 @@ describe('syncPr', () => {
 			...SERVED,
 			'proto install',
 			'pnpm install --no-frozen-lockfile',
+			'pnpm dedupe',
 			HOOK,
 			'peers',
 		]);
