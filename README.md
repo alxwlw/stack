@@ -390,7 +390,7 @@ are relative to the git root. For the rules themselves see
 [`packages/repo-rules/README.md`](packages/repo-rules/README.md).
 
 In a pull request job the reusable `check.yml` fetches the history this part needs; see
-[History for the repo-rules `diff`](#history-for-the-repo-rules-diff).
+[History in pull requests](#history-in-pull-requests).
 
 A repo that already wires repo-rules by hand keeps the same baseline file. The rules of the new version
 may find more: `stack repo-rules baseline --allow-grow` records the growth, and it shows in the PR diff.
@@ -404,8 +404,8 @@ fails (a baseline file that does not parse, for one), `stack sync-pr` prints one
 
 ## Guardrails
 
-The opt-in `guardrails` group makes `stack check` run actionlint and shellcheck on the files git tracks and
-turn their violations into findings. Without the group no tool is run and nothing changes in the output.
+The opt-in `guardrails` group makes `stack check` run actionlint, shellcheck and gitleaks on the files git
+tracks, gitleaks also on the commits of a pull request, and turn their violations into findings. Without the group no tool is run and nothing changes in the output.
 
 ```bash
 # .stack.jsonc: "with": ["guardrails"]
@@ -420,14 +420,46 @@ repository are not checked; a directory outside git is `guardrails-unavailable`.
 - shellcheck: `*.sh` and `*.bash` files, and files with no extension whose first line is a shebang for sh,
   bash, dash or ksh (also through `env`). shellcheck runs without `-x`.
 
+- gitleaks: every tracked file of the working tree. `stack` scans a temporary copy of those files, so the seeded
+  config, its `[extend]`, the gitleaks ignore file and the paths in fingerprints are the same as in the
+  repository, while untracked and ignored files (a local `.env`, a worktree inside the repository) are never
+  read. The copy is removed when the scan ends.
+
 A tool with no files is not run. actionlint is needed only when there are workflow files; shellcheck is needed
 when there are scripts or workflow files, because actionlint runs the pinned shellcheck on the `run:` steps.
 
 The version of each tool is the pin in the repo's `.prototools`; a missing pin is `guardrails-unavailable`.
-The binary comes from the variable `ACTIONLINT_BIN` or `SHELLCHECK_BIN` when it is set and not empty,
+The binary comes from the variable `ACTIONLINT_BIN`, `SHELLCHECK_BIN` or `GITLEAKS_BIN` when it is set and not empty,
 otherwise from `proto bin`; its version must equal the pin, so a stale variable or an untrusted
 `.prototools` (proto then ignores the pins) is never read as clean. shellcheck also runs inside actionlint,
 on the `run:` steps of the workflows, at the pinned version; pyflakes inside actionlint is switched off.
+
+### Commits of a pull request
+
+Besides the files, gitleaks scans the commits from the merge-base of `HEAD` and the base branch up to `HEAD`,
+so a secret that a pull request adds and a later commit removes is still found. The base is chosen like this:
+
+- `--base <ref>` of `stack check`, when given;
+- in a `pull_request` job of GitHub Actions, `origin/<base branch>`;
+- otherwise the scan is skipped, with a note: outside a pull request, and locally without `--base`, no range
+  is known.
+
+A pull request job whose clone has no history of the base (no `origin/<base branch>`, no merge-base) is
+`guardrails-unavailable` with target `gitleaks commits`, never a clean result; the reusable `check.yml` fetches
+that history, see [History in pull requests](#history-in-pull-requests). The finding of a commit reads
+`guardrails-violation: <path>:<line> — gitleaks <rule>: <description> (commit <12 hex digits>)`.
+
+### Secrets in the output and holding a finding
+
+`stack` never prints the value of a secret: gitleaks runs with `--redact`, and from its report `stack` reads
+only the rule, the file, the line, the description and the commit. To hold a finding use the means of gitleaks
+itself: the comment `# gitleaks:allow` on the line, the fingerprint of the finding in the gitleaks ignore file
+in the repository root, or an allowlist in `.gitleaks.toml`. The variables `GITLEAKS_CONFIG` and
+`GITLEAKS_CONFIG_TOML` are not passed to gitleaks, so the environment cannot replace the config of the
+repository. gitleaks reads the ignore file from the root also when it scans commits, so an untracked ignore
+file holds a finding of a commit locally and does not in CI. `stack` also switches off the colour of git for
+the scan (`color.ui`, `color.diff`): coloured output would hide a secret from gitleaks. Any `ERR` or `FTL` line
+in the stderr of gitleaks is `guardrails-unavailable` with target `gitleaks`, even with exit code 0.
 
 The threshold is the output of the tool, after the repo's own decisions about a single rule. For scripts, the
 shellcheck config file and directives in the code apply. For workflows, only directives in the code and the
@@ -445,15 +477,22 @@ the repository. Two findings come out of the group:
 None of them can be held by an exception. To turn the gate off, drop `guardrails` from `with`.
 
 Inside a git repository each tool also leaves one note on stderr: `guardrails <tool> <version>: <m> file(s),
-<n> finding(s)`, `guardrails <tool>: skipped (no files)` or `guardrails <tool>: unavailable`. Outside git there
-are no notes, only the `guardrails-unavailable` finding. A note never changes the exit code.
+<n> finding(s)`, `guardrails <tool>: skipped (no files)` or `guardrails <tool>: unavailable`. After the three
+tools comes one more note for the commits of a pull request: `guardrails gitleaks commits <range>: <n> finding(s)`,
+`guardrails gitleaks commits: skipped (<reason>)`, for example `skipped (no --base outside GitHub Actions)` or
+`skipped (not a pull request)`, or `guardrails gitleaks commits: unavailable`. Outside git there are no notes,
+only the `guardrails-unavailable` finding. A note never changes the exit code.
 
 To run the tools by hand at the pinned versions:
 
 ```bash
 proto run shellcheck -- <files>
 proto run actionlint -- -shellcheck="$(proto bin shellcheck)" -pyflakes=
+proto run gitleaks -- git --redact --log-opts="$(git merge-base origin/main HEAD)..HEAD"
 ```
+
+The last line scans the commits of a branch. For the files there is no equal one: `proto run gitleaks -- dir
+--redact .` reads untracked and ignored files too, which the group does not.
 
 These commands are for a plain shell. In an AI agent environment `proto bin` prints JSON lines instead of a
 path, and actionlint then runs without shellcheck and reports nothing for the `run:` steps; there,
@@ -504,19 +543,20 @@ synced into a consumer wire them to the repository variable `STACK_REGISTRY` and
 the action with `registry` only and set `STACK_REGISTRY_TOKEN` in the job env from the
 `registry-token` secret. `renovate.yml` also gives Renovate an npm host rule for that host and token.
 
-The action also exports `ACTIONLINT_BIN` / `SHELLCHECK_BIN` — the real binaries behind the proto
-shims, which race each other when run in parallel — only for those two tools, and only when the
+The action also exports `ACTIONLINT_BIN`, `SHELLCHECK_BIN` and `GITLEAKS_BIN` — the real binaries behind the
+proto shims, which race each other when run in parallel — only for those three tools, and only when the
 repository-root `.prototools` pins them.
 
 With the `guardrails` group, `stack check` takes the binaries from these variables and compares their version with the pin.
 
-### History for the repo-rules `diff`
+### History in pull requests
 
-With the `repo-rules` group in `.stack.jsonc`, the reusable `check.yml` fetches the history of the base
-branch itself in a `pull_request` job (`git fetch --filter=blob:none --unshallow`): commits and trees at
-once, file contents on demand. The step needs the credentials that `actions/checkout` leaves in place by
-default, for the fetch and for the later on-demand downloads. Without the group, and on other events, the
-checkout stays as it was and nothing is fetched. If the base branch cannot be fetched, the job fails at
+With the `repo-rules` or the `guardrails` group in `.stack.jsonc`, the reusable `check.yml` fetches the
+history of the base branch itself in a `pull_request` job (`git fetch --filter=blob:none --unshallow`):
+commits and trees at once, file contents on demand. The `repo-rules` group reads it for its `diff`, the
+`guardrails` group for the commits that gitleaks scans. The step needs the credentials that `actions/checkout`
+leaves in place by default, for the fetch and for the later on-demand downloads. Without either group, and on
+other events, the checkout stays as it was and nothing is fetched. If the base branch cannot be fetched, the job fails at
 that step. A workflow that calls `stack check` itself, without `check.yml`, provides the history itself:
 `fetch-depth: 0`, or `--base <ref>` naming a ref that exists in the clone.
 
@@ -531,6 +571,10 @@ The canon `stack-check` workflow file is synced verbatim, so any other `with:` e
 Enable the input from your own workflow that calls `check.yml`, or run a separate job: `actions/checkout`
 with `fetch-depth: 0` → `alxwlw/stack/.github/actions/setup@v1` with `install: false` →
 `gitleaks git --redact --no-banner .`.
+
+The input `gitleaks: true` scans the whole history, beyond what the `guardrails` group scans (the files and
+the commits of the pull request). With both on, the commits of a pull request are scanned twice: that is a
+double scan, not a conflict.
 
 ## Releases
 
