@@ -205,6 +205,25 @@ describe('читатель с портом-таблицей', () => {
 		expect(existsSync(cwd ?? root)).toBe(false);
 	});
 
+	test('TMPDIR недоступен — gitleaks недоступен с copy:, скан не запускается и корень не сканируется', () => {
+		const root = repo({ 'README.md': '# acme\n', '.env': LINE });
+		const f = fakePort({ [GIT]: tracked('README.md'), [VERSION]: ok(`${PIN}\n`) });
+		const saved = process.env.TMPDIR;
+		process.env.TMPDIR = '/nonexistent';
+		try {
+			const out = readGuardrails(root, PROTOTOOLS, f.port);
+			const part = 'tools' in out ? out.tools.gitleaks : undefined;
+			expect(part !== undefined && 'unavailable' in part && part.unavailable).toStartWith('copy: ');
+		} finally {
+			if (saved === undefined) Reflect.deleteProperty(process.env, 'TMPDIR');
+			else process.env.TMPDIR = saved;
+		}
+		expect(f.calls).toStrictEqual([
+			['git', ['ls-files', '-z']],
+			['/x/gl', ['version']],
+		]);
+	});
+
 	test('пустой список git — все три части skipped, зовётся один git, пины не читаются', () => {
 		const root = repo({});
 		const f = fakePort({ [GIT]: ok('') });
