@@ -283,7 +283,7 @@ Upgrading to the release that checks seeds: on the first `stack/v<version>` PR a
 
 ## Exceptions
 
-A drifted or missing canon **file**, a seed that no longer extends the canon, a catalog entry that's missing or off-version, or a Dockerfile or workflow
+A drifted or missing canon **file**, a gitleaks, oxlint or tsconfig seed that no longer extends the canon, a catalog entry that's missing or off-version, or a Dockerfile or workflow
 whose pin copies differ from `.prototools`, can be held back by an exception in `.stack.jsonc` — one exception
 per file or per catalog entry, `reason` required on both shapes. A held item is suppressed in `check` and left untouched by `sync`:
 
