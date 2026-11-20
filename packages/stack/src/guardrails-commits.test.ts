@@ -466,7 +466,7 @@ describe('настоящий gitleaks: коммиты PR', () => {
 
 	const prototools = readFileSync(join(ROOT, '.prototools'), 'utf8');
 
-	// main с каноном gitleaks; ветка feature: A добавляет leak.ts с секретом, B удаляет, C меняет README.md.
+	// main с каноном gitleaks; ветка feature: A добавляет файл с секретом, B удаляет, C меняет README.md.
 	function feature(): { dir: string; a: string } {
 		const { dir } = gitRepo({
 			'.gitleaks.toml': canonFile('.gitleaks.toml'),
