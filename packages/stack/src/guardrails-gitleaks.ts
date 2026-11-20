@@ -114,7 +114,13 @@ export function parseGitleaks(run: GuardrailRun): GitleaksLeak[] | Unavailable {
 // решает, где искать конфиг засева, `[extend]` и файл игнора. Сбой — каталог удалён и `unavailable`;
 // каталог удаляет вызывающий.
 export function copyTracked(root: string, files: readonly string[]): { dir: string } | Unavailable {
-	const dir = mkdtempSync(join(tmpdir(), 'stack-gitleaks-'));
+	let dir: string;
+	try {
+		dir = mkdtempSync(join(tmpdir(), 'stack-gitleaks-'));
+	} catch (e) {
+		// Каталога нет, удалять нечего: нет или недоступен TMPDIR — недоступность, а не исключение.
+		return { unavailable: `copy: ${e instanceof Error ? e.message : String(e)}` };
+	}
 	for (const path of files) {
 		try {
 			const dst = join(dir, path);

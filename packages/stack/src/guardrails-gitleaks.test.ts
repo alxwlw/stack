@@ -181,6 +181,20 @@ describe('parseGitleaks', () => {
 		expect(parseGitleaks({ code: 3, out: JSON.stringify([noLine]), err: '' })).toStrictEqual(shape);
 		expect(parseGitleaks({ code: 3, out: '[null]', err: '' })).toStrictEqual(shape);
 	});
+
+	test.each(['RuleID', 'File', 'Description', 'Commit', 'StartLine'])(
+		'элемент без поля %s и с числом вместо него — неверная форма',
+		(field) => {
+			const shape = { unavailable: 'output has an unexpected shape: findings' };
+			const { [field]: _drop, ...without } = fullItem();
+			expect(parseGitleaks({ code: 3, out: JSON.stringify([without]), err: '' })).toStrictEqual(
+				shape,
+			);
+			const wrong = field === 'StartLine' ? 'x' : 7;
+			const out = JSON.stringify([fullItem({ [field]: wrong })]);
+			expect(parseGitleaks({ code: 3, out, err: '' })).toStrictEqual(shape);
+		},
+	);
 });
 
 function listAll(dir: string, prefix = ''): string[] {
@@ -210,6 +224,20 @@ describe('copyTracked', () => {
 		expect(r.dir.startsWith(join(tmpdir(), 'stack-gitleaks-'))).toBe(true);
 		expect(listAll(r.dir).sort()).toStrictEqual([...names].sort());
 		for (const n of names) expect(readFileSync(join(r.dir, n), 'utf8')).toBe(`c:${n}`);
+	});
+
+	test('TMPDIR недоступен — unavailable, а не исключение', () => {
+		const src = repoDir({ 'a.ts': 'a' });
+		made.push(src);
+		const saved = process.env.TMPDIR;
+		process.env.TMPDIR = '/nonexistent';
+		try {
+			const r = copyTracked(src, ['a.ts']);
+			expect('unavailable' in r && r.unavailable.startsWith('copy: ')).toBe(true);
+		} finally {
+			if (saved === undefined) delete process.env.TMPDIR;
+			else process.env.TMPDIR = saved;
+		}
 	});
 
 	test('нет файла — unavailable с путём и без нового каталога', () => {
