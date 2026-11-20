@@ -84,6 +84,16 @@ as `allowed (<reason>): …` and moves on, and `check` reports the same item as 
 never turns a held item into a stale exception. (`check`'s report-only rules — `engines.node`,
 a Renovate config without the canon preset, a leftover Dependabot config, inline versions — are not something `sync` fixes.)
 
+A seed stays under one check after that: it has to keep extending the canon. `check` reports `canon-not-extended` when one of these files is present but no longer pulls the canon in:
+
+| Seed                    | What it has to keep                                                                                                                                       |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| the gitleaks seed       | an `[extend]` table whose `path` is the canon ruleset file next to it, and no `useDefault = true` in that table: gitleaks refuses a config that sets both |
+| `.oxlintrc.json`        | an `extends` entry inside `@alxwlw/oxlint-config/`, such as `./node_modules/@alxwlw/oxlint-config/node.jsonc`                                             |
+| `tsconfig.options.json` | an `extends` entry inside `@alxwlw/tsconfig/`, such as `@alxwlw/tsconfig/node.json`                                                                       |
+
+Only the file itself is read: a seed that extends a file of the repo's own, which in turn extends the canon, is reported too. So is a seed that does not parse, and a directory in its place. A missing seed is not this finding (`sync` seeds it), and a profile whose canon has no such seed is not checked. `sync` never edits a seed, so it does not fix `canon-not-extended`: restore the link by hand, or hold the file with an exception whose `file` is the finding's target (with a `reason`).
+
 `sync` also rewrites **pin copies** — versions of node, bun, pnpm and proto repeated outside `.prototools`:
 
 - in a Dockerfile (a file named Dockerfile, `Dockerfile.<suffix>` or `<name>.Dockerfile`, but not a `.dockerignore` file, anywhere in the tree outside `node_modules`, `dist`, `build` and hidden directories): the tag of a `node` or `oven/bun` image in `FROM`, and a `pnpm@<version>` literal;
@@ -269,9 +279,11 @@ was already duplicated on the base branch.
 The same release reports a moon toolchain config left under its moon 1 file name (`moon-v1-toolchain`): `sync`
 does not fix it, so delete the file in that PR, or hold it with an exception.
 
+Upgrading to the release that checks seeds: on the first `stack/v<version>` PR after it, `check` goes red on `canon-not-extended` in a repo whose gitleaks seed, `.oxlintrc.json` or `tsconfig.options.json` no longer extends the canon — typically a gitleaks config that predates the canon ruleset and still says `useDefault = true`, or a `tsconfig.options.json` that spells every option out. `sync` does not fix it. In that PR, restore the link (for gitleaks: replace `useDefault = true` with the `path` the finding names) or hold the file with an exception (`{ "file": "<path>", "reason": "…" }`). The link can also be restored before the release: it needs nothing from the new version.
+
 ## Exceptions
 
-A drifted or missing canon **file**, a catalog entry that's missing or off-version, or a Dockerfile or workflow
+A drifted or missing canon **file**, a seed that no longer extends the canon, a catalog entry that's missing or off-version, or a Dockerfile or workflow
 whose pin copies differ from `.prototools`, can be held back by an exception in `.stack.jsonc` — one exception
 per file or per catalog entry, `reason` required on both shapes. A held item is suppressed in `check` and left untouched by `sync`:
 
