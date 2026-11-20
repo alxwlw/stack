@@ -10,6 +10,9 @@ import {
 import { allowedLine, type Exception, type Held, isHeld, resolve } from './exceptions.ts';
 import { planFiles } from './files.ts';
 import type { Drift, Finding } from './findings.ts';
+import { type GuardrailsOutcome, readGuardrails } from './guardrails.ts';
+import type { GuardrailsPort } from './guardrails-port.ts';
+import { checkGuardrails, guardrailsNotes } from './guardrails-rule.ts';
 import { checkMoonToolchains, checkMoonV1Toolchain } from './moon-toolchains.ts';
 import { checkMoonDefaultBranch, planMoonDefaultBranch } from './moon-workspace.ts';
 import { planPackageManager } from './package-manager.ts';
@@ -38,15 +41,16 @@ export function plan(repo: Repo, canon: Canon, exceptions: readonly Exception[] 
 }
 
 // Находки в порядке: план, нечитаемые файлы загрузчика, правила «только отчёт» из deps.ts, засевы и moon,
-// правила групп peers и repo-rules, если они включены (в этом порядке); затем протухшие исключения.
+// правила групп peers, repo-rules и guardrails, если они включены (в этом порядке); затем протухшие исключения.
 // Все они проходят через исключения. peers — исход `pnpm peers check`, repoRules — исход двух вызовов
-// repo-rules; оба получает checkRepo.
+// repo-rules, guardrails — исход чтения отслеживаемых файлов и двух инструментов; все три получает checkRepo.
 export function check(
 	repo: Repo,
 	canon: Canon,
 	exceptions: Exception[],
 	peers?: PeersOutcome,
 	repoRules?: RepoRulesOutcome,
+	guardrails?: GuardrailsOutcome,
 ): Finding[] {
 	const r = resolve(
 		[
@@ -62,6 +66,7 @@ export function check(
 			...checkMoonDefaultBranch(repo),
 			...(canon.rules.includes('peers') ? checkPeers(repo, peers) : []),
 			...(canon.rules.includes('repo-rules') ? checkRepoRules(repoRules) : []),
+			...(canon.rules.includes('guardrails') ? checkGuardrails(guardrails) : []),
 		],
 		exceptions,
 	);
@@ -80,6 +85,7 @@ export function planRepo(
 export interface CheckPorts {
 	peers?: PeersReader;
 	repoRules?: RepoRulesPort;
+	guardrails?: GuardrailsPort;
 }
 /** Итог check: находки (блокируют, если не удержаны) и пометки (выход не меняют). */
 export interface CheckReport {
@@ -108,9 +114,16 @@ export function checkRepo(
 		}
 		repoRules = readRepoRules(repoRoot, ports.repoRules);
 	}
+	let guardrails: GuardrailsOutcome | undefined;
+	if (canon.rules.includes('guardrails')) {
+		if (ports.guardrails === undefined) {
+			throw new Error('checkRepo: guardrails group needs a GuardrailsPort');
+		}
+		guardrails = readGuardrails(repoRoot, repo.files.get('.prototools'), ports.guardrails);
+	}
 	return {
-		findings: check(repo, canon, exceptions, peers, repoRules),
-		notes: repoRulesNotes(repoRules),
+		findings: check(repo, canon, exceptions, peers, repoRules, guardrails),
+		notes: [...repoRulesNotes(repoRules), ...guardrailsNotes(guardrails)],
 	};
 }
 
