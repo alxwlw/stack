@@ -11,8 +11,8 @@ import {
 	isolateGitConfig,
 	protoBin,
 	put,
-	ROOT,
 	repoDir,
+	ROOT,
 	runCli as run,
 } from './testkit.ts';
 
