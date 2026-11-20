@@ -14,7 +14,16 @@
 			"description": "Opt-in canon groups. \"renovate\" is deprecated and does nothing: Renovate is the canon's dependency bot for every profile.",
 			"items": {
 				"type": "string",
-				"enum": ["depcruise", "knip", "libs", "moon-tasks", "peers", "renovate", "repo-rules"]
+				"enum": [
+					"depcruise",
+					"guardrails",
+					"knip",
+					"libs",
+					"moon-tasks",
+					"peers",
+					"renovate",
+					"repo-rules"
+				]
 			}
 		},
 		"exceptions": {

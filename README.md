@@ -200,6 +200,7 @@ opt-in groups layered on top — extra files, extra catalog entries, or an extra
 | `depcruise`  | Syncs `.dependency-cruiser.base.cjs` **verbatim** — import/architecture boundary rules; your own `.dependency-cruiser.cjs` pulls them in with `extends`                                                                                                                                                                                                                                                                                                                                           | `node`, `contracts`          |
 | `peers`      | Adds the `pnpm peers check` gate to `stack check`, against a committed baseline (see [Peer dependencies](#peer-dependencies)); needs `pnpm-lock.yaml`                                                                                                                                                                                                                                                                                                                                             | `node`, `contracts`          |
 | `repo-rules` | Adds the rules of `@alxwlw/repo-rules` to `stack check`, at the version of `@alxwlw/stack` and against the repo's own repo-rules baseline (see [Repo rules](#repo-rules)); needs a git repository                                                                                                                                                                                                                                                                                                 | any                          |
+| `guardrails` | Adds actionlint and shellcheck to `stack check`, at the versions pinned in the repo's `.prototools`, over the files git tracks (see [Guardrails](#guardrails)); needs a git repository                                                                                                                                                                                                                                                                                                            | any                          |
 | `renovate`   | Deprecated, does nothing: Renovate is the canon's dependency bot for every profile. Still accepted so older `.stack.jsonc` files parse                                                                                                                                                                                                                                                                                                                                                            | —                            |
 
 ```bash
@@ -400,6 +401,63 @@ they stay findings for the PR's CI. The step needs neither the install nor a roo
 fails (a baseline file that does not parse, for one), `stack sync-pr` prints one line on stderr and goes on;
 `stack check` on the PR then reports `repo-rules-unavailable`.
 
+## Guardrails
+
+The opt-in `guardrails` group makes `stack check` run actionlint and shellcheck on the files git tracks and
+turn their violations into findings. Without the group no tool is run and nothing changes in the output.
+
+```bash
+# .stack.jsonc: "with": ["guardrails"]
+proto install   # locally: the versions pinned in .prototools
+proto trust     # locally, for any .prototools: proto ignores the pins of one it does not trust
+```
+
+The inputs are the tracked files of the working tree. Untracked files, ignored files and a worktree inside the
+repository are not checked; a directory outside git is `guardrails-unavailable`. The file sets:
+
+- actionlint: the workflow files directly under `.github/workflows`.
+- shellcheck: `*.sh` and `*.bash` files, and files with no extension whose first line is a shebang for sh,
+  bash, dash or ksh (also through `env`). shellcheck runs without `-x`.
+
+A tool with no files is not run. actionlint is needed only when there are workflow files; shellcheck is needed
+when there are scripts or workflow files, because actionlint runs the pinned shellcheck on the `run:` steps.
+
+The version of each tool is the pin in the repo's `.prototools`; a missing pin is `guardrails-unavailable`.
+The binary comes from the variable `ACTIONLINT_BIN` or `SHELLCHECK_BIN` when it is set and not empty,
+otherwise from `proto bin`; its version must equal the pin, so a stale variable or an untrusted
+`.prototools` (proto then ignores the pins) is never read as clean. shellcheck also runs inside actionlint,
+on the `run:` steps of the workflows, at the pinned version; pyflakes inside actionlint is switched off.
+
+The threshold is the output of the tool, after the repo's own decisions about a single rule. For scripts, the
+shellcheck config file and directives in the code apply. For workflows, only directives in the code and the
+ignored paths in the actionlint config apply: actionlint runs shellcheck without reading its config file.
+`error` and `warning` are findings; `info` and `style` are not, inside actionlint too. `stack` runs the tools
+without the `SHELLCHECK_OPTS` variable of the caller, so it cannot move the threshold. A shellcheck config file
+above the repository root, such as one in the home directory, is still read by shellcheck; it is not part of
+the repository. Two findings come out of the group:
+
+| Code                     | When                                                                                                                                                                                   |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `guardrails-violation`   | a tool reports a violation at or above the threshold; the line reads `guardrails-violation: <path>:<line> — <tool> <rule>: <message>`, without `:<line>` when the tool gives no line   |
+| `guardrails-unavailable` | a tool did not run or its answer cannot be read (no pin, no binary, a binary of another version, a crash, output that does not parse, a directory outside git); never read as no drift |
+
+None of them can be held by an exception. To turn the gate off, drop `guardrails` from `with`.
+
+Inside a git repository each tool also leaves one note on stderr: `guardrails <tool> <version>: <m> file(s),
+<n> finding(s)`, `guardrails <tool>: skipped (no files)` or `guardrails <tool>: unavailable`. Outside git there
+are no notes, only the `guardrails-unavailable` finding. A note never changes the exit code.
+
+To run the tools by hand at the pinned versions:
+
+```bash
+proto run shellcheck -- <files>
+proto run actionlint -- -shellcheck="$(proto bin shellcheck)" -pyflakes=
+```
+
+These commands are for a plain shell. In an AI agent environment `proto bin` prints JSON lines instead of a
+path, and actionlint then runs without shellcheck and reports nothing for the `run:` steps; there,
+`stack check` is the way to reproduce the exact run.
+
 ## CI
 
 `alxwlw/stack/.github/actions/setup@v1` installs the toolchain pinned in `.prototools` (via
@@ -448,6 +506,8 @@ the action with `registry` only and set `STACK_REGISTRY_TOKEN` in the job env fr
 The action also exports `ACTIONLINT_BIN` / `SHELLCHECK_BIN` — the real binaries behind the proto
 shims, which race each other when run in parallel — only for those two tools, and only when the
 repository-root `.prototools` pins them.
+
+With the `guardrails` group, `stack check` takes the binaries from these variables and compares their version with the pin.
 
 ### History for the repo-rules `diff`
 

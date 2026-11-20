@@ -11,6 +11,7 @@ import { type Profile, PROFILES, readStackConfig, StackConfigError } from './con
 import { allowedLine, isHeld } from './exceptions.ts';
 import { type Finding, isDrift } from './findings.ts';
 import { ghGitHub } from './gh.ts';
+import { spawnRunner } from './guardrails-port.ts';
 import { initConfig } from './init.ts';
 import { ownVersion } from './own-packages.ts';
 import type { PeersReader } from './peers.ts';
@@ -163,6 +164,7 @@ try {
 		const { findings, notes } = checkRepo(repoRoot, loadCanon(cfg), cfg.exceptions, {
 			peers: pnpmPeers,
 			repoRules: { read: inProcessRepoRules, env: process.env, base: values.base },
+			guardrails: { run: spawnRunner(repoRoot), env: process.env },
 		});
 		for (const n of notes) console.warn(n);
 		const blocking = findings.filter((f) => !isHeld(f));

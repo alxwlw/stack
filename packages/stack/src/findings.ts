@@ -37,7 +37,9 @@ export type Finding = FindingBase &
 					| 'peers-unavailable'
 					| 'repo-rules-violation'
 					| 'stale-repo-rules-baseline'
-					| 'repo-rules-unavailable';
+					| 'repo-rules-unavailable'
+					| 'guardrails-violation'
+					| 'guardrails-unavailable';
 		  }
 	);
 export type FindingCode = Finding['code'];
