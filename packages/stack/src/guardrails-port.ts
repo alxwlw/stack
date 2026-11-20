@@ -53,19 +53,29 @@ export function spawnRunner(root: string): GuardrailRunner {
 	delete env.SHELLCHECK_OPTS;
 	delete env.GITLEAKS_CONFIG;
 	delete env.GITLEAKS_CONFIG_TOML;
-	// Цвет git: при color.ui или color.diff = always (конфиг пользователя или репозитория) `git log`
-	// внутри `gitleaks git` печатает escape-коды, gitleaks не разбирает дифф, выходит с 0 и `[]` без
-	// строки ERR, и секрет в коммите PR пропущен. Конфиг git не отключается целиком (в CI в нём
-	// safe.directory), поэтому цвет выключается парами GIT_CONFIG_*, дописанными к уже заданным.
+	// Вывод `git log` внутри `gitleaks git` зависит от конфига git пользователя или репозитория, и
+	// gitleaks разбирает его как есть. При color.ui или color.diff = always печатаются escape-коды:
+	// gitleaks не разбирает дифф, выходит с 0 и `[]` без строки ERR, и секрет в коммите PR пропущен.
+	// При format.pretty = oneline, raw или format:… и log.date = relative находка приходит с пустым
+	// Commit, при log.abbrevCommit = true — с сокращённым: сообщение `(commit )` и отпечаток для
+	// ignore-строки расходятся с CI. Конфиг git не отключается целиком (в CI в нём safe.directory),
+	// поэтому ключи заданы нейтрально парами GIT_CONFIG_*, дописанными к уже заданным.
 	// Остальные ключи проверены на gitleaks 8.30.1 и находок не меняют: diff.noprefix,
 	// diff.mnemonicPrefix, log.showSignature.
 	const count = Number.parseInt(env.GIT_CONFIG_COUNT ?? '', 10);
 	const n = Number.isInteger(count) && count >= 0 ? count : 0;
-	env.GIT_CONFIG_COUNT = String(n + 2);
-	env[`GIT_CONFIG_KEY_${n}`] = 'color.ui';
-	env[`GIT_CONFIG_VALUE_${n}`] = 'never';
-	env[`GIT_CONFIG_KEY_${n + 1}`] = 'color.diff';
-	env[`GIT_CONFIG_VALUE_${n + 1}`] = 'never';
+	const neutral: [string, string][] = [
+		['color.ui', 'never'],
+		['color.diff', 'never'],
+		['format.pretty', 'medium'],
+		['log.date', 'default'],
+		['log.abbrevCommit', 'false'],
+	];
+	env.GIT_CONFIG_COUNT = String(n + neutral.length);
+	neutral.forEach(([key, value], i) => {
+		env[`GIT_CONFIG_KEY_${n + i}`] = key;
+		env[`GIT_CONFIG_VALUE_${n + i}`] = value;
+	});
 	return (cmd, argv, cwd) => {
 		const r = spawnSync(cmd, argv, { cwd: cwd ?? root, env, encoding: 'utf8', maxBuffer: 1 << 30 });
 		if (r.error) return { code: -1, out: '', err: `${cmd}: ${r.error.message}` };

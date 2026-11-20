@@ -262,7 +262,7 @@ test('spawnRunner: окружение без SHELLCHECK_OPTS и конфигов
 	}
 });
 
-test('spawnRunner: цвет git выключен через GIT_CONFIG_*, уже заданные пары сохраняются', () => {
+test('spawnRunner: цвет и формат лога git нейтрализованы через GIT_CONFIG_*, уже заданные пары сохраняются', () => {
 	const names = ['GIT_CONFIG_COUNT', 'GIT_CONFIG_KEY_0', 'GIT_CONFIG_VALUE_0'] as const;
 	const saved = names.map((n) => process.env[n]);
 	const show = ['-c', 'env | grep "^GIT_CONFIG_" | sort'];
@@ -271,11 +271,17 @@ test('spawnRunner: цвет git выключен через GIT_CONFIG_*, уже
 		const root = mkdtempSync(join(tmpdir(), 'guardrails-bin-'));
 		expect(spawnRunner(root)('sh', show).out).toBe(
 			[
-				'GIT_CONFIG_COUNT=2',
+				'GIT_CONFIG_COUNT=5',
 				'GIT_CONFIG_KEY_0=color.ui',
 				'GIT_CONFIG_KEY_1=color.diff',
+				'GIT_CONFIG_KEY_2=format.pretty',
+				'GIT_CONFIG_KEY_3=log.date',
+				'GIT_CONFIG_KEY_4=log.abbrevCommit',
 				'GIT_CONFIG_VALUE_0=never',
 				'GIT_CONFIG_VALUE_1=never',
+				'GIT_CONFIG_VALUE_2=medium',
+				'GIT_CONFIG_VALUE_3=default',
+				'GIT_CONFIG_VALUE_4=false',
 				'',
 			].join('\n'),
 		);
@@ -284,19 +290,25 @@ test('spawnRunner: цвет git выключен через GIT_CONFIG_*, уже
 		process.env.GIT_CONFIG_VALUE_0 = 'x';
 		expect(spawnRunner(root)('sh', show).out).toBe(
 			[
-				'GIT_CONFIG_COUNT=3',
+				'GIT_CONFIG_COUNT=6',
 				'GIT_CONFIG_KEY_0=acme.key',
 				'GIT_CONFIG_KEY_1=color.ui',
 				'GIT_CONFIG_KEY_2=color.diff',
+				'GIT_CONFIG_KEY_3=format.pretty',
+				'GIT_CONFIG_KEY_4=log.date',
+				'GIT_CONFIG_KEY_5=log.abbrevCommit',
 				'GIT_CONFIG_VALUE_0=x',
 				'GIT_CONFIG_VALUE_1=never',
 				'GIT_CONFIG_VALUE_2=never',
+				'GIT_CONFIG_VALUE_3=medium',
+				'GIT_CONFIG_VALUE_4=default',
+				'GIT_CONFIG_VALUE_5=false',
 				'',
 			].join('\n'),
 		);
 		// Мусор в счётчике не ломает прогон: отсчёт с нуля.
 		process.env.GIT_CONFIG_COUNT = 'abc';
-		expect(spawnRunner(root)('sh', show).out).toContain('GIT_CONFIG_COUNT=2\n');
+		expect(spawnRunner(root)('sh', show).out).toContain('GIT_CONFIG_COUNT=5\n');
 	} finally {
 		names.forEach((n, i) => {
 			const v = saved[i];

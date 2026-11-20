@@ -581,8 +581,12 @@ describe('настоящий gitleaks: коммиты PR', () => {
 	test.each([
 		['color.ui = always', '[color]\n\tui = always\n'],
 		['color.diff = always', '[color]\n\tdiff = always\n'],
+		['format.pretty = oneline', '[format]\n\tpretty = oneline\n'],
+		['format.pretty = raw', '[format]\n\tpretty = raw\n'],
+		['log.date = relative', '[log]\n\tdate = relative\n'],
+		['log.abbrevCommit = true', '[log]\n\tabbrevCommit = true\n'],
 	])(
-		'конфиг git пользователя с %s не прячет находку: цвет в выводе git ломает разбор gitleaks',
+		'конфиг git пользователя с %s не прячет находку и не теряет Commit: вывод git ломает разбор gitleaks',
 		(_name, config) => {
 			const { dir, a } = feature();
 			const cfgDir = repoDir({ gitconfig: config });
