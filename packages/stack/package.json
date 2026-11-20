@@ -1,6 +1,6 @@
 {
 	"name": "@alxwlw/stack",
-	"version": "1.16.1",
+	"version": "1.17.0",
 	"license": "MIT",
 	"repository": {
 		"type": "git",
@@ -22,7 +22,7 @@
 		"provenance": true
 	},
 	"dependencies": {
-		"@alxwlw/repo-rules": "1.16.1",
+		"@alxwlw/repo-rules": "1.17.0",
 		"json5": "^2.2.3",
 		"jsonc-parser": "^3.3.1",
 		"yaml": "^2.9.1"
