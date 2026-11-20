@@ -9,14 +9,15 @@ export interface GuardrailRun {
 	err: string;
 }
 
-export type GuardrailRunner = (cmd: string, argv: string[]) => GuardrailRun;
+// cwd — каталог процесса; без него корень репозитория (spawnRunner).
+export type GuardrailRunner = (cmd: string, argv: string[], cwd?: string) => GuardrailRun;
 
 export interface GuardrailsPort {
 	run: GuardrailRunner;
 	env: NodeJS.ProcessEnv;
 }
 
-export const GUARDRAIL_TOOLS = ['actionlint', 'shellcheck'] as const;
+export const GUARDRAIL_TOOLS = ['actionlint', 'shellcheck', 'gitleaks'] as const;
 export type GuardrailTool = (typeof GUARDRAIL_TOOLS)[number];
 
 export interface GuardrailViolation {
@@ -40,13 +41,18 @@ export function failureReason(run: GuardrailRun): string {
 	return first ?? `exited with ${run.code}`;
 }
 
-// Адаптер порта: процесс в корне репозитория, окружение родителя без SHELLCHECK_OPTS (иначе чужие
-// флаги сдвинут порог). Не запустился — код -1 и причина в stderr.
+// Адаптер порта: процесс в корне репозитория (или в cwd вызова), окружение родителя без
+// SHELLCHECK_OPTS, GITLEAKS_CONFIG и GITLEAKS_CONFIG_TOML: первая подменяет порог shellcheck, две
+// другие — конфиг gitleaks целиком (в обход конфига засева репозитория и его `[extend]`), и чужая
+// настройка из окружения сделала бы прогон другим, чем у соседа. Не запустился — код -1 и причина
+// в stderr.
 export function spawnRunner(root: string): GuardrailRunner {
 	const env = { ...process.env };
 	delete env.SHELLCHECK_OPTS;
-	return (cmd, argv) => {
-		const r = spawnSync(cmd, argv, { cwd: root, env, encoding: 'utf8', maxBuffer: 1 << 30 });
+	delete env.GITLEAKS_CONFIG;
+	delete env.GITLEAKS_CONFIG_TOML;
+	return (cmd, argv, cwd) => {
+		const r = spawnSync(cmd, argv, { cwd: cwd ?? root, env, encoding: 'utf8', maxBuffer: 1 << 30 });
 		if (r.error) return { code: -1, out: '', err: `${cmd}: ${r.error.message}` };
 		return { code: r.status ?? -1, out: r.stdout, err: r.stderr };
 	};

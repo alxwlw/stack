@@ -52,11 +52,17 @@ const shellcheckJson = (...lines: number[]): GuardrailRun => ({
 	}),
 });
 
-test('нет workflow и shell-скриптов — обе части skipped, зовётся один git', () => {
+test('только README.md без пина gitleaks — actionlint и shellcheck skipped, gitleaks недоступен, зовётся один git', () => {
 	const root = repoDir({ 'README.md': '# acme\n' });
 	const f = fakePort({ [GIT]: tracked('README.md') }, ENV);
 	const out = readGuardrails(root, PROTOTOOLS, f.port);
-	expect(out).toStrictEqual({ tools: { actionlint: NO_FILES, shellcheck: NO_FILES } });
+	expect(out).toStrictEqual({
+		tools: {
+			actionlint: NO_FILES,
+			shellcheck: NO_FILES,
+			gitleaks: { unavailable: '.prototools has no gitleaks pin' },
+		},
+	});
 	expect(f.calls).toStrictEqual([['git', ['ls-files', '-z']]]);
 });
 
@@ -89,6 +95,7 @@ test('только скрипт — shellcheck запущен, actionlint skippe
 					{ tool: 'shellcheck', rule: 'SC2086', path: 'a.sh', line: 3, message: 'quote at 3' },
 				],
 			},
+			gitleaks: { unavailable: '.prototools has no gitleaks pin' },
 		},
 	});
 	expect(f.calls).toStrictEqual([
@@ -115,6 +122,7 @@ test('файл из git, которого нет на диске, инструм
 		tools: {
 			actionlint: { version: '1.7.12', files: 1, violations: [] },
 			shellcheck: NO_FILES,
+			gitleaks: { unavailable: '.prototools has no gitleaks pin' },
 		},
 	});
 	expect(f.calls).toStrictEqual([
@@ -144,6 +152,7 @@ test('только workflow без пина shellcheck — shellcheck недос
 		tools: {
 			actionlint: { version: '1.7.12', files: 1, violations: [] },
 			shellcheck: { unavailable: '.prototools has no shellcheck pin' },
+			gitleaks: { unavailable: '.prototools has no gitleaks pin' },
 		},
 	});
 	expect(f.calls).toStrictEqual([
@@ -172,6 +181,7 @@ test('скрипты и workflow, нет пина actionlint — actionlint не
 		tools: {
 			actionlint: { unavailable: '.prototools has no actionlint pin' },
 			shellcheck: { version: '0.11.0', files: 2, violations: [] },
+			gitleaks: { unavailable: '.prototools has no gitleaks pin' },
 		},
 	});
 	expect(f.calls).toStrictEqual([
@@ -213,6 +223,7 @@ test('actionlint: два workflow — files 2, находки разобраны
 				],
 			},
 			shellcheck: NO_FILES,
+			gitleaks: { unavailable: '.prototools has no gitleaks pin' },
 		},
 	});
 });
@@ -222,7 +233,11 @@ test('нет .prototools — нужные инструменты недосту�
 	const f = fakePort({ [GIT]: tracked('a.sh') }, ENV);
 	const out = readGuardrails(root, undefined, f.port);
 	expect(out).toStrictEqual({
-		tools: { actionlint: NO_FILES, shellcheck: { unavailable: '.prototools is missing' } },
+		tools: {
+			actionlint: NO_FILES,
+			shellcheck: { unavailable: '.prototools is missing' },
+			gitleaks: { unavailable: '.prototools is missing' },
+		},
 	});
 	expect(f.calls).toStrictEqual([['git', ['ls-files', '-z']]]);
 });
@@ -234,6 +249,7 @@ test('нет .prototools при workflow — недоступны оба', () =>
 		tools: {
 			actionlint: { unavailable: '.prototools is missing' },
 			shellcheck: { unavailable: '.prototools is missing' },
+			gitleaks: { unavailable: '.prototools is missing' },
 		},
 	});
 	expect(f.calls).toStrictEqual([['git', ['ls-files', '-z']]]);
@@ -257,6 +273,7 @@ test('shellcheck вернул код 2 — часть недоступна с п
 		tools: {
 			actionlint: NO_FILES,
 			shellcheck: { unavailable: 'a.sh: openBinaryFile: does not exist' },
+			gitleaks: { unavailable: '.prototools has no gitleaks pin' },
 		},
 	});
 });
@@ -279,6 +296,7 @@ test('скрипт без расширения с шебангом считае�
 		tools: {
 			actionlint: NO_FILES,
 			shellcheck: { version: '0.11.0', files: 1, violations: [] },
+			gitleaks: { unavailable: '.prototools has no gitleaks pin' },
 		},
 	});
 });
@@ -298,6 +316,7 @@ test('отслеживаемый скрипт, которого нет на ди
 		tools: {
 			actionlint: NO_FILES,
 			shellcheck: { version: '0.11.0', files: 1, violations: [] },
+			gitleaks: { unavailable: '.prototools has no gitleaks pin' },
 		},
 	});
 	expect(f.calls).toHaveLength(3);

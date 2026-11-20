@@ -1,9 +1,10 @@
-import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { expect, test } from 'bun:test';
 
+import { parsePins } from './canon.ts';
 import { binVar, locateTool, protoBinPath, repoPins, toolVersion } from './guardrails-bin.ts';
 import { type GuardrailRun, type GuardrailsPort, spawnRunner } from './guardrails-port.ts';
 import { ROOT } from './testkit.ts';
@@ -200,4 +201,63 @@ test('spawnRunner: код 0, и -1 с причиной для несуществ
 	const bad = run('no-such-cmd-guardrails', []);
 	expect(bad.code).toBe(-1);
 	expect(bad.err).toStartWith('no-such-cmd-guardrails: ');
+});
+
+const ROOT_PINS = parsePins(readFileSync(join(ROOT, '.prototools'), 'utf8'));
+const GL_PIN = ROOT_PINS.gitleaks ?? '';
+
+test('gitleaks: имя переменной и проба версии — первая строка `version`', () => {
+	expect(binVar('gitleaks')).toBe('GITLEAKS_BIN');
+	expect(toolVersion('gitleaks', `${GL_PIN}\n`)).toBe(GL_PIN);
+	// Вывод `--version` — не та проба: `gitleaks version <v>` версией не считается.
+	expect(toolVersion('gitleaks', `gitleaks version ${GL_PIN}\n`)).toBeUndefined();
+	expect(toolVersion('gitleaks', 'garbage\n')).toBeUndefined();
+});
+
+test('locateTool gitleaks: проба — `version`, версия не пина — недоступен', () => {
+	const a = fakePort({ '/x/gl version': ok(`${GL_PIN}\n`) }, { GITLEAKS_BIN: '/x/gl' });
+	expect(locateTool('gitleaks', { gitleaks: GL_PIN }, a.port)).toEqual({
+		bin: '/x/gl',
+		version: GL_PIN,
+	});
+	expect(a.calls).toEqual([['/x/gl', ['version']]]);
+	const b = fakePort({ '/x/gl version': ok('0.0.1\n') }, { GITLEAKS_BIN: '/x/gl' });
+	expect(locateTool('gitleaks', { gitleaks: GL_PIN }, b.port)).toEqual({
+		unavailable: `gitleaks 0.0.1 at /x/gl, .prototools pins ${GL_PIN} (from GITLEAKS_BIN)`,
+	});
+});
+
+test('настоящий proto: gitleaks ровно версии пина корня репозитория', () => {
+	const port: GuardrailsPort = {
+		run: spawnRunner(ROOT),
+		env: { ...process.env, GITLEAKS_BIN: '' },
+	};
+	const g = locateTool('gitleaks', repoPins(readFileSync(join(ROOT, '.prototools'), 'utf8')), port);
+	if ('unavailable' in g) throw new Error(g.unavailable);
+	expect(g.version).toBe(GL_PIN);
+	expect(existsSync(g.bin)).toBe(true);
+}, 30_000);
+
+test('spawnRunner: окружение без SHELLCHECK_OPTS и конфигов gitleaks; cwd вызова важнее корня', () => {
+	const names = ['SHELLCHECK_OPTS', 'GITLEAKS_CONFIG', 'GITLEAKS_CONFIG_TOML'] as const;
+	const saved = names.map((n) => process.env[n]);
+	for (const n of names) process.env[n] = '/somewhere';
+	try {
+		const root = mkdtempSync(join(tmpdir(), 'guardrails-bin-'));
+		const other = mkdtempSync(join(tmpdir(), 'guardrails-bin-'));
+		const run = spawnRunner(root);
+		const echo = [
+			'-c',
+			'echo "${SHELLCHECK_OPTS-unset} ${GITLEAKS_CONFIG-unset} ${GITLEAKS_CONFIG_TOML-unset}"',
+		];
+		expect(run('sh', echo).out).toBe('unset unset unset\n');
+		expect(run('sh', ['-c', 'pwd -P']).out.trim()).toBe(realpathSync(root));
+		expect(run('sh', ['-c', 'pwd -P'], other).out.trim()).toBe(realpathSync(other));
+	} finally {
+		names.forEach((n, i) => {
+			const v = saved[i];
+			if (v === undefined) Reflect.deleteProperty(process.env, n);
+			else process.env[n] = v;
+		});
+	}
 });
