@@ -71,12 +71,16 @@ The peer-dependency issues a consumer with the `peers` group already has, record
 _Avoid_: allowlist, snapshot, exceptions list
 
 **Note**:
-A line of Check's output saying that part of a rule group was skipped or accepted (the `diff` part outside a pull request, a `Tests-Removed` trailer), or a hint under a finding (the `Tests-Removed` hint under a removed-assertions violation); it never changes the exit code and no exception applies to it. `CheckReport.notes` in `packages/stack/src/check.ts`, `repoRulesNotes` in `packages/stack/src/repo-rules-rule.ts`.
+A line of Check's output saying that part of a rule group was skipped or accepted (the `diff` part outside a pull request, a `Tests-Removed` trailer, the result of a **Guardrails** tool), or a hint under a finding (the `Tests-Removed` hint under a removed-assertions violation); it never changes the exit code and no exception applies to it. `CheckReport.notes` in `packages/stack/src/check.ts`, `repoRulesNotes` in `packages/stack/src/repo-rules-rule.ts`.
 _Avoid_: warning, info finding
 
 **Repo rules**:
 The rules of `@alxwlw/repo-rules` that Check runs in process for a consumer with the `repo-rules` group, at the version of `@alxwlw/stack`. A violation (repo-rules' own word for a place that breaks a rule) is a `repo-rules-violation` finding, an entry higher than reality is `stale-repo-rules-baseline`, and a call that did not run or whose answer cannot be read is `repo-rules-unavailable`. None of the three is held by an exception: the baseline of repo-rules plays that part. `stack sync-pr` lowers the fixed entries of that baseline before its commit and records no growth (`repoRulesDropFixedCall`, `repoRulesDropFixed`). `RepoRulesReader`, `readRepoRules` in `packages/stack/src/repo-rules.ts`, `checkRepoRules` in `packages/stack/src/repo-rules-rule.ts`.
 _Avoid_: lint, policy
+
+**Guardrails**:
+The group that runs the tools of the canon (actionlint and shellcheck) on the files git tracks and turns their violations into findings: a violation at or above the threshold is a `guardrails-violation`, a tool that did not run or whose answer cannot be read is `guardrails-unavailable`. The version of each tool is the pin in the repo's `.prototools`. Neither finding is held by an exception. `readGuardrails` in `packages/stack/src/guardrails.ts`, `checkGuardrails` in `packages/stack/src/guardrails-rule.ts`.
+_Avoid_: lint, linters
 
 ### Commands
 
