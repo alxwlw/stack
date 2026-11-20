@@ -99,7 +99,8 @@ export type Snapshot = ReadonlyMap<string, Read>;
 // сбой разбора одной роли — одна находка. Разбираемые роли: package.json (корневой всегда; вложенные —
 // только при pnpm-workspace.yaml среди путей), pnpm-workspace.yaml и первый из RENOVATE_CONFIGS среди
 // путей (нечитаемый заслоняет остальные), MOON_TOOLCHAINS, найденный из MOON_WORKSPACES и PEERS_BASELINE.
-// Остальные пути (среди них LOCKFILE) — только в paths, находки не дают.
+// Остальные пути (среди них LOCKFILE и MOON_TOOLCHAIN_V1) загрузчик не разбирает и находок по ним не даёт:
+// они лежат в paths, существование MOON_TOOLCHAIN_V1 читает правило checkMoonV1Toolchain.
 // Порядок unreadable: по rank, равные — в порядке снимка.
 export function repoFromSnapshot(snapshot: Snapshot): Repo {
 	const files = new Map<string, string>();
@@ -313,7 +314,8 @@ export function readSnapshot(root: string, canon: Canon): Snapshot {
 
 // Verbatim канон-файл сравнивается по содержимому, поэтому нечитаемый (например, каталог) для правила
 // отсутствует: file-missing, затем sync падает с EISDIR — громко, намеренно. Create-if-absent
-// dest/satisfiedBy, конфиги dependabot и LOCKFILE нужны правилам только как существующие пути.
+// dest/satisfiedBy, конфиги dependabot, LOCKFILE и MOON_TOOLCHAIN_V1 нужны правилам только как существующие пути
+// (загрузчик их не разбирает).
 export function loadRepo(root: string, canon: Canon): Repo {
 	return repoFromSnapshot(readSnapshot(root, canon));
 }

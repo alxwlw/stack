@@ -115,7 +115,8 @@ release — or, when the package has no entry, adds `<name>@<version>` (creating
 entry that already covers the version is left as it is, whatever else it lists. Other entries,
 their order and comments are left alone. A `catalog: dev` + `name` exception on the package holds this
 too, for a transitive package as well. Hold the entry with that exception to keep other versions of
-an Own package excluded by hand.
+an Own package excluded by hand; the same exception holds the package's `dev` catalog entry, so its
+version then moves by hand as well.
 
 `sync` also keeps `package.json#packageManager` on the canon's pnpm pin whenever that field names
 pnpm (a `+sha512…` suffix on the same version is fine) — otherwise pnpm switches itself to the
@@ -527,7 +528,7 @@ A consumer can add a repo-owned finishing step: a `stack:post-sync` script in th
 just raised must be installed first), `pnpm install` and `pnpm dedupe` (unless `--no-install`) and then
 `pnpm run stack:post-sync` if the script exists, so regenerated files land in the same sync PR. The lockfile of
 the PR is therefore deduplicated before the hook runs: a hook that only ran `pnpm dedupe` is no longer needed,
-and one that changes manifests and reinstalls still dedupes after its own install. `pnpm dedupe` is a full
+and one that changes manifests and reinstalls still has to dedupe after its own install. `pnpm dedupe` is a full
 install, so the root lifecycle scripts (`preinstall`, `install`, `postinstall`, `prepare`) run a second time. Only
 after the hook does the command look for changed files. The script gets `VERSION` (the stack version,
 without `v`) in its environment. The hook runs with or without `--no-install`, so it decides itself
