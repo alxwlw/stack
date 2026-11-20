@@ -68,6 +68,11 @@ test('parseShellcheck: форма вывода', () => {
 	expect(
 		parseShellcheck(run(1, json([{ ...comment('a.sh', 1, 'error', 2045), code: '2045' }]))),
 	).toEqual(shape);
+	const base = comment('a.sh', 1, 'error', 2045);
+	for (const bad of [{ file: 1 }, { line: '2' }, { level: 5 }, { message: null }]) {
+		expect(parseShellcheck(run(1, json([{ ...base, ...bad }])))).toEqual(shape);
+	}
+	expect(parseShellcheck(run(1, '{"comments":[null]}'))).toEqual(shape);
 	expect(parseShellcheck(run(1, '{}'))).toEqual(shape);
 	expect(parseShellcheck(run(1, 'null'))).toEqual(shape);
 	expect(parseShellcheck(run(1, '{"comments":[7]}'))).toEqual(shape);
