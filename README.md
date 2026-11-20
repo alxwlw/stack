@@ -454,7 +454,7 @@ that history, see [History in pull requests](#history-in-pull-requests). The fin
 `stack` never prints the value of a secret: gitleaks runs with `--redact`, and from its report `stack` reads
 only the rule, the file, the line, the description and the commit. To hold a finding use the means of gitleaks
 itself: the comment `# gitleaks:allow` on the line, the fingerprint of the finding in the gitleaks ignore file
-in the repository root, or an allowlist in `.gitleaks.toml`. The variables `GITLEAKS_CONFIG` and
+in the repository root, or an allowlist in the gitleaks config file of the repository (the one `stack sync` seeds). The variables `GITLEAKS_CONFIG` and
 `GITLEAKS_CONFIG_TOML` are not passed to gitleaks, so the environment cannot replace the config of the
 repository. gitleaks reads the ignore file from the root also when it scans commits, so an untracked ignore
 file holds a finding of a commit locally and does not in CI. `stack` also switches off the colour of git for
