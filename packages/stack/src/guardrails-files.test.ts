@@ -149,6 +149,8 @@ test('shellScripts: расширения и шебанги, порядок вх�
 		'bin/blob': '\x7fELF\x02\x01\x01\0\0\0',
 		'notes.txt': '#!/bin/sh\n',
 		'.envrc': 'export A=1\n',
+		'bin/crlf': '#!/bin/sh\r\n',
+		'bin/long': `#!/usr/bin/env${' '.repeat(300)}bash\n`,
 	});
 	try {
 		const paths = [
@@ -162,6 +164,8 @@ test('shellScripts: расширения и шебанги, порядок вх�
 			'bin/blob',
 			'notes.txt',
 			'.envrc',
+			'bin/crlf',
+			'bin/long',
 		];
 		expect(shellScripts(dir, paths)).toStrictEqual([
 			'a.sh',
@@ -169,6 +173,7 @@ test('shellScripts: расширения и шебанги, порядок вх�
 			'bin/tool',
 			'bin/run',
 			'with space',
+			'bin/crlf',
 		]);
 	} finally {
 		rmSync(dir, { recursive: true, force: true });

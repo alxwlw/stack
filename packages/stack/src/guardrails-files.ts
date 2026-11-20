@@ -67,6 +67,6 @@ export function shellScripts(root: string, paths: readonly string[]): string[] {
 		if (ext === '.sh' || ext === '.bash') return true;
 		if (ext !== '') return false;
 		const line = firstLineOf(join(root, p));
-		return line !== undefined && isShellShebang(line.replace(/\r$/, ''));
+		return line !== undefined && isShellShebang(line);
 	});
 }
