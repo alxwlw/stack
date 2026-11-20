@@ -17,7 +17,8 @@ export type Finding = FindingBase &
 					| 'file-missing'
 					| 'moon-default-branch'
 					| 'toolchain-pin'
-					| 'moon-v1-toolchain';
+					| 'moon-v1-toolchain'
+					| 'canon-not-extended';
 				file: string;
 		  }
 		| { code: 'catalog-drift' | 'catalog-missing'; catalog: string; name: string }

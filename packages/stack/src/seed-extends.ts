@@ -1,5 +1,9 @@
 import { parse, type ParseError, printParseErrorCode } from 'jsonc-parser';
 
+import type { Canon } from './canon.ts';
+import type { Finding } from './findings.ts';
+import type { Repo } from './repo.ts';
+
 /** Канон-файл с правилами gitleaks: его подключает засев gitleaks. */
 export const GITLEAKS_CANON = '.gitleaks.canon.toml';
 
@@ -73,3 +77,21 @@ export const SEED_CHECKS: ReadonlyMap<string, (text: string) => string | undefin
 		),
 	],
 ]);
+
+const NOT_READABLE = `is not a readable file — ${NOT_PARSED}`;
+
+// Правило только для отчёта: засев на месте, но канон не подключает. Идёт по файлам канона, не по
+// ключам таблицы: файла нет в каноне — проверять нечего. Отсутствие засева сообщает file-missing.
+export function checkSeedExtends(repo: Repo, canon: Canon): Finding[] {
+	const findings: Finding[] = [];
+	for (const { dest } of canon.files) {
+		const read = SEED_CHECKS.get(dest);
+		if (!read || !repo.paths.has(dest)) continue;
+		const text = repo.files.get(dest);
+		const message = text === undefined ? NOT_READABLE : read(text);
+		if (message !== undefined) {
+			findings.push({ code: 'canon-not-extended', target: dest, file: dest, message });
+		}
+	}
+	return findings;
+}

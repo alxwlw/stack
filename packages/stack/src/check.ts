@@ -19,6 +19,7 @@ import { planReleaseAgeExcludes } from './release-age.ts';
 import { loadRepo, LOCKFILE, type Repo } from './repo.ts';
 import { readRepoRules, type RepoRulesOutcome, type RepoRulesPort } from './repo-rules.ts';
 import { checkRepoRules, repoRulesNotes } from './repo-rules-rule.ts';
+import { checkSeedExtends } from './seed-extends.ts';
 import { planToolchainPins } from './toolchain-pins-rule.ts';
 
 // План дрейфа: всё, что sync умеет закрыть, в порядке применения — файлы, каталоги, release-age,
@@ -36,7 +37,7 @@ export function plan(repo: Repo, canon: Canon, exceptions: readonly Exception[] 
 	];
 }
 
-// Находки в порядке: план, нечитаемые файлы загрузчика, правила «только отчёт» из deps.ts и moon,
+// Находки в порядке: план, нечитаемые файлы загрузчика, правила «только отчёт» из deps.ts, засевы и moon,
 // правила групп peers и repo-rules, если они включены (в этом порядке); затем протухшие исключения.
 // Все они проходят через исключения. peers — исход `pnpm peers check`, repoRules — исход двух вызовов
 // repo-rules; оба получает checkRepo.
@@ -55,6 +56,7 @@ export function check(
 			...checkEnginesNode(repo, canon),
 			...checkRenovatePreset(repo),
 			...checkDependabot(repo),
+			...checkSeedExtends(repo, canon),
 			...checkMoonToolchains(repo, canon),
 			...checkMoonV1Toolchain(repo),
 			...checkMoonDefaultBranch(repo),
