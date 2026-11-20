@@ -17,6 +17,7 @@ import {
 	put,
 	repoDir,
 	ROOT,
+	withPrivateTmpdir,
 } from './testkit.ts';
 
 // 64 hex собираются во время выполнения, поэтому eth-правило канона не видит их в исходнике; в имени
@@ -162,14 +163,16 @@ describe('читатель с портом-таблицей', () => {
 			.filter(([name]) => name !== 'gitleaks')
 			.map(([name, version]) => `${name} = "${version}"\n`)
 			.join('');
-		const before = copies();
-		const f = fakePort({ [GIT]: tracked('README.md') });
-		const out = readGuardrails(root, withoutGitleaks, f.port);
-		expect('tools' in out && out.tools.gitleaks).toStrictEqual({
-			unavailable: '.prototools has no gitleaks pin',
+		withPrivateTmpdir(() => {
+			const before = copies();
+			const f = fakePort({ [GIT]: tracked('README.md') });
+			const out = readGuardrails(root, withoutGitleaks, f.port);
+			expect('tools' in out && out.tools.gitleaks).toStrictEqual({
+				unavailable: '.prototools has no gitleaks pin',
+			});
+			expect(f.calls).toStrictEqual([['git', ['ls-files', '-z']]]);
+			expect(copies()).toStrictEqual(before);
 		});
-		expect(f.calls).toStrictEqual([['git', ['ls-files', '-z']]]);
-		expect(copies()).toStrictEqual(before);
 	});
 
 	test('FTL в stderr — недоступен с этой причиной, каталог копии удалён', () => {

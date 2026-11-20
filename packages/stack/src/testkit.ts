@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
@@ -23,6 +23,21 @@ import {
 	syncPr,
 	type SyncPrOptions,
 } from './sync-pr.ts';
+
+// Тест со своим TMPDIR: перечисление временных каталогов видит только каталоги этого теста, а не
+// соседние процессы на том же хосте (раннеры CI делят /tmp). Каталог удаляется, TMPDIR возвращается.
+export function withPrivateTmpdir<T>(fn: (dir: string) => T): T {
+	const saved = process.env.TMPDIR;
+	const dir = mkdtempSync(join(tmpdir(), 'stack-private-tmp-'));
+	process.env.TMPDIR = dir;
+	try {
+		return fn(dir);
+	} finally {
+		if (saved === undefined) Reflect.deleteProperty(process.env, 'TMPDIR');
+		else process.env.TMPDIR = saved;
+		rmSync(dir, { recursive: true, force: true });
+	}
+}
 
 // Корень репозитория стека: тесты запускают proto и moon из него.
 export const ROOT = join(import.meta.dir, '..', '..', '..');

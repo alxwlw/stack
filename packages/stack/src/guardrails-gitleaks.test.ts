@@ -19,6 +19,7 @@ import {
 	put,
 	repoDir,
 	runTool,
+	withPrivateTmpdir,
 } from './testkit.ts';
 
 // 64 hex собираются во время выполнения, поэтому eth-правило канона не видит их в исходнике; в имени
@@ -243,10 +244,12 @@ describe('copyTracked', () => {
 	test('нет файла — unavailable с путём и без нового каталога', () => {
 		const src = repoDir({ 'a.ts': 'a' });
 		made.push(src);
-		const before = copies();
-		const r = copyTracked(src, ['a.ts', 'gone.ts']);
-		expect('unavailable' in r && r.unavailable.startsWith('copy gone.ts: ')).toBe(true);
-		expect(copies()).toStrictEqual(before);
+		withPrivateTmpdir(() => {
+			const before = copies();
+			const r = copyTracked(src, ['a.ts', 'gone.ts']);
+			expect('unavailable' in r && r.unavailable.startsWith('copy gone.ts: ')).toBe(true);
+			expect(copies()).toStrictEqual(before);
+		});
 	});
 });
 
