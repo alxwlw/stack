@@ -98,6 +98,8 @@ const ADDRESS: { [C in FindingCode]: ((f: FindingOf<C>) => Address) | 'unsuppres
 	'moon-default-branch': (f) => ({ file: f.file }),
 	// Копии пинов тулчейна — адрес сам Dockerfile или workflow.
 	'toolchain-pin': (f) => ({ file: f.file }),
+	// Засев принадлежит репозиторию: исключение по файлу держит находку «канон не подключён».
+	'canon-not-extended': (f) => ({ file: f.file }),
 	'unreadable-file': 'unsuppressible',
 	'stale-exception': 'unsuppressible',
 	// Исключение для находок peers — сам baseline; отказ от гейта — убрать группу из with.
