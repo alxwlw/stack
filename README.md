@@ -433,8 +433,8 @@ shellcheck config file and directives in the code apply. For workflows, only dir
 ignored paths in the actionlint config apply: actionlint runs shellcheck without reading its config file.
 `error` and `warning` are findings; `info` and `style` are not, inside actionlint too. `stack` runs the tools
 without the `SHELLCHECK_OPTS` variable of the caller, so it cannot move the threshold. A shellcheck config file
-above the repository root, such as one in the home directory, is still read by shellcheck locally; it is not
-part of the repo, and the CI run does not have it. Two findings come out of the group:
+above the repository root, such as one in the home directory, is still read by shellcheck; it is not part of
+the repository. Two findings come out of the group:
 
 | Code                     | When                                                                                                                                                                                   |
 | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
