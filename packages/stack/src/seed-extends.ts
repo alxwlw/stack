@@ -1,0 +1,75 @@
+import { parse, type ParseError, printParseErrorCode } from 'jsonc-parser';
+
+/** Канон-файл с правилами gitleaks: его подключает засев gitleaks. */
+export const GITLEAKS_CANON = '.gitleaks.canon.toml';
+
+const NOT_PARSED = 'stack cannot tell whether it extends the canon';
+
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+	typeof v === 'object' && v !== null && !Array.isArray(v);
+
+const notParsed = (format: string, reason: string) =>
+	`does not parse as ${format} (${reason}) — ${NOT_PARSED}`;
+
+// Засев gitleaks: канон подключён, когда extend.path указывает на канон-файл правил. useDefault = true
+// не годится и вместе с path: gitleaks такой конфиг не загружает.
+function readGitleaks(text: string): string | undefined {
+	let data: unknown;
+	try {
+		data = Bun.TOML.parse(text);
+	} catch (error) {
+		const first = (error instanceof Error ? error.message : String(error)).split('\n')[0] ?? '';
+		return notParsed('TOML', first);
+	}
+	const extend = isRecord(data) ? data['extend'] : undefined;
+	if (isRecord(extend) && extend['useDefault'] === true) {
+		return `[extend] must set path = "${GITLEAKS_CANON}" in place of useDefault = true — the canon ruleset already extends the default one, and gitleaks refuses a config that sets both`;
+	}
+	const path = isRecord(extend) ? extend['path'] : undefined;
+	if (typeof path === 'string' && path.replace(/^(\.\/)+/, '') === GITLEAKS_CANON) return undefined;
+	return `[extend] path must be "${GITLEAKS_CANON}" — without it the canon ruleset does not apply`;
+}
+
+// Записи extends верхнего уровня: строка — одна запись, массив — его строки, прочее — ни одной.
+function readExtends(text: string): string[] | string {
+	const errors: ParseError[] = [];
+	const data: unknown = parse(text.replace(/^\uFEFF/, ''), errors, { allowTrailingComma: true });
+	const first = errors[0];
+	if (first) {
+		return notParsed(
+			'JSON with comments',
+			`${printParseErrorCode(first.error)} at offset ${first.offset}`,
+		);
+	}
+	const value = isRecord(data) ? data['extends'] : undefined;
+	if (typeof value === 'string') return [value];
+	if (Array.isArray(value)) return value.filter((v): v is string => typeof v === 'string');
+	return [];
+}
+
+function jsonSeed(pattern: RegExp, message: string): (text: string) => string | undefined {
+	return (text) => {
+		const entries = readExtends(text);
+		if (typeof entries === 'string') return entries;
+		return entries.some((entry) => pattern.test(entry)) ? undefined : message;
+	};
+}
+
+/** dest засева → чтение его текста: undefined — канон подключён, строка — текст находки. */
+export const SEED_CHECKS: ReadonlyMap<string, (text: string) => string | undefined> = new Map([
+	['.gitleaks.toml', readGitleaks],
+	[
+		'.oxlintrc.json',
+		jsonSeed(
+			/(^|\/)@alxwlw\/oxlint-config\//,
+			'"extends" must include a preset of @alxwlw/oxlint-config, such as "./node_modules/@alxwlw/oxlint-config/node.jsonc" — without it the canon lint rules do not apply',
+		),
+	],
+	[
+		'tsconfig.options.json',
+		jsonSeed(
+			/(^|\/)@alxwlw\/tsconfig\//,
+			'"extends" must name a preset of @alxwlw/tsconfig, such as "@alxwlw/tsconfig/node.json" — without it the canon compiler options do not apply',
+		),
+	],
+]);
