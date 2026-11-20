@@ -457,9 +457,11 @@ itself: the comment `# gitleaks:allow` on the line, the fingerprint of the findi
 in the repository root, or an allowlist in the gitleaks config file of the repository (the one `stack sync` seeds). The variables `GITLEAKS_CONFIG` and
 `GITLEAKS_CONFIG_TOML` are not passed to gitleaks, so the environment cannot replace the config of the
 repository. gitleaks reads the ignore file from the root also when it scans commits, so an untracked ignore
-file holds a finding of a commit locally and does not in CI. `stack` also switches off the colour of git for
-the scan (`color.ui`, `color.diff`): coloured output would hide a secret from gitleaks. Any `ERR` or `FTL` line
-in the stderr of gitleaks is `guardrails-unavailable` with target `gitleaks`, even with exit code 0.
+file holds a finding of a commit locally and does not in CI. `stack` also sets the git config for the scan
+(`color.ui` and `color.diff` to `never`, `format.pretty`, `log.date` and `log.abbrevCommit` to their defaults):
+coloured output would hide a secret from gitleaks, and another log format would drop the commit of a finding.
+Any `ERR` or `FTL` line in the stderr of gitleaks is `guardrails-unavailable` with target `gitleaks`, or
+`gitleaks commits` for the scan of the commits, even with exit code 0.
 
 The threshold is the output of the tool, after the repo's own decisions about a single rule. For scripts, the
 shellcheck config file and directives in the code apply. For workflows, only directives in the code and the
@@ -492,7 +494,11 @@ proto run gitleaks -- git --redact --log-opts="$(git merge-base origin/main HEAD
 ```
 
 The last line scans the commits of a branch. For the files there is no equal one: `proto run gitleaks -- dir
---redact .` reads untracked and ignored files too, which the group does not.
+--redact .` reads untracked and ignored files too, which the group does not. It reads the git config of the
+user: with `color.ui = always` it scans no commits and prints nothing, and with another log format it drops the
+commit of a finding. Run it with colour off and the default format, for example with
+`GIT_CONFIG_COUNT=2 GIT_CONFIG_KEY_0=color.ui GIT_CONFIG_VALUE_0=never GIT_CONFIG_KEY_1=format.pretty
+GIT_CONFIG_VALUE_1=medium` in front.
 
 These commands are for a plain shell. In an AI agent environment `proto bin` prints JSON lines instead of a
 path, and actionlint then runs without shellcheck and reports nothing for the `run:` steps; there,
