@@ -2,6 +2,7 @@
 // shellcheck и gitleaks за прогон; gitleaks запускается дважды (файлы и коммиты PR), когда скан коммитов идёт. Всё внешнее идёт через порт; правило и пометки — guardrails-rule.ts.
 
 import { rmSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 import { actionlintArgv, parseActionlint } from './guardrails-actionlint.ts';
 import { locateTool, repoPins } from './guardrails-bin.ts';
@@ -127,10 +128,12 @@ function readCommits(
 }
 
 export function readGuardrails(
-	root: string,
+	repoRoot: string,
 	prototools: string | undefined,
 	port: GuardrailsPort,
 ): GuardrailsOutcome {
+	// Скан коммитов идёт с cwd = копия и зовёт `git -C <корень>`: относительный корень там не найти.
+	const root = resolve(repoRoot);
 	const tracked = trackedFiles(port.run('git', [...TRACKED_FILES_ARGV]));
 	if (isUnavailable(tracked)) return tracked;
 	const files = regularFiles(root, tracked);

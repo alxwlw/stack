@@ -1,11 +1,12 @@
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 
 import { parsePins } from './canon.ts';
 import {
 	BARE,
+	CLI,
 	git,
 	gitRepo,
 	historyStep,
@@ -204,6 +205,32 @@ describe('check с группой guardrails: gitleaks через настоящ
 				`${finding('leak.ts')} (commit ${added.slice(0, 12)})`,
 			]);
 			noValue(r);
+		},
+		TIMEOUT,
+	);
+
+	test(
+		'--repo относительным путём: скан коммитов идёт от родительского каталога, как с абсолютным',
+		async () => {
+			const { dir } = await guardRepo({ '.gitignore': ignores });
+			git(dir, 'checkout', '-b', 'feature');
+			put(dir, 'a.txt', 'harmless\n');
+			git(dir, 'add', 'a.txt');
+			git(dir, 'commit', '-m', 'harmless');
+			const base = git(dir, 'rev-parse', 'main').trim();
+			const proc = Bun.spawn(['bun', CLI, 'check', '--repo', basename(dir), '--base', 'main'], {
+				cwd: dirname(dir),
+				stdout: 'pipe',
+				stderr: 'pipe',
+				env: { ...process.env, ...tools, ...LOCAL },
+			});
+			const [out, err] = await Promise.all([
+				new Response(proc.stdout).text(),
+				new Response(proc.stderr).text(),
+			]);
+			expect(err).toContain(`guardrails gitleaks commits ${base.slice(0, 12)}..HEAD: 0 finding(s)`);
+			expect(out).toBe(NO_DRIFT);
+			expect(await proc.exited).toBe(0);
 		},
 		TIMEOUT,
 	);
