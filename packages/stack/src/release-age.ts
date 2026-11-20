@@ -20,8 +20,9 @@ function covers(entry: string, name: string, version: string): boolean {
 
 // Пока в pnpm-workspace.yaml включён minimumReleaseAge, свежий свой пакет канона (каталог dev и
 // зависимости stack) pnpm install отвергает в день публикации: sync держит версии канона в
-// minimumReleaseAgeExclude. Чужие записи и их порядок не трогаются, правка — только добавление
-// версии к своей записи или новая запись.
+// minimumReleaseAgeExclude. Чужие записи и их порядок не трогаются. Своя запись, не покрывающая
+// версию, приводится к одной текущей (список не растёт от релиза к релизу); запись, которая версию
+// уже покрывает, не трогается; нет записи — новая в конец.
 // Правило называет намерение: позицию новой записи и создание списка (ключа нет, ключ без значения)
 // решает применитель, поэтому находки не зависят друг от друга и любую из них можно удержать.
 export function planReleaseAgeExcludes(repo: Repo, canon: Canon): Drift[] {
@@ -53,7 +54,7 @@ export function planReleaseAgeExcludes(repo: Repo, canon: Canon): Drift[] {
 							kind: 'yaml-set',
 							file: WORKSPACE_FILE,
 							path: [KEY, own],
-							value: `${items[own]} || ${version}`,
+							value: `${name}@${version}`,
 						}
 					: { kind: 'yaml-append', file: WORKSPACE_FILE, path: [KEY], value: `${name}@${version}` },
 		});

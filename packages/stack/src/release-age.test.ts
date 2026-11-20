@@ -52,12 +52,12 @@ test('нет записи — sync добавляет @alxwlw/stack@1.10.0', () 
 	expect(out).not.toContain('oxlint@');
 });
 
-test('запись с другими версиями дополняется', () => {
+test('своя запись с другими версиями заменяется одной текущей', () => {
 	const out = rendered(ws(`${AGE}minimumReleaseAgeExclude:\n  - '@alxwlw/stack@1.8.0 || 1.9.2'\n`));
-	expect(list(out)).toEqual(['@alxwlw/stack@1.8.0 || 1.9.2 || 1.10.0']);
+	expect(list(out)).toEqual(['@alxwlw/stack@1.10.0']);
 });
 
-test.each(['@alxwlw/stack@1.9.2 || 1.10.0', '@alxwlw/stack', '@alxwlw/*'])(
+test.each(['@alxwlw/stack@1.9.2 || 1.10.0', '@alxwlw/stack', '@alxwlw/*', '@alxwlw/stack@1.10.0'])(
 	'версия уже покрыта — находок нет, sync ничего не пишет (%s)',
 	(entry) => {
 		const text = ws(`${AGE}minimumReleaseAgeExclude:\n  - '${entry}'\n`);
@@ -73,6 +73,58 @@ test('чужие записи, их порядок и комментарии н�
 	expect(list(out)).toEqual(['foo@1.0.0', 'bar', '@alxwlw/stack@1.10.0']);
 	expect(out).toContain('# держим по причине');
 	expect(out).toContain('# временно');
+});
+
+// Приёмка 8: текст файла отличается только своей записью — соседи, порядок, кавычки, комментарии
+// (в том числе на строке самой записи) и всё, что стоит после списка, на месте.
+const around = (own: string): string =>
+	ws(
+		`${AGE}# держим по причине\n${KEY}:\n  - foo@1.0.0 # временно\n  # - '@alxwlw/other@0.1.0'\n` +
+			`  - ${own} # свой\n  - "bar"\n\n# хвост\nlinkWorkspacePackages: true\n`,
+	);
+
+test.each([
+	["'@alxwlw/stack@1.8.0 || 1.9.2'", "'@alxwlw/stack@1.10.0'"],
+	['"@alxwlw/stack@1.8.0 || 1.9.2"', '"@alxwlw/stack@1.10.0"'],
+])('текст файла отличается только своей записью (%s)', (before, after) => {
+	expect(rendered(around(before))).toBe(around(after));
+});
+
+const ELEVEN = Array.from({ length: 11 }, (_, i) => `1.8.${i}`).join(' || ');
+test.each([
+	['одна старая версия', '@alxwlw/stack@1.9.2'],
+	['одиннадцать версий без текущей', `@alxwlw/stack@${ELEVEN}`],
+	['диапазон', '@alxwlw/stack@^1.0.0'],
+	['шаблон версии', '@alxwlw/stack@1.x'],
+	['пусто после @', '@alxwlw/stack@'],
+])('своя запись, не покрывающая версию (%s), становится одной текущей', (_name, entry) => {
+	const text = ws(`${AGE}${KEY}:\n  - '${entry}'\n`);
+	expect(drift(text)).toHaveLength(1);
+	expect(list(rendered(text))).toStrictEqual(['@alxwlw/stack@1.10.0']);
+});
+
+test('закомментированная запись — не запись: комментарий на месте, новая идёт в конец', () => {
+	const out = rendered(ws(`${AGE}${KEY}:\n  - foo\n  # - '@alxwlw/stack@1.6.0'\n`));
+	expect(list(out)).toStrictEqual(['foo', '@alxwlw/stack@1.10.0']);
+	expect(out).toContain("# - '@alxwlw/stack@1.6.0'");
+});
+
+test('удержанная исключением своя запись не меняется', () => {
+	const text = ws(`${AGE}${KEY}:\n  - '@alxwlw/stack@1.8.0 || 1.9.2'\n`);
+	const held = [{ catalog: 'dev', name: '@alxwlw/stack', reason: 'держим' }];
+	expect(rendered(text, canon, held)).toBe(text);
+});
+
+test('две свои записи без текущей версии — переписана первая, вторая не тронута', () => {
+	const out = rendered(ws(`${AGE}${KEY}:\n  - '@alxwlw/stack@1.0.0'\n  - '@alxwlw/stack@1.1.0'\n`));
+	expect(list(out)).toStrictEqual(['@alxwlw/stack@1.10.0', '@alxwlw/stack@1.1.0']);
+});
+
+test('второй sync пуст, а следующая версия канона снова оставляет одну запись', () => {
+	const once = rendered(ws(`${AGE}${KEY}:\n  - '@alxwlw/stack@1.8.0 || 1.9.2'\n`));
+	expect(drift(once)).toStrictEqual([]);
+	const next = testCanon({ catalogs: { dev: { '@alxwlw/stack': '1.11.0', oxlint: '1.90.0' } } });
+	expect(list(rendered(once, next))).toStrictEqual(['@alxwlw/stack@1.11.0']);
 });
 
 test('ключа нет — создаётся последовательность, а не map', () => {
@@ -104,7 +156,7 @@ test('список без пробелов распознаётся', () => {
 	const covered = ws(`${AGE}minimumReleaseAgeExclude:\n  - '@alxwlw/stack@1.8.0||1.10.0'\n`);
 	expect(drift(covered)).toEqual([]);
 	const out = rendered(ws(`${AGE}minimumReleaseAgeExclude:\n  - '@alxwlw/stack@1.8.0||1.9.2'\n`));
-	expect(list(out)).toEqual(['@alxwlw/stack@1.8.0||1.9.2 || 1.10.0']);
+	expect(list(out)).toEqual(['@alxwlw/stack@1.10.0']);
 });
 
 test('каталоги и release-age в одном sync', () => {
@@ -130,12 +182,12 @@ const canon2 = testCanon({
 const ws2 = (extra: string) =>
 	`packages:\n  - packages/*\n\ncatalogs:\n  dev:\n    '@alxwlw/stack': 1.10.0\n    '@alxwlw/other': 2.0.0\n    oxlint: 1.90.0\n${extra}`;
 
-test('несколько пакетов: своя запись дополняется, новая идёт в конец', () => {
+test('несколько пакетов: своя запись заменяется на месте, новая идёт в конец', () => {
 	const out = rendered(
 		ws2(`${AGE}minimumReleaseAgeExclude:\n  - foo\n  - '@alxwlw/stack@1.0.0'\n`),
 		canon2,
 	);
-	expect(list(out)).toEqual(['foo', '@alxwlw/stack@1.0.0 || 1.10.0', '@alxwlw/other@2.0.0']);
+	expect(list(out)).toEqual(['foo', '@alxwlw/stack@1.10.0', '@alxwlw/other@2.0.0']);
 });
 
 test('несколько пакетов без ключа — обе записи', () => {
@@ -216,7 +268,7 @@ test('своя запись с другой версией — yaml-set по е�
 			kind: 'yaml-set',
 			file: WORKSPACE_FILE,
 			path: [KEY, 1],
-			value: '@alxwlw/stack@1.0.0 || 1.10.0',
+			value: '@alxwlw/stack@1.10.0',
 		},
 		{ kind: 'yaml-append', file: WORKSPACE_FILE, path: [KEY], value: OWN['@alxwlw/other'] },
 		{ kind: 'yaml-append', file: WORKSPACE_FILE, path: [KEY], value: OWN['@alxwlw/third'] },
@@ -267,9 +319,9 @@ test.each(STATES)('удержаны все записи (%s) — текст пр
 
 test.each<[Name, string[]]>([
 	['@alxwlw/stack', ['foo', '@alxwlw/stack@1.0.0', OWN['@alxwlw/other'], OWN['@alxwlw/third']]],
-	['@alxwlw/other', ['foo', '@alxwlw/stack@1.0.0 || 1.10.0', OWN['@alxwlw/third']]],
-	['@alxwlw/third', ['foo', '@alxwlw/stack@1.0.0 || 1.10.0', OWN['@alxwlw/other']]],
-])('дополнение своей записи и добавления, удержан %s', (name, expected) => {
+	['@alxwlw/other', ['foo', '@alxwlw/stack@1.10.0', OWN['@alxwlw/third']]],
+	['@alxwlw/third', ['foo', '@alxwlw/stack@1.10.0', OWN['@alxwlw/other']]],
+])('замена своей записи и добавления, удержан %s', (name, expected) => {
 	expect(list(rendered(ws3(OWN_ENTRY), canon3, hold(name)))).toEqual(expected);
 });
 

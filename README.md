@@ -109,10 +109,13 @@ When `pnpm-workspace.yaml` sets `minimumReleaseAge` above zero, `sync` also keep
 `minimumReleaseAgeExclude` covering every Own package's version, including the packages that arrive
 transitively as dependencies of `@alxwlw/stack`, so a rollout on the day of publication is not
 rejected by `pnpm install`. A version counts as covered by a bare name,
-`@alxwlw/*`, or `<name>@<v1> || <v2>` containing it; otherwise `sync` appends ` || <version>` to the
-package's own entry, or adds `<name>@<version>` (creating the list if absent). Other entries,
+`@alxwlw/*`, or `<name>@<v1> || <v2>` containing it. Otherwise `sync` rewrites the package's own entry
+to `<name>@<version>` — the versions it listed are dropped, so the entry does not grow from release to
+release — or, when the package has no entry, adds `<name>@<version>` (creating the list if absent). An
+entry that already covers the version is left as it is, whatever else it lists. Other entries,
 their order and comments are left alone. A `catalog: dev` + `name` exception on the package holds this
-too, for a transitive package as well.
+too, for a transitive package as well. Hold the entry with that exception to keep other versions of
+an Own package excluded by hand.
 
 `sync` also keeps `package.json#packageManager` on the canon's pnpm pin whenever that field names
 pnpm (a `+sha512…` suffix on the same version is fine) — otherwise pnpm switches itself to the
