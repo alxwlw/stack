@@ -1,7 +1,7 @@
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { expect, test } from 'bun:test';
+import { beforeAll, expect, test } from 'bun:test';
 import { parse as parseJsonc } from 'jsonc-parser';
 
 import { canonFor, readCanonSource } from './canon.ts';
@@ -15,10 +15,13 @@ import {
 	canonFile,
 	canonRepoFiles,
 	ioError,
+	protoBin,
 	repoDir,
 	runCli,
+	runTool,
 	testCanon,
 	testRepo,
+	toolJson,
 } from './testkit.ts';
 
 // Тексты находок заданы планом и записаны литералами, не через константы модуля.
@@ -26,6 +29,8 @@ const M1 =
 	'[extend] path must be ".gitleaks.canon.toml" — without it the canon ruleset does not apply';
 const M2 =
 	'[extend] must set path = ".gitleaks.canon.toml" in place of useDefault = true — the canon ruleset already extends the default one, and gitleaks refuses a config that sets both';
+const M5 = (shown: string) =>
+	`[extend] useDefault = ${shown} is not a boolean — gitleaks refuses to load the config`;
 const M3 =
 	'"extends" must include a preset of @alxwlw/oxlint-config, such as "./node_modules/@alxwlw/oxlint-config/node.jsonc" — without it the canon lint rules do not apply';
 const M4 =
@@ -77,6 +82,49 @@ const GITLEAKS: Row[] = [
 		'path в чужой таблице',
 		'[[allowlists]]\ndescription = "x"\npath = ".gitleaks.canon.toml"\n',
 		M1,
+	],
+	['[Extend] и Path', '[Extend]\nPath = ".gitleaks.canon.toml"\n', undefined],
+	['[EXTEND] и PATH', '[EXTEND]\nPATH = ".gitleaks.canon.toml"\n', undefined],
+	['встроенная таблица Extend', 'extend = { Path = ".gitleaks.canon.toml" }\n', undefined],
+	[
+		'useDefault = "false"',
+		'[extend]\nuseDefault = "false"\npath = ".gitleaks.canon.toml"\n',
+		undefined,
+	],
+	['useDefault = 0', '[extend]\nuseDefault = 0\npath = ".gitleaks.canon.toml"\n', undefined],
+	['useDefault = ""', '[extend]\nuseDefault = ""\npath = ".gitleaks.canon.toml"\n', undefined],
+	['useDefault = "F"', '[extend]\nuseDefault = "F"\npath = ".gitleaks.canon.toml"\n', undefined],
+	[
+		'две таблицы, действует [Extend] с path',
+		'[extend]\nuseDefault = true\n\n[Extend]\npath = ".gitleaks.canon.toml"\n',
+		undefined,
+	],
+	[
+		'path и Path в одной таблице, действует Path',
+		'[extend]\npath = ".gitleaks.other.toml"\nPath = ".gitleaks.canon.toml"\n',
+		undefined,
+	],
+	['usedefault = true', '[extend]\nusedefault = true\n', M2],
+	['UseDefault = "true"', '[extend]\nUseDefault = "true"\n', M2],
+	['useDefault = 1', '[extend]\nuseDefault = 1\n', M2],
+	['useDefault = -1', '[extend]\nuseDefault = -1\n', M2],
+	['useDefault = "T" и path', '[extend]\nuseDefault = "T"\npath = ".gitleaks.canon.toml"\n', M2],
+	[
+		'две таблицы, действует [Extend] с useDefault',
+		'[Extend]\nuseDefault = true\n\n[extend]\npath = ".gitleaks.canon.toml"\n',
+		M2,
+	],
+	['path пустой', '[extend]\npath = ""\n', M1],
+	['path с ведущим пробелом', '[extend]\npath = " .gitleaks.canon.toml"\n', M1],
+	[
+		'useDefault = "yes"',
+		'[extend]\nuseDefault = "yes"\npath = ".gitleaks.canon.toml"\n',
+		M5('"yes"'),
+	],
+	[
+		'useDefault = [true]',
+		'[extend]\nuseDefault = [true]\npath = ".gitleaks.canon.toml"\n',
+		M5('[true]'),
 	],
 	[
 		'битый TOML',
@@ -159,6 +207,51 @@ const TSCONFIG: Row[] = [
 test.each(GITLEAKS)('засев gitleaks: %s', (_name, text, expected) => {
 	expectRow('.gitleaks.toml', text, expected);
 });
+
+// Сверка с настоящим gitleaks: строка таблицы GITLEAKS подключает канон тогда и только тогда, когда
+// gitleaks с этим конфигом применяет правило канона (eth-private-key-no-prefix).
+// 64 hex собираются во время выполнения; в имени нет key, secret, token.
+const HEX = '0123456789abcdef'.repeat(4);
+let gitleaksBin = '';
+beforeAll(() => {
+	gitleaksBin = protoBin('gitleaks');
+});
+
+test.each(GITLEAKS)(
+	'засев gitleaks читается как у gitleaks: %s',
+	(_name, text) => {
+		const dir = repoDir({
+			'.gitleaks.toml': text,
+			'.gitleaks.canon.toml': canonFile('.gitleaks.canon.toml'),
+			'src/a.ts': `ETH_PRIV=0x${HEX}\n`,
+		});
+		try {
+			const run = runTool(
+				gitleaksBin,
+				[
+					'dir',
+					'.',
+					'--no-banner',
+					'--no-color',
+					'--exit-code',
+					'3',
+					'--report-format',
+					'json',
+					'--report-path',
+					'-',
+				],
+				dir,
+			);
+			const found =
+				(run.status === 0 || run.status === 3) &&
+				toolJson<{ RuleID: string }[]>(run).some((f) => f.RuleID === 'eth-private-key-no-prefix');
+			expect(read('.gitleaks.toml', text) === undefined, run.ctx).toBe(found);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	},
+	30_000,
+);
 
 test.each(OXLINT)('засев oxlint: %s', (_name, text, expected) => {
 	expectRow('.oxlintrc.json', text, expected);
