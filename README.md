@@ -419,7 +419,8 @@ repository are not checked; a directory outside git is `guardrails-unavailable`.
 - shellcheck: `*.sh` and `*.bash` files, and files with no extension whose first line is a shebang for sh,
   bash, dash or ksh (also through `env`). shellcheck runs without `-x`.
 
-A tool with no files is not run and does not have to be installed.
+A tool with no files is not run. actionlint is needed only when there are workflow files; shellcheck is needed
+when there are scripts or workflow files, because actionlint runs the pinned shellcheck on the `run:` steps.
 
 The version of each tool is the pin in the repo's `.prototools`; a missing pin is `guardrails-unavailable`.
 The binary comes from the variable `ACTIONLINT_BIN` or `SHELLCHECK_BIN` when it is set and not empty,
@@ -433,7 +434,7 @@ config file, directives in the code and the ignored paths in the actionlint conf
 
 | Code                     | When                                                                                                                                                                                   |
 | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `guardrails-violation`   | a tool reports a violation at or above the threshold; the line reads `<path>:<line> — <tool> <rule>: <message>`                                                                        |
+| `guardrails-violation`   | a tool reports a violation at or above the threshold; the line reads `guardrails-violation: <path>:<line> — <tool> <rule>: <message>`, without `:<line>` when the tool gives no line   |
 | `guardrails-unavailable` | a tool did not run or its answer cannot be read (no pin, no binary, a binary of another version, a crash, output that does not parse, a directory outside git); never read as no drift |
 
 None of them can be held by an exception. To turn the gate off, drop `guardrails` from `with`.
