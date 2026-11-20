@@ -578,6 +578,31 @@ describe('настоящий gitleaks: коммиты PR', () => {
 		TIMEOUT,
 	);
 
+	test.each([
+		['color.ui = always', '[color]\n\tui = always\n'],
+		['color.diff = always', '[color]\n\tdiff = always\n'],
+	])(
+		'конфиг git пользователя с %s не прячет находку: цвет в выводе git ломает разбор gitleaks',
+		(_name, config) => {
+			const { dir, a } = feature();
+			const cfgDir = repoDir({ gitconfig: config });
+			dirs.push(cfgDir);
+			const saved = process.env.GIT_CONFIG_GLOBAL;
+			process.env.GIT_CONFIG_GLOBAL = join(cfgDir, 'gitconfig');
+			try {
+				// Переменная читается spawnRunner при создании порта, поэтому порт строится после неё.
+				const out = scan(dir, {}, 'main');
+				expect(
+					'violations' in out.commits && out.commits.violations.map((v) => v.message),
+				).toStrictEqual([`${DESCRIPTION} (commit ${a.slice(0, 12)})`]);
+			} finally {
+				if (saved === undefined) Reflect.deleteProperty(process.env, 'GIT_CONFIG_GLOBAL');
+				else process.env.GIT_CONFIG_GLOBAL = saved;
+			}
+		},
+		TIMEOUT,
+	);
+
 	test(
 		'--base HEAD: пустой диапазон — range без нарушений',
 		() => {

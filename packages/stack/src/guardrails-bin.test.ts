@@ -261,3 +261,47 @@ test('spawnRunner: окружение без SHELLCHECK_OPTS и конфигов
 		});
 	}
 });
+
+test('spawnRunner: цвет git выключен через GIT_CONFIG_*, уже заданные пары сохраняются', () => {
+	const names = ['GIT_CONFIG_COUNT', 'GIT_CONFIG_KEY_0', 'GIT_CONFIG_VALUE_0'] as const;
+	const saved = names.map((n) => process.env[n]);
+	const show = ['-c', 'env | grep "^GIT_CONFIG_" | sort'];
+	try {
+		for (const n of names) Reflect.deleteProperty(process.env, n);
+		const root = mkdtempSync(join(tmpdir(), 'guardrails-bin-'));
+		expect(spawnRunner(root)('sh', show).out).toBe(
+			[
+				'GIT_CONFIG_COUNT=2',
+				'GIT_CONFIG_KEY_0=color.ui',
+				'GIT_CONFIG_KEY_1=color.diff',
+				'GIT_CONFIG_VALUE_0=never',
+				'GIT_CONFIG_VALUE_1=never',
+				'',
+			].join('\n'),
+		);
+		process.env.GIT_CONFIG_COUNT = '1';
+		process.env.GIT_CONFIG_KEY_0 = 'acme.key';
+		process.env.GIT_CONFIG_VALUE_0 = 'x';
+		expect(spawnRunner(root)('sh', show).out).toBe(
+			[
+				'GIT_CONFIG_COUNT=3',
+				'GIT_CONFIG_KEY_0=acme.key',
+				'GIT_CONFIG_KEY_1=color.ui',
+				'GIT_CONFIG_KEY_2=color.diff',
+				'GIT_CONFIG_VALUE_0=x',
+				'GIT_CONFIG_VALUE_1=never',
+				'GIT_CONFIG_VALUE_2=never',
+				'',
+			].join('\n'),
+		);
+		// Мусор в счётчике не ломает прогон: отсчёт с нуля.
+		process.env.GIT_CONFIG_COUNT = 'abc';
+		expect(spawnRunner(root)('sh', show).out).toContain('GIT_CONFIG_COUNT=2\n');
+	} finally {
+		names.forEach((n, i) => {
+			const v = saved[i];
+			if (v === undefined) Reflect.deleteProperty(process.env, n);
+			else process.env[n] = v;
+		});
+	}
+});

@@ -146,7 +146,8 @@ unknown `--profile`, an unknown group in `with` (from `.stack.jsonc` or `--with`
 There is no `--help`: argument parsing is strict, and `stack init --profile <node|contracts|infra>`
 is the only way to create the config file in the first place. Every command accepts
 `--repo <path>` to target a repo other than the current directory. `stack check --base <ref>` hands
-the ref to the `diff` part of the `repo-rules` group and has no effect without that group.
+the ref to the `diff` part of the `repo-rules` group and to the PR-commits scan of the `guardrails` group
+(gitleaks over the commits from the merge-base with the ref); it has no effect without either group.
 
 `stack sync-pr [--base <branch>] [--no-install]` is meant for the sync workflow (it commits the whole
 tree and force-pushes) and does the whole consumer side of a release in one command: `stack sync`;

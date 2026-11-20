@@ -53,6 +53,19 @@ export function spawnRunner(root: string): GuardrailRunner {
 	delete env.SHELLCHECK_OPTS;
 	delete env.GITLEAKS_CONFIG;
 	delete env.GITLEAKS_CONFIG_TOML;
+	// Цвет git: при color.ui или color.diff = always (конфиг пользователя или репозитория) `git log`
+	// внутри `gitleaks git` печатает escape-коды, gitleaks не разбирает дифф, выходит с 0 и `[]` без
+	// строки ERR, и секрет в коммите PR пропущен. Конфиг git не отключается целиком (в CI в нём
+	// safe.directory), поэтому цвет выключается парами GIT_CONFIG_*, дописанными к уже заданным.
+	// Остальные ключи проверены на gitleaks 8.30.1 и находок не меняют: diff.noprefix,
+	// diff.mnemonicPrefix, log.showSignature.
+	const count = Number.parseInt(env.GIT_CONFIG_COUNT ?? '', 10);
+	const n = Number.isInteger(count) && count >= 0 ? count : 0;
+	env.GIT_CONFIG_COUNT = String(n + 2);
+	env[`GIT_CONFIG_KEY_${n}`] = 'color.ui';
+	env[`GIT_CONFIG_VALUE_${n}`] = 'never';
+	env[`GIT_CONFIG_KEY_${n + 1}`] = 'color.diff';
+	env[`GIT_CONFIG_VALUE_${n + 1}`] = 'never';
 	return (cmd, argv, cwd) => {
 		const r = spawnSync(cmd, argv, { cwd: cwd ?? root, env, encoding: 'utf8', maxBuffer: 1 << 30 });
 		if (r.error) return { code: -1, out: '', err: `${cmd}: ${r.error.message}` };

@@ -9,7 +9,7 @@ function byPathThenLine(a: GuardrailViolation, b: GuardrailViolation): number {
 	return a.line - b.line;
 }
 
-// Порядок: инструмент (GUARDRAIL_TOOLS), путь, строка. Строка <= 0 — цель без номера.
+// Порядок: инструмент (GUARDRAIL_TOOLS), путь, строка; находки коммитов PR (commits) идут после всех инструментов. Строка <= 0 — цель без номера.
 export function checkGuardrails(outcome: GuardrailsOutcome | undefined): Finding[] {
 	if (outcome === undefined) throw new Error('checkGuardrails: no guardrails outcome');
 	if ('unavailable' in outcome) {
@@ -52,7 +52,7 @@ export function checkGuardrails(outcome: GuardrailsOutcome | undefined): Finding
 	return findings;
 }
 
-// Строка на инструмент в порядке GUARDRAIL_TOOLS; выход пометки не меняют.
+// Строка на инструмент в порядке GUARDRAIL_TOOLS, последней — строка коммитов PR (commits); выход пометки не меняют.
 export function guardrailsNotes(outcome: GuardrailsOutcome | undefined): string[] {
 	if (outcome === undefined || 'unavailable' in outcome) return [];
 	const lines = GUARDRAIL_TOOLS.map((tool) => {
