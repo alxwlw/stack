@@ -15,6 +15,8 @@ export type GuardrailRunner = (cmd: string, argv: string[], cwd?: string) => Gua
 export interface GuardrailsPort {
 	run: GuardrailRunner;
 	env: NodeJS.ProcessEnv;
+	// --base команды check: база PR для скана коммитов gitleaks; без неё — окружение Actions.
+	base?: string;
 }
 
 export const GUARDRAIL_TOOLS = ['actionlint', 'shellcheck', 'gitleaks'] as const;

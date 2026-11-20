@@ -50,6 +50,7 @@ test('checkGuardrails: порядок — инструмент, путь, стр
 				violations: [viol('gitleaks', 'src/b.ts', 2, 'eth-private-key-no-prefix')],
 			},
 		},
+		commits: { skipped: 'no files' },
 	};
 	const got = checkGuardrails(outcome);
 	expect(got).toStrictEqual([
@@ -96,6 +97,7 @@ test('checkGuardrails: порядок инструментов не зависи
 				violations: [viol('actionlint', '.github/workflows/a.yml', 1)],
 			},
 		},
+		commits: { skipped: 'no files' },
 	};
 	expect(checkGuardrails(outcome).map((f) => f.target)).toStrictEqual([
 		'.github/workflows/a.yml:1',
@@ -119,6 +121,7 @@ test('checkGuardrails: недоступность всей группы, час�
 				shellcheck: { unavailable: '.prototools has no shellcheck pin' },
 				gitleaks: NO_FILES,
 			},
+			commits: { skipped: 'no files' },
 		}),
 	).toStrictEqual([
 		{
@@ -134,6 +137,7 @@ test('checkGuardrails: недоступность всей группы, час�
 				shellcheck: NO_FILES,
 				gitleaks: { unavailable: 'no gl' },
 			},
+			commits: { skipped: 'no files' },
 		}),
 	).toStrictEqual([
 		{ code: 'guardrails-unavailable', target: 'actionlint', message: 'gone' },
@@ -142,6 +146,7 @@ test('checkGuardrails: недоступность всей группы, час�
 	expect(
 		checkGuardrails({
 			tools: { actionlint: NO_FILES, shellcheck: NO_FILES, gitleaks: NO_FILES },
+			commits: { skipped: 'no files' },
 		}),
 	).toStrictEqual([]);
 	expect(
@@ -151,6 +156,7 @@ test('checkGuardrails: недоступность всей группы, час�
 				shellcheck: { version: '0.11.0', files: 1, violations: [] },
 				gitleaks: { version: '8.30.1', files: 1, violations: [] },
 			},
+			commits: { skipped: 'no files' },
 		}),
 	).toStrictEqual([]);
 });
@@ -173,11 +179,13 @@ test('guardrailsNotes: строка на инструмент в порядке 
 				shellcheck: NO_FILES,
 				gitleaks: { version: '8.30.1', files: 5, violations: [viol('gitleaks', 'a.env', 1)] },
 			},
+			commits: { skipped: 'no files' },
 		}),
 	).toStrictEqual([
 		'guardrails actionlint 1.7.12: 1 file(s), 2 finding(s)',
 		'guardrails shellcheck: skipped (no files)',
 		'guardrails gitleaks 8.30.1: 5 file(s), 1 finding(s)',
+		'guardrails gitleaks commits: skipped (no files)',
 	]);
 	expect(
 		guardrailsNotes({
@@ -186,20 +194,24 @@ test('guardrailsNotes: строка на инструмент в порядке 
 				shellcheck: { version: '0.11.0', files: 3, violations: [] },
 				gitleaks: NO_FILES,
 			},
+			commits: { skipped: 'no files' },
 		}),
 	).toStrictEqual([
 		'guardrails actionlint: skipped (no files)',
 		'guardrails shellcheck 0.11.0: 3 file(s), 0 finding(s)',
 		'guardrails gitleaks: skipped (no files)',
+		'guardrails gitleaks commits: skipped (no files)',
 	]);
 	expect(
 		guardrailsNotes({
 			tools: { actionlint: NO_FILES, shellcheck: { unavailable: 'x' }, gitleaks: NO_FILES },
+			commits: { skipped: 'no files' },
 		}),
 	).toStrictEqual([
 		'guardrails actionlint: skipped (no files)',
 		'guardrails shellcheck: unavailable',
 		'guardrails gitleaks: skipped (no files)',
+		'guardrails gitleaks commits: skipped (no files)',
 	]);
 	expect(guardrailsNotes({ unavailable: 'x' })).toStrictEqual([]);
 	expect(guardrailsNotes(undefined)).toStrictEqual([]);
@@ -216,6 +228,7 @@ const SCRIPT_VIOLATION: GuardrailsOutcome = {
 		},
 		gitleaks: NO_FILES,
 	},
+	commits: { skipped: 'no files' },
 };
 
 test('check: исключение на файл не гасит находку guardrails, а само протухает', () => {
@@ -359,6 +372,7 @@ test('checkRepo: .prototools репозитория доходит до чита
 		'guardrails actionlint: skipped (no files)',
 		'guardrails shellcheck 0.11.0: 1 file(s), 1 finding(s)',
 		`guardrails gitleaks ${gitleaksPin}: 2 file(s), 0 finding(s)`,
+		'guardrails gitleaks commits: skipped (no --base outside GitHub Actions)',
 	]);
 	expect(calls).toHaveLength(5);
 });
@@ -420,5 +434,6 @@ test('checkRepo: notes guardrails после repo-rules', () => {
 		'guardrails actionlint: skipped (no files)',
 		'guardrails shellcheck: skipped (no files)',
 		'guardrails gitleaks: unavailable',
+		'guardrails gitleaks commits: skipped (gitleaks unavailable)',
 	]);
 });

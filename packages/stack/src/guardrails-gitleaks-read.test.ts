@@ -103,6 +103,7 @@ describe('читатель с портом-таблицей', () => {
 				shellcheck: NO_FILES,
 				gitleaks: { version: PIN, files: 1, violations: [] },
 			},
+			commits: { skipped: 'no --base outside GitHub Actions' },
 		});
 		expect(f.calls).toStrictEqual([
 			['git', ['ls-files', '-z']],
@@ -134,6 +135,7 @@ describe('читатель с портом-таблицей', () => {
 					],
 				},
 			},
+			commits: { skipped: 'no --base outside GitHub Actions' },
 		});
 	});
 
@@ -230,6 +232,7 @@ describe('читатель с портом-таблицей', () => {
 		// .prototools нет: недоступность была бы, если бы пины читались.
 		expect(readGuardrails(root, undefined, f.port)).toStrictEqual({
 			tools: { actionlint: NO_FILES, shellcheck: NO_FILES, gitleaks: NO_FILES },
+			commits: { skipped: 'no files' },
 		});
 		expect(f.calls).toStrictEqual([['git', ['ls-files', '-z']]]);
 	});
@@ -267,7 +270,7 @@ describe('настоящий gitleaks через читатель', () => {
 	function scan(dir: string) {
 		const out = readGuardrails(dir, prototools, {
 			run: spawnRunner(dir),
-			env: { ...process.env, GITLEAKS_BIN: bin },
+			env: { ...process.env, GITHUB_ACTIONS: undefined, GITLEAKS_BIN: bin },
 		});
 		if ('unavailable' in out) throw new Error(out.unavailable);
 		return { out, part: out.tools.gitleaks };
