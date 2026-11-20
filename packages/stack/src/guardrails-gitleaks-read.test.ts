@@ -233,7 +233,7 @@ describe('настоящий gitleaks через читатель', () => {
 	const prototools = readFileSync(join(ROOT, '.prototools'), 'utf8');
 	const CLEAN = 'export const a = 1;\n';
 
-	// Репозиторий с каноном gitleaks и закоммиченным чистым src/a.ts.
+	// Репозиторий с каноном gitleaks и закоммиченным чистым файлом исходников.
 	function fixture(extra: Record<string, string> = {}): string {
 		const { dir } = gitRepo({
 			'.gitleaks.toml': canonFile('.gitleaks.toml'),
@@ -329,7 +329,7 @@ describe('настоящий gitleaks через читатель', () => {
 			commit(dir, 'src/b.ts', LINE);
 			commit(dir, 'src/c.ts', `ETH_PRIV=0x${HEX} # gitleaks:allow\n`);
 			put(dir, IGNORE_FILE, `src/b.ts:${RULE}:1\n`);
-			// Файл игнора не отслеживается — в копию не попадает, находка b.ts остаётся; c.ts погашен allow.
+			// Файл игнора не отслеживается — в копию не попадает, находка остаётся; второй файл погашен allow.
 			expect(paths(scan(dir).part)).toStrictEqual(['src/b.ts']);
 			git(dir, 'add', IGNORE_FILE);
 			git(dir, 'commit', '-m', 'ignore');
