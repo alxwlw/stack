@@ -19,5 +19,8 @@
 
 	// TOML belongs to gitleaks and uv, not this formatter: gitleaks-canon.toml's rules are
 	// regex literals inside '''...''' blocks, and a formatter has no business rewriting them.
-	"ignorePatterns": ["**/*.toml"],
+	// The two baselines are written by the canon's own tools (repo-rules, stack peers-baseline) in
+	// their own layout: formatting them would turn every rewrite into a format failure.
+	// Lockfiles need no entry — oxfmt always skips pnpm-lock.yaml and its kin.
+	"ignorePatterns": ["**/*.toml", ".repo-rules-baseline.json", ".stack-peers-baseline.json"],
 }
