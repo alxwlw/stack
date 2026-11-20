@@ -96,6 +96,7 @@ const OXLINT: Row[] = [
 		M3,
 	],
 	['не строки', '{ "extends": [1, null] }', M3],
+	['вложенный массив', '{ "extends": [["./node_modules/@alxwlw/oxlint-config/node.jsonc"]] }', M3],
 	['корень — массив', '[]', M3],
 	[
 		'упоминание вне extends верхнего уровня',
@@ -129,6 +130,7 @@ const TSCONFIG: Row[] = [
 	['пустой массив', '{ "extends": [] }', M4],
 	['имя — хвост чужого сегмента', '{ "extends": "x@alxwlw/tsconfig/node.json" }', M4],
 	['число', '{ "extends": 1 }', M4],
+	['вложенный массив', '{ "extends": [["@alxwlw/tsconfig/node.json"]] }', M4],
 	[
 		'пустой файл',
 		'',
