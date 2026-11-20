@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path';
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 
+import { parsePins } from './canon.ts';
 import {
 	BARE,
 	git,
@@ -10,6 +11,7 @@ import {
 	isolateGitConfig,
 	protoBin,
 	put,
+	ROOT,
 	repoDir,
 	runCli as run,
 } from './testkit.ts';
@@ -26,6 +28,8 @@ describe('check с группой guardrails через настоящий cli',
 	const VIOLATION_LINE = 'guardrails-violation: ';
 	const GONE = '.github/workflows/gone.yml';
 	const TIMEOUT = 60_000;
+	// Версии — из канонного prototools, который sync кладёт в репозиторий; литералов версий в тесте нет.
+	const PINS = parsePins(readFileSync(join(ROOT, 'packages/stack/canon/files/prototools'), 'utf8'));
 
 	let restore: () => void;
 	let tools: Record<string, string>;
@@ -77,10 +81,10 @@ describe('check с группой guardrails через настоящий cli',
 				`guardrails-violation: .github/workflows/lint.yml:${runLine(workflow(BAD_RUN))} — actionlint expression: `,
 			);
 			expect(found[1]).toStartWith('guardrails-violation: scripts/a.sh:2 — shellcheck SC2164: ');
-			expect(r.err).toContain('guardrails actionlint 1.7.12: ');
-			expect(r.err).toContain('guardrails shellcheck 0.11.0: ');
-			expect(r.err).toContain('guardrails actionlint 1.7.12: 4 file(s), 1 finding(s)');
-			expect(r.err).toContain('guardrails shellcheck 0.11.0: 1 file(s), 1 finding(s)');
+			expect(r.err).toContain(`guardrails actionlint ${PINS.actionlint}: `);
+			expect(r.err).toContain(`guardrails shellcheck ${PINS.shellcheck}: `);
+			expect(r.err).toContain(`guardrails actionlint ${PINS.actionlint}: 4 file(s), 1 finding(s)`);
+			expect(r.err).toContain(`guardrails shellcheck ${PINS.shellcheck}: 1 file(s), 1 finding(s)`);
 			expect(r.err).not.toContain('guardrails-unavailable');
 			expect(r.out).not.toContain('canon: no drift');
 		},
@@ -110,7 +114,7 @@ describe('check с группой guardrails через настоящий cli',
 			put(dir, '.worktrees/wt/scripts/c.sh', BAD_SCRIPT);
 			const r = await run(['check'], dir, tools);
 			expect(violations(r.err)).toStrictEqual([]);
-			expect(r.err).toContain('guardrails shellcheck 0.11.0: 1 file(s), 0 finding(s)');
+			expect(r.err).toContain(`guardrails shellcheck ${PINS.shellcheck}: 1 file(s), 0 finding(s)`);
 			expect(r.code).toBe(0);
 			expect(r.out).toBe(NO_DRIFT);
 		},
@@ -181,7 +185,7 @@ describe('check с группой guardrails через настоящий cli',
 	);
 
 	test(
-		'приёмка 4: sync не зовёт инструменты, а следующий check видит нарушение без toolchain-pin',
+		'приёмка 4: sync переписывает пин proto, а check затем показывает нарушение actionlint и нет находки toolchain-pin',
 		async () => {
 			const stale =
 				workflow(BAD_RUN) +
@@ -196,7 +200,7 @@ describe('check с группой guardrails через настоящий cli',
 			expect(synced.code).toBe(0);
 			const text = readFileSync(path, 'utf8');
 			expect(text).not.toContain('0.60.2');
-			expect(text).toContain('proto-version: 0.64.0');
+			expect(text).toContain(`proto-version: ${PINS.proto}`);
 			git(dir, 'add', '-A');
 			git(dir, 'commit', '-m', 'synced');
 			const r = await run(['check'], dir, tools);
