@@ -17,10 +17,10 @@ import {
 // Приёмка группы guardrails через настоящий cli на пиннутых actionlint и shellcheck.
 describe('check с группой guardrails через настоящий cli', () => {
 	const NO_DRIFT = 'canon: no drift\n';
-	const BAD_SCRIPT = '#!/bin/bash\ncd dir\n';
-	const GOOD_SCRIPT = '#!/bin/bash\ncd dir || exit 1\n';
+	const BAD_SCRIPT = '#!/bin/bash\ncd dir\necho $HOME\n';
+	const GOOD_SCRIPT = '#!/bin/bash\ncd dir || exit 1\necho $HOME\n';
 	const BAD_RUN = '      - run: echo "${{ github.event.foo( }}"\n';
-	const GOOD_RUN = '      - run: echo ok\n';
+	const GOOD_RUN = '      - run: echo $HOME\n';
 	const workflow = (step: string) =>
 		`name: lint\non: push\njobs:\n  lint:\n    runs-on: ubuntu-latest\n    steps:\n${step}`;
 	const VIOLATION_LINE = 'guardrails-violation: ';
