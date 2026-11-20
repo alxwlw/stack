@@ -25,7 +25,7 @@ import {
 } from './sync-pr.ts';
 
 // Корень репозитория стека: тесты запускают proto и moon из него.
-const ROOT = join(import.meta.dir, '..', '..', '..');
+export const ROOT = join(import.meta.dir, '..', '..', '..');
 
 // Не канон-файл: схема конфигурации лежит рядом с пакетом, а не в canon/.
 export const SCHEMA_PATH = join(import.meta.dir, '..', 'schema.json');

@@ -1,3 +1,5 @@
+import { spawnSync } from 'node:child_process';
+
 // Общие типы группы guardrails. Внешние вызовы идут через один порт: адаптер — в cli.ts, тесты
 // подставляют значения.
 
@@ -36,4 +38,13 @@ export function failureReason(run: GuardrailRun): string {
 		.map((l) => l.trim())
 		.find((l) => l !== '');
 	return first ?? `exited with ${run.code}`;
+}
+
+// Адаптер порта: процесс в корне репозитория. Не запустился — код -1 и причина в stderr.
+export function spawnRunner(root: string): GuardrailRunner {
+	return (cmd, argv) => {
+		const r = spawnSync(cmd, argv, { cwd: root, encoding: 'utf8', maxBuffer: 1 << 30 });
+		if (r.error) return { code: -1, out: '', err: `${cmd}: ${r.error.message}` };
+		return { code: r.status ?? -1, out: r.stdout, err: r.stderr };
+	};
 }
