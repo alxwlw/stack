@@ -7,7 +7,7 @@ import type { Finding } from './findings.ts';
 import type { GuardrailsOutcome } from './guardrails.ts';
 import type { GuardrailRun, GuardrailsPort, GuardrailViolation } from './guardrails-port.ts';
 import { checkGuardrails, guardrailsNotes } from './guardrails-rule.ts';
-import type { RepoRulesOutcome } from './repo-rules.ts';
+import type { RepoRulesOutcome, RepoRulesPort } from './repo-rules.ts';
 import { repoDir, testCanon, testRepo } from './testkit.ts';
 
 const viol = (
@@ -322,4 +322,60 @@ test('checkRepo: .prototools репозитория доходит до чита
 		'guardrails shellcheck 0.11.0: 1 file(s), 1 finding(s)',
 	]);
 	expect(calls).toHaveLength(3);
+});
+
+test('checkRepo: обе группы — находки и пометки repo-rules идут раньше guardrails', () => {
+	const both = testCanon({ rules: ['repo-rules', 'guardrails'] });
+	const root = repoDir({ 'renovate.json5': `{ extends: ['${STACK_RENOVATE_PRESET}'] }\n` });
+	const repoRules: RepoRulesPort = {
+		env: { GITHUB_ACTIONS: '' },
+		base: undefined,
+		read: () => ({
+			code: 1,
+			err: '',
+			out: JSON.stringify({
+				violations: [{ rule: 'max-lines', path: 'big.ts', line: 801, message: '812 lines' }],
+				stale: [],
+				notes: [],
+			}),
+		}),
+	};
+	const guardrails: GuardrailsPort = {
+		env: {},
+		run: () => ({ code: 128, out: '', err: 'fatal: not a git repository\n' }),
+	};
+	expect(checkRepo(root, both, [], { repoRules, guardrails })).toStrictEqual({
+		findings: [
+			{ code: 'repo-rules-violation', target: 'big.ts:801', message: 'max-lines: 812 lines' },
+			{
+				code: 'guardrails-unavailable',
+				target: 'git ls-files',
+				message: 'fatal: not a git repository',
+			},
+		],
+		notes: ['repo-rules diff: skipped (no --base outside GitHub Actions)'],
+	});
+});
+
+test('checkRepo: notes guardrails после repo-rules', () => {
+	const both = testCanon({ rules: ['repo-rules', 'guardrails'] });
+	const root = repoDir({ 'renovate.json5': `{ extends: ['${STACK_RENOVATE_PRESET}'] }\n` });
+	const repoRules: RepoRulesPort = {
+		env: { GITHUB_ACTIONS: '' },
+		base: undefined,
+		read: () => ({
+			code: 0,
+			err: '',
+			out: JSON.stringify({ violations: [], stale: [], notes: [] }),
+		}),
+	};
+	const guardrails: GuardrailsPort = {
+		env: {},
+		run: () => ({ code: 0, out: 'README.md\0', err: '' }),
+	};
+	expect(checkRepo(root, both, [], { repoRules, guardrails }).notes).toStrictEqual([
+		'repo-rules diff: skipped (no --base outside GitHub Actions)',
+		'guardrails actionlint: skipped (no files)',
+		'guardrails shellcheck: skipped (no files)',
+	]);
 });
