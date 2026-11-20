@@ -239,6 +239,12 @@ canon — and when `.github/dependabot.yml` (or `.yaml`) exists. Neither can be 
 even when it equals the `.prototools` pin: `.prototools` owns the version, so leave it unset (`node: {}`). `stack sync` does
 not fix it; an exception whose `file` is the path before the colon in the finding's target (with a `reason`) holds it.
 
+`stack check` also reports that toolchain config when it still sits under its moon 1 file name (singular
+`toolchain`, extension yml, in the `.moon` directory) as `moon-v1-toolchain`: moon 2 reads only the plural name, so
+nothing in the file applies — not its pins either. `stack sync` does not delete it: move the settings moon 2 still
+needs to the config it reads, under their moon 2 keys (moon's 2.0 migration guide lists the renames), and delete
+the file. An exception whose `file` is the finding's target (with a `reason`) holds it.
+
 `stack check` also fails when moon's YAML workspace config (a workspace file with the extension yml or yaml in the `.moon` directory; the
 first one found is the config) has no `vcs.defaultBranch`, or an empty one. Other formats moon accepts (json, jsonc, toml, pkl,
 hcl) are not checked. Without the setting moon takes `master` as the base: a PR check passes because moon gets the base from the
@@ -259,6 +265,8 @@ build the image on a pull request shows neither, so build the image from the PR 
 hold the file back with an exception (`{ "file": "<path>", "reason": "…" }`) added in that same PR.
 The lockfile diff of that PR can also carry packages the canon does not touch: `pnpm dedupe` collapses whatever
 was already duplicated on the base branch.
+The same release reports a moon toolchain config left under its moon 1 file name (`moon-v1-toolchain`): `sync`
+does not fix it, so delete the file in that PR, or hold it with an exception.
 
 ## Exceptions
 
@@ -510,7 +518,7 @@ The consumer list is the `STACK_CONSUMERS` secret of this repository (`owner/rep
 A consumer tunes its sync with one repository variable: `STACK_SYNC_BASE` opens the PR against that
 branch instead of the default one (for a repo whose default branch only takes merges from another).
 `STACK_SYNC_INSTALL` is no longer read: the repository decides itself — a root `package.json` means the
-registry wait, `proto install` and `pnpm install`. A consumer's copy of that workflow made before 1.12.0 still passes
+registry wait, `proto install`, `pnpm install` and `pnpm dedupe`. A consumer's copy of that workflow made before 1.12.0 still passes
 the variable as the `install` input on its first sync (`false` becomes `--no-install`), and that sync PR
 replaces the copy.
 

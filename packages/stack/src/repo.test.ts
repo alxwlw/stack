@@ -9,6 +9,7 @@ import {
 	DEPENDABOT_CONFIGS,
 	loadRepo,
 	LOCKFILE,
+	MOON_TOOLCHAIN_V1,
 	MOON_TOOLCHAINS,
 	MOON_WORKSPACES,
 	type Read,
@@ -573,7 +574,7 @@ test('readSnapshot: вложенные package.json читаются тольк�
 	expect(nested(readSnapshot(repoDir(tree), testCanon()))).toEqual(['package.json']);
 });
 
-test('readSnapshot: кандидаты — package.json, pnpm-workspace.yaml, dest и satisfiedBy канона, Renovate, dependabot, .moon/toolchains.yml, .moon/workspace.yml, baseline peers и pnpm-lock.yaml', () => {
+test('readSnapshot: кандидаты — package.json, pnpm-workspace.yaml, dest и satisfiedBy канона, Renovate, dependabot, .moon/toolchains.yml, .moon/toolchain.yml, .moon/workspace.yml, baseline peers и pnpm-lock.yaml', () => {
 	const dir = repoDir({
 		'.github/renovate.json5': '{}',
 		'.github/dependabot.yml': 'version: 2',
@@ -613,6 +614,7 @@ test('readSnapshot: кандидаты — package.json, pnpm-workspace.yaml, de
 			...RENOVATE_CONFIGS,
 			...DEPENDABOT_CONFIGS,
 			MOON_TOOLCHAINS,
+			MOON_TOOLCHAIN_V1,
 			...MOON_WORKSPACES,
 			PEERS_BASELINE,
 			LOCKFILE,

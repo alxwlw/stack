@@ -92,6 +92,8 @@ const ADDRESS: { [C in FindingCode]: ((f: FindingOf<C>) => Address) | 'unsuppres
 	'dependabot-config': 'unsuppressible',
 	// Версия в moon toolchains — второй пин поверх .prototools; исключение держит её по файлу.
 	'moon-toolchain-version': () => ({ file: '.moon/toolchains.yml' }),
+	// moon 2 файл под именем moon 1 не читает; исключение держит находку по файлу.
+	'moon-v1-toolchain': (f) => ({ file: f.file }),
 	// Ветка по умолчанию в moon workspace; исключение по найденному пути держит и drift, и отчёт.
 	'moon-default-branch': (f) => ({ file: f.file }),
 	// Копии пинов тулчейна — адрес сам Dockerfile или workflow.

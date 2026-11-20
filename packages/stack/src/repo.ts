@@ -35,6 +35,8 @@ export const RENOVATE_CONFIGS = [
 export const WORKSPACE_FILE = 'pnpm-workspace.yaml';
 
 export const MOON_TOOLCHAINS = '.moon/toolchains.yml';
+/** Имя конфига тулчейна в moon 1: moon 2 читает MOON_TOOLCHAINS, а этот файл — нет. */
+export const MOON_TOOLCHAIN_V1 = '.moon/toolchain.yml';
 
 export const MOON_WORKSPACE = '.moon/workspace.yml';
 
@@ -267,7 +269,7 @@ function walkFiles(root: string, dir: string): string[] {
 }
 
 // Адаптер диска, без классификации: dest и satisfiedBy канон-файлов, конфиги Renovate и dependabot,
-// MOON_TOOLCHAINS, MOON_WORKSPACES, PEERS_BASELINE, LOCKFILE, pnpm-workspace.yaml, корневой package.json;
+// MOON_TOOLCHAINS, MOON_TOOLCHAIN_V1, MOON_WORKSPACES, PEERS_BASELINE, LOCKFILE, pnpm-workspace.yaml, корневой package.json;
 // если pnpm-workspace.yaml есть (текст или сбой чтения) — ещё вложенные package.json без SKIP;
 // всегда — Dockerfile и workflow с возможными копиями пинов (pinSiteKind) без SKIP. Дерево обходится один
 // раз (без скрытых каталогов), каталоги .github/workflows и .github/actions — отдельными обходами.
@@ -281,6 +283,7 @@ export function readSnapshot(root: string, canon: Canon): Snapshot {
 		...RENOVATE_CONFIGS,
 		...DEPENDABOT_CONFIGS,
 		MOON_TOOLCHAINS,
+		MOON_TOOLCHAIN_V1,
 		...MOON_WORKSPACES,
 		PEERS_BASELINE,
 		LOCKFILE,
