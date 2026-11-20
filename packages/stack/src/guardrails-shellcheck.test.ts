@@ -65,6 +65,9 @@ test('parseShellcheck: не JSON', () => {
 test('parseShellcheck: форма вывода', () => {
 	const shape = { unavailable: 'output has an unexpected shape: comments' };
 	expect(parseShellcheck(run(1, '{"comments":[{"file":"a.sh"}]}'))).toEqual(shape);
+	expect(
+		parseShellcheck(run(1, json([{ ...comment('a.sh', 1, 'error', 2045), code: '2045' }]))),
+	).toEqual(shape);
 	expect(parseShellcheck(run(1, '{}'))).toEqual(shape);
 	expect(parseShellcheck(run(1, 'null'))).toEqual(shape);
 	expect(parseShellcheck(run(1, '{"comments":[7]}'))).toEqual(shape);
