@@ -95,6 +95,7 @@ export interface CheckReport {
 
 // pnpm запускается, только если группа peers включена и лок есть: без лока правило отвечает само.
 // repo-rules — только если включена группа: два вызова через порт, пометки идут отдельно от находок.
+// guardrails — тоже только если включена группа: один `git ls-files`, пробы версий и до двух запусков инструментов.
 export function checkRepo(
 	repoRoot: string,
 	canon: Canon,

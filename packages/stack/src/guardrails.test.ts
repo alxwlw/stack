@@ -282,3 +282,24 @@ test('скрипт без расширения с шебангом считае�
 		},
 	});
 });
+
+test('отслеживаемый скрипт, которого нет на диске, shellcheck не уходит', () => {
+	const root = repoDir({ 'a.sh': 'echo\n' });
+	const f = fakePort(
+		{
+			[GIT]: tracked('a.sh', 'gone.sh'),
+			[SC_VERSION]: SC_OUT,
+			[`/x/sc ${shellcheckArgv(['a.sh']).join(' ')}`]: shellcheckJson(),
+		},
+		ENV,
+	);
+	const out = readGuardrails(root, PROTOTOOLS, f.port);
+	expect(out).toStrictEqual({
+		tools: {
+			actionlint: NO_FILES,
+			shellcheck: { version: '0.11.0', files: 1, violations: [] },
+		},
+	});
+	expect(f.calls).toHaveLength(3);
+	expect(f.calls.at(-1)).toStrictEqual(['/x/sc', ['-f', 'json1', 'a.sh']]);
+});
