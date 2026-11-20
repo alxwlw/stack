@@ -58,6 +58,7 @@ describe('syncPr: baseline repo-rules', () => {
 			...SERVED,
 			'proto install',
 			'pnpm install --no-frozen-lockfile',
+			'pnpm dedupe',
 			HOOK,
 			call(dir),
 		]);

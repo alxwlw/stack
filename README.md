@@ -109,10 +109,14 @@ When `pnpm-workspace.yaml` sets `minimumReleaseAge` above zero, `sync` also keep
 `minimumReleaseAgeExclude` covering every Own package's version, including the packages that arrive
 transitively as dependencies of `@alxwlw/stack`, so a rollout on the day of publication is not
 rejected by `pnpm install`. A version counts as covered by a bare name,
-`@alxwlw/*`, or `<name>@<v1> || <v2>` containing it; otherwise `sync` appends ` || <version>` to the
-package's own entry, or adds `<name>@<version>` (creating the list if absent). Other entries,
+`@alxwlw/*`, or `<name>@<v1> || <v2>` containing it. Otherwise `sync` rewrites the package's own entry
+to `<name>@<version>` — the versions it listed are dropped, so the entry does not grow from release to
+release — or, when the package has no entry, adds `<name>@<version>` (creating the list if absent). An
+entry that already covers the version is left as it is, whatever else it lists. Other entries,
 their order and comments are left alone. A `catalog: dev` + `name` exception on the package holds this
-too, for a transitive package as well.
+too, for a transitive package as well. Hold the entry with that exception to keep other versions of
+an Own package excluded by hand; the same exception holds the package's `dev` catalog entry, so its
+version then moves by hand as well.
 
 `sync` also keeps `package.json#packageManager` on the canon's pnpm pin whenever that field names
 pnpm (a `+sha512…` suffix on the same version is fine) — otherwise pnpm switches itself to the
@@ -139,8 +143,8 @@ tree and force-pushes) and does the whole consumer side of a release in one comm
 when the repo has a root `package.json`, a wait until every Own package (the `@alxwlw/*` entries of
 the canon's `dev` catalog and the `@alxwlw/*` dependencies of `@alxwlw/stack`) is listed in the npm
 registry and its tarball answers a HEAD with 200 (skipped with `--no-install`),
-`proto install`, `pnpm install --no-frozen-lockfile` (skipped with `--no-install`) and the
-`stack:post-sync` hook; with the `repo-rules` group — in a repo with no root `package.json` and with
+`proto install`, `pnpm install --no-frozen-lockfile` and `pnpm dedupe` (both skipped with
+`--no-install`) and the `stack:post-sync` hook; with the `repo-rules` group — in a repo with no root `package.json` and with
 `--no-install` too — it lowers the fixed entries of the repo-rules baseline; then the changed files one by one, a commit by the GitHub App's bot on
 `stack/v<version>`, a force-push and a PR (or the open one, reused). After the PR it closes the open
 sync-PRs of the bot for older versions on the same base, with a comment that links this version's PR, and
@@ -236,6 +240,12 @@ canon — and when `.github/dependabot.yml` (or `.yaml`) exists. Neither can be 
 even when it equals the `.prototools` pin: `.prototools` owns the version, so leave it unset (`node: {}`). `stack sync` does
 not fix it; an exception whose `file` is the path before the colon in the finding's target (with a `reason`) holds it.
 
+`stack check` also reports that toolchain config when it still sits under its moon 1 file name (singular
+`toolchain`, extension yml, in the `.moon` directory) as `moon-v1-toolchain`: moon 2 reads only the plural name, so
+nothing in the file applies — not its pins either. `stack sync` does not delete it: move the settings moon 2 still
+needs to the config it reads, under their moon 2 keys (moon's 2.0 migration guide lists the renames), and delete
+the file. An exception whose `file` is the finding's target (with a `reason`) holds it.
+
 `stack check` also fails when moon's YAML workspace config (a workspace file with the extension yml or yaml in the `.moon` directory; the
 first one found is the config) has no `vcs.defaultBranch`, or an empty one. Other formats moon accepts (json, jsonc, toml, pkl,
 hcl) are not checked. Without the setting moon takes `master` as the base: a PR check passes because moon gets the base from the
@@ -254,6 +264,10 @@ workflows whose copies lag behind `.prototools`. The rewrite can change a major 
 pnpm it installs), and the tag of a freshly pinned version may not be in the image registry yet. CI that does not
 build the image on a pull request shows neither, so build the image from the PR branch before merging it — or
 hold the file back with an exception (`{ "file": "<path>", "reason": "…" }`) added in that same PR.
+The lockfile diff of that PR can also carry packages the canon does not touch: `pnpm dedupe` collapses whatever
+was already duplicated on the base branch.
+The same release reports a moon toolchain config left under its moon 1 file name (`moon-v1-toolchain`): `sync`
+does not fix it, so delete the file in that PR, or hold it with an exception.
 
 ## Exceptions
 
@@ -505,19 +519,22 @@ The consumer list is the `STACK_CONSUMERS` secret of this repository (`owner/rep
 A consumer tunes its sync with one repository variable: `STACK_SYNC_BASE` opens the PR against that
 branch instead of the default one (for a repo whose default branch only takes merges from another).
 `STACK_SYNC_INSTALL` is no longer read: the repository decides itself — a root `package.json` means the
-registry wait, `proto install` and `pnpm install`. A consumer's copy of that workflow made before 1.12.0 still passes
+registry wait, `proto install`, `pnpm install` and `pnpm dedupe`. A consumer's copy of that workflow made before 1.12.0 still passes
 the variable as the `install` input on its first sync (`false` becomes `--no-install`), and that sync PR
 replaces the copy.
 
 A consumer can add a repo-owned finishing step: a `stack:post-sync` script in the root
 `package.json`. A repo with a `package.json` gets, in this order, `proto install` (the pins the sync
-just raised must be installed first), `pnpm install` (unless `--no-install`) and then
-`pnpm run stack:post-sync` if the script exists, so regenerated files land in the same sync PR. Only
+just raised must be installed first), `pnpm install` and `pnpm dedupe` (unless `--no-install`) and then
+`pnpm run stack:post-sync` if the script exists, so regenerated files land in the same sync PR. The lockfile of
+the PR is therefore deduplicated before the hook runs: a hook that only ran `pnpm dedupe` is no longer needed,
+and one that changes manifests and reinstalls still has to dedupe after its own install. `pnpm dedupe` is a full
+install, so the root lifecycle scripts (`preinstall`, `install`, `postinstall`, `prepare`) run a second time. Only
 after the hook does the command look for changed files. The script gets `VERSION` (the stack version,
 without `v`) in its environment. The hook runs with or without `--no-install`, so it decides itself
-whether it needs dependencies. A failing `proto install`, install or hook, or an unreadable
+whether it needs dependencies. A failing `proto install`, install, dedupe or hook, or an unreadable
 `package.json`, fails the job: no commit and no PR, rather than a PR without the finishing. Without
-the script the command only runs `proto install` and the install; without a `package.json` it does
+the script the command only runs `proto install`, the install and the dedupe; without a `package.json` it does
 nothing of that.
 
 ## License

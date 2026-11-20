@@ -12,7 +12,12 @@ interface FindingBase {
 export type Finding = FindingBase &
 	(
 		| {
-				code: 'file-drift' | 'file-missing' | 'moon-default-branch' | 'toolchain-pin';
+				code:
+					| 'file-drift'
+					| 'file-missing'
+					| 'moon-default-branch'
+					| 'toolchain-pin'
+					| 'moon-v1-toolchain';
 				file: string;
 		  }
 		| { code: 'catalog-drift' | 'catalog-missing'; catalog: string; name: string }

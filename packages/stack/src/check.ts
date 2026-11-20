@@ -10,7 +10,7 @@ import {
 import { allowedLine, type Exception, type Held, isHeld, resolve } from './exceptions.ts';
 import { planFiles } from './files.ts';
 import type { Drift, Finding } from './findings.ts';
-import { checkMoonToolchains } from './moon-toolchains.ts';
+import { checkMoonToolchains, checkMoonV1Toolchain } from './moon-toolchains.ts';
 import { checkMoonDefaultBranch, planMoonDefaultBranch } from './moon-workspace.ts';
 import { planPackageManager } from './package-manager.ts';
 import { type PeersOutcome, peersOutcome, type PeersReader } from './peers.ts';
@@ -56,6 +56,7 @@ export function check(
 			...checkRenovatePreset(repo),
 			...checkDependabot(repo),
 			...checkMoonToolchains(repo, canon),
+			...checkMoonV1Toolchain(repo),
 			...checkMoonDefaultBranch(repo),
 			...(canon.rules.includes('peers') ? checkPeers(repo, peers) : []),
 			...(canon.rules.includes('repo-rules') ? checkRepoRules(repoRules) : []),

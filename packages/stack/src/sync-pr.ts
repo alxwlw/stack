@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { loadCanon } from './canon.ts';
+import { type Canon, loadCanon } from './canon.ts';
 import { syncOutput, syncRepo } from './check.ts';
 import { readStackConfig, StackConfigError } from './config.ts';
 import type { PeersReader } from './peers.ts';
@@ -291,7 +291,7 @@ class StepFailed extends Error {}
 // не меняет итог: что осталось несведённым, покажет stack check в CI sync-PR. Группу проверяет эта функция.
 function dropFixedRepoRules(
 	repoRoot: string,
-	canon: ReturnType<typeof loadCanon>,
+	canon: Canon,
 	repoRules: RepoRulesReader,
 	print: Print,
 ): void {
@@ -301,12 +301,13 @@ function dropFixedRepoRules(
 	for (const line of r.err) print('err', `sync-pr: repo-rules baseline: ${line}`);
 }
 
-// sync в процессе, ожидание реестра, установка, хук stack:post-sync, baseline peers и repo-rules, затем publishChanges.
+// sync в процессе, ожидание реестра, установка, dedupe, хук stack:post-sync, baseline peers и repo-rules, затем
+// publishChanges. dedupe стоит до хука и до baseline peers: и хук, и baseline читают lockfile, который пойдёт в коммит.
 export async function syncPr(opts: SyncPrOptions, ports: SyncPrPorts): Promise<0 | 1 | 2> {
 	const { repoRoot, version } = opts;
 	const { run, print } = ports;
 	try {
-		let canon: ReturnType<typeof loadCanon>;
+		let canon: Canon;
 		try {
 			const cfg = readStackConfig(repoRoot);
 			canon = loadCanon(cfg);
@@ -348,7 +349,10 @@ export async function syncPr(opts: SyncPrOptions, ports: SyncPrPorts): Promise<0
 			if (code !== 0) throw new StepFailed(`\`${cmd} ${args.join(' ')}\` exited with ${code}`);
 		};
 		step('proto', ['install']);
-		if (opts.install) step('pnpm', ['install', '--no-frozen-lockfile']);
+		if (opts.install) {
+			step('pnpm', ['install', '--no-frozen-lockfile']);
+			step('pnpm', ['dedupe']);
+		}
 		if (hook) step('pnpm', ['run', 'stack:post-sync'], { VERSION: version });
 
 		// Новый лок мог исправить записи baseline группы peers: они уходят в тот же коммит, иначе CI
