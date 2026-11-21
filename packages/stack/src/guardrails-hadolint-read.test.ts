@@ -1,4 +1,13 @@
-import { existsSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import {
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	realpathSync,
+	rmSync,
+	symlinkSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -237,6 +246,67 @@ describe('читатель: hadolint с портом-таблицей', () => {
 			version: HL_PIN,
 			files: 1,
 			violations: [{ tool: 'hadolint', rule: 'DL3025', path: 'Dockerfile', line: 4 }],
+		});
+	});
+
+	describe('пометка hadolint по копии — пути репозитория', () => {
+		const SHORT = "Error parsing your config file in  '.hadolint.yaml':";
+		const broken = (path: string): GuardrailRun => ({
+			code: 1,
+			out: '',
+			err: `Error parsing your config file in  '${path}/.hadolint.yaml':\\nAesonException "x"\n`,
+		});
+		const table = (answer: (cwd: string | undefined) => GuardrailRun) => ({
+			[GIT]: tracked('Dockerfile'),
+			[GL_VERSION]: ok(`${GL_PIN}\n`),
+			[GL_DIR]: ok('[]'),
+			[HL_VERSION]: ok(hlBanner),
+			[hlRun(['Dockerfile'])]: answer,
+		});
+
+		test('путь копии (cwd вызова) заменён на путь репозитория', () => {
+			const root = repo({ Dockerfile: 'FROM alpine:3.20\n' });
+			const f = fakePort(
+				table((cwd) => broken(cwd ?? '?')),
+				BINS,
+			);
+			withPrivateTmpdir(() => {
+				expect(hadolintPart(readGuardrails(root, PROTOTOOLS, f.port))).toStrictEqual({
+					unavailable: SHORT,
+				});
+			});
+		});
+
+		test('TMPDIR через символическую ссылку: realpath копии содержит строку копии — тот же результат', () => {
+			const root = repo({ Dockerfile: 'FROM alpine:3.20\n' });
+			const saved = process.env.TMPDIR;
+			const base = mkdtempSync(join(tmpdir(), 'stack-link-'));
+			// Как macOS: копия `<base>/tmp/X`, её realpath `<base>/private<base>/tmp/X` содержит строку копии.
+			mkdirSync(join(base, 'private', base, 'tmp'), { recursive: true });
+			symlinkSync(join(base, 'private', base, 'tmp'), join(base, 'tmp'));
+			process.env.TMPDIR = join(base, 'tmp');
+			let checked = false;
+			const f = fakePort(
+				table((cwd) => {
+					const copy = cwd ?? '?';
+					const real = realpathSync(copy);
+					expect(real).not.toBe(copy);
+					expect(real.includes(copy)).toBe(true);
+					checked = true;
+					return broken(real);
+				}),
+				BINS,
+			);
+			try {
+				expect(hadolintPart(readGuardrails(root, PROTOTOOLS, f.port))).toStrictEqual({
+					unavailable: SHORT,
+				});
+				expect(checked).toBe(true);
+			} finally {
+				if (saved === undefined) Reflect.deleteProperty(process.env, 'TMPDIR');
+				else process.env.TMPDIR = saved;
+				rmSync(base, { recursive: true, force: true });
+			}
 		});
 	});
 

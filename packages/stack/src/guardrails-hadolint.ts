@@ -20,16 +20,24 @@ const LEVELS: ReadonlySet<string> = new Set(['error', 'warning', 'info', 'style'
 // Ниже порога: `info` и `style` не находка.
 const FINDING_LEVELS: ReadonlySet<string> = new Set(['error', 'warning']);
 
+// Пометка недоступности — одна короткая строка: hadolint печатает ошибку конфига одной строкой с
+// литеральными `\n` (обратная косая и `n`) и пересказом разбора; берётся часть до первого такого
+// литерала или перевода строки.
+export function shortReason(line: string): string {
+	const cut = line.search(/\\n|[\r\n]/);
+	return (cut === -1 ? line : line.slice(0, cut)).trim();
+}
+
 // Разбор: код 0, пустой stderr и JSON-массив нужной формы; иначе недоступность. Находка — `error` и
 // `warning` (DL1000, «не разбирается», тоже `error`).
 export function parseHadolint(run: GuardrailRun): GuardrailViolation[] | Unavailable {
-	if (run.code !== 0) return { unavailable: failureReason(run) };
+	if (run.code !== 0) return { unavailable: shortReason(failureReason(run)) };
 	if (run.err.trim() !== '') {
 		const first = run.err
 			.split('\n')
 			.map((l) => l.trim())
 			.find((l) => l !== '');
-		return { unavailable: first ?? run.err.trim() };
+		return { unavailable: shortReason(first ?? run.err.trim()) };
 	}
 	let data: unknown;
 	try {

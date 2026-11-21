@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -215,6 +215,30 @@ describe('check с группой guardrails: все шесть инструме
 			expect(hadolintFindings(c.err)).toHaveLength(1);
 			expect(c.err).toContain(' — hadolint DL3025: ');
 			expect(c.code).toBe(1);
+		},
+		TIMEOUT,
+	);
+
+	test(
+		'сломанный отслеживаемый .hadolint.yaml — короткая пометка',
+		async () => {
+			const dir = await guardRepo({
+				...CLEAN_FILES,
+				Dockerfile: BAD_DOCKERFILE,
+				[HADOLINT_CONFIG]: 'ignored: [\n',
+			});
+			const r = await run(['check'], dir, tools);
+			const lines = r.err
+				.split('\n')
+				.filter((l) => l.startsWith('guardrails-unavailable: hadolint — '));
+			expect(lines).toHaveLength(1);
+			const line = lines[0] ?? '';
+			expect(line).toContain(HADOLINT_CONFIG);
+			expect(line).not.toContain('\\n');
+			expect(line).not.toContain(tmpdir());
+			expect(line).not.toContain(realpathSync(tmpdir()));
+			expect(line.length).toBeLessThan(200);
+			expect(r.code).toBe(1);
 		},
 		TIMEOUT,
 	);

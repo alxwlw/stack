@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 
 import { toolVersion } from './guardrails-bin.ts';
-import { hadolintArgv, parseHadolint } from './guardrails-hadolint.ts';
+import { hadolintArgv, parseHadolint, shortReason } from './guardrails-hadolint.ts';
 import { type GuardrailRun, spawnRunner } from './guardrails-port.ts';
 import { protoBin, repoDir } from './testkit.ts';
 
@@ -62,6 +62,28 @@ describe('parseHadolint', () => {
 		expect(parseHadolint(run('[]', { err: `\n${line}\nвторая строка\n` }))).toStrictEqual({
 			unavailable: line,
 		});
+	});
+
+	describe('сломанный конфиг — первая строка до литерального \\n', () => {
+		const head = "Error parsing your config file in  '/c/.hadolint.yaml':";
+		const tail = 'AesonException "Error in $.ignored: expected Text"';
+		const literal = `${head}\\n${tail}\\n`;
+		const real = `${head}\n${tail}\n`;
+		test.each([
+			['код 1, литерал', run('', { code: 1, err: literal })],
+			['код 1, перевод строки', run('', { code: 1, err: real })],
+			['код 0, литерал', run('[]', { err: literal })],
+			['код 0, перевод строки', run('[]', { err: real })],
+		])('%s', (_name, r) => {
+			expect(parseHadolint(r)).toStrictEqual({ unavailable: head });
+		});
+	});
+
+	test('shortReason: до литерала или перевода строки, без пробелов по краям', () => {
+		expect(shortReason('  a b \\n c')).toBe('a b');
+		expect(shortReason('a\nb')).toBe('a');
+		expect(shortReason('a\\nb\nc')).toBe('a');
+		expect(shortReason('plain')).toBe('plain');
 	});
 
 	test('код 1 и пустой stdout — недоступность со строкой stderr', () => {
