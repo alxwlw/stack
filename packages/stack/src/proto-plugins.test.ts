@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { describe, expect, test } from 'bun:test';
 
 import { parsePins } from './canon.ts';
-import { canonFile,ROOT } from './testkit.ts';
+import { canonFile, ROOT } from './testkit.ts';
 
 // Связь трёх мест: [plugins] канонного prototools, файлы плагинов в canon/files/proto-plugins и записи
 // manifest.json. Рассинхрон между ними даёт пин, который proto не умеет поставить, или файл, который sync не кладёт.
