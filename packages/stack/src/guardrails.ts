@@ -119,7 +119,13 @@ function readHadolint(
 	dir: string,
 	port: GuardrailsPort,
 ): ToolPart {
-	const home = mkdtempSync(join(tmpdir(), 'stack-home-'));
+	let home: string;
+	try {
+		home = mkdtempSync(join(tmpdir(), 'stack-home-'));
+	} catch (e) {
+		// Как в copyTracked: нет или недоступен TMPDIR — недоступность, а не исключение из читателя.
+		return { unavailable: `home: ${e instanceof Error ? e.message : String(e)}` };
+	}
 	try {
 		return runPart(hadolint, hadolintArgv(set), set.length, port, parseHadolint, dir, {
 			HOME: home,

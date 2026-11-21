@@ -280,4 +280,32 @@ describe('читатель: hadolint с портом-таблицей', () => {
 		}
 		expect(f.calls).toStrictEqual([GIT, GL_VERSION, HL_VERSION]);
 	});
+
+	test('tmp отказал после копии — hadolint недоступен с home:, gitleaks цел, исключения нет', () => {
+		const root = repo({ Dockerfile: 'FROM alpine:3.20\n' });
+		const saved = process.env.TMPDIR;
+		const f = fakePort(
+			{
+				[GIT]: tracked('Dockerfile'),
+				[GL_VERSION]: ok(`${GL_PIN}\n`),
+				[HL_VERSION]: ok(hlBanner),
+				[GL_DIR]: () => {
+					process.env.TMPDIR = '/nonexistent';
+					return ok('[]');
+				},
+			},
+			BINS,
+		);
+		try {
+			const out = readGuardrails(root, PROTOTOOLS, f.port);
+			if ('unavailable' in out) throw new Error(out.unavailable);
+			const part = out.tools.hadolint;
+			expect('unavailable' in part && part.unavailable.startsWith('home: ')).toBe(true);
+			expect(out.tools.gitleaks).toStrictEqual({ version: GL_PIN, files: 1, violations: [] });
+		} finally {
+			if (saved === undefined) Reflect.deleteProperty(process.env, 'TMPDIR');
+			else process.env.TMPDIR = saved;
+		}
+		expect(f.calls).toStrictEqual([GIT, GL_VERSION, HL_VERSION, GL_DIR]);
+	});
 });
