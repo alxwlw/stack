@@ -39,7 +39,8 @@ export type Finding = FindingBase &
 					| 'stale-repo-rules-baseline'
 					| 'repo-rules-unavailable'
 					| 'guardrails-violation'
-					| 'guardrails-unavailable';
+					| 'guardrails-unavailable'
+					| 'workflow-hygiene';
 		  }
 	);
 export type FindingCode = Finding['code'];

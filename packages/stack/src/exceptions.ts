@@ -113,6 +113,8 @@ const ADDRESS: { [C in FindingCode]: ((f: FindingOf<C>) => Address) | 'unsuppres
 	// Находки guardrails — вывод инструментов над репозиторием; отказ от гейта — убрать группу из with.
 	'guardrails-violation': 'unsuppressible',
 	'guardrails-unavailable': 'unsuppressible',
+	// Гигиена workflow — наличие ключей в файле; отказ от гейта — убрать группу из with.
+	'workflow-hygiene': 'unsuppressible',
 };
 
 export function addressOf(f: Finding): Address | undefined {

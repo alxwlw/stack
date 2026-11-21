@@ -3,10 +3,18 @@ on:
   workflow_run:
     workflows: [publish]
     types: [completed]
+# Токен берёт только actions/checkout — contents: read; рассылка идёт токенами приложения.
+permissions:
+  contents: read
+# Группа на тег релиза: общая группа отменила бы ждущий rollout второго релиза при трёх быстрых подряд.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
 jobs:
   dispatch:
     if: github.event.workflow_run.conclusion == 'success'
     runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup

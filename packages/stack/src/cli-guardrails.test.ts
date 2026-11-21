@@ -24,7 +24,7 @@ describe('check с группой guardrails через настоящий cli',
 	const BAD_RUN = '      - run: echo "${{ github.event.foo( }}"\n';
 	const GOOD_RUN = '      - run: echo $HOME\n';
 	const workflow = (step: string) =>
-		`name: lint\non: push\njobs:\n  lint:\n    runs-on: ubuntu-latest\n    steps:\n${step}`;
+		`name: lint\non: push\npermissions:\n  contents: read\nconcurrency: lint\njobs:\n  lint:\n    runs-on: ubuntu-latest\n    timeout-minutes: 5\n    steps:\n${step}`;
 	const VIOLATION_LINE = 'guardrails-violation: ';
 	const GONE = '.github/workflows/gone.yml';
 	const TIMEOUT = 60_000;

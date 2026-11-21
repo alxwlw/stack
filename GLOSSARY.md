@@ -19,7 +19,7 @@ The kind of repository a consumer declares, `node`, `contracts` or `infra`; it d
 _Avoid_: preset, flavour, template
 
 **Group**:
-A named opt-in slice of the canon, switched on through `with` in `.stack.jsonc`. There are four kinds: a **file group** (the `group` field of a manifest entry), a **catalog group** (a key of `canon/catalogs.json` other than `dev`, which every consumer gets), a **rule group** (switches on a rule of `stack check` rather than a file or a catalog: `RULE_GROUPS`, enabled ones in `Canon.rules`; there are two: `peers` and `repo-rules`) and a **deprecated group** (accepted for old configs, enables nothing). Names come from `readCanonSource().groups` in `packages/stack/src/canon.ts`; `knownGroups` lists all four kinds.
+A named opt-in slice of the canon, switched on through `with` in `.stack.jsonc`. There are four kinds: a **file group** (the `group` field of a manifest entry), a **catalog group** (a key of `canon/catalogs.json` other than `dev`, which every consumer gets), a **rule group** (switches on a rule of `stack check` rather than a file or a catalog: `RULE_GROUPS`, enabled ones in `Canon.rules`; there are three: `peers`, `repo-rules` and `guardrails`) and a **deprecated group** (accepted for old configs, enables nothing). Names come from `readCanonSource().groups` in `packages/stack/src/canon.ts`; `knownGroups` lists all four kinds.
 _Avoid_: feature, module, flag
 
 ### What the canon holds
@@ -79,8 +79,12 @@ The rules of `@alxwlw/repo-rules` that Check runs in process for a consumer with
 _Avoid_: lint, policy
 
 **Guardrails**:
-The group that runs the six tools of the canon (actionlint, shellcheck, gitleaks, hadolint, markdownlint-cli2 and yamllint) on the files git tracks (gitleaks, hadolint, markdownlint-cli2 and yamllint run in a temporary copy of them, gitleaks also on the commits of a pull request) and turns their violations into findings: a violation at or above the threshold is a `guardrails-violation`, a tool that did not run or whose answer cannot be read is `guardrails-unavailable`. The version of actionlint, shellcheck, gitleaks and hadolint is the pin in the repo's `.prototools`, of markdownlint-cli2 the dependency of `@alxwlw/stack`, of yamllint a constant in `stack`, run through the pinned uv. Neither finding is held by an exception. `readGuardrails` in `packages/stack/src/guardrails.ts`, `checkGuardrails` in `packages/stack/src/guardrails-rule.ts`, `prBase` in `packages/stack/src/guardrails-commits.ts`.
+The group that checks the workflow files (see **Workflow hygiene**) and runs the six tools of the canon (actionlint, shellcheck, gitleaks, hadolint, markdownlint-cli2 and yamllint) on the files git tracks (gitleaks, hadolint, markdownlint-cli2 and yamllint run in a temporary copy of them, gitleaks also on the commits of a pull request) and turns their violations into findings: a violation at or above the threshold is a `guardrails-violation`, a tool that did not run or whose answer cannot be read is `guardrails-unavailable`. The version of actionlint, shellcheck, gitleaks and hadolint is the pin in the repo's `.prototools`, of markdownlint-cli2 the dependency of `@alxwlw/stack`, of yamllint a constant in `stack`, run through the pinned uv. No finding of the group is held by an exception. `readGuardrails` in `packages/stack/src/guardrails.ts`, `checkGuardrails` in `packages/stack/src/guardrails-rule.ts`, `prBase` in `packages/stack/src/guardrails-commits.ts`.
 _Avoid_: lint, linters
+
+**Workflow hygiene**:
+The part of Guardrails that requires every workflow file directly under `.github/workflows` to declare `timeout-minutes` (in each job that runs on a runner), `permissions` and `concurrency` (at the top level or in each job; a workflow triggered only by `workflow_call` needs no `concurrency`). It checks that a key is present, not its value, and reports one `workflow-hygiene` finding per file. `checkWorkflowHygiene` in `packages/stack/src/workflow-hygiene.ts`.
+_Avoid_: workflow lint, CI policy
 
 ### Commands
 

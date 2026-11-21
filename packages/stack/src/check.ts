@@ -24,6 +24,7 @@ import { readRepoRules, type RepoRulesOutcome, type RepoRulesPort } from './repo
 import { checkRepoRules, repoRulesNotes } from './repo-rules-rule.ts';
 import { checkSeedExtends } from './seed-extends.ts';
 import { planToolchainPins } from './toolchain-pins-rule.ts';
+import { checkWorkflowHygiene } from './workflow-hygiene.ts';
 
 // План дрейфа: всё, что sync умеет закрыть, в порядке применения — файлы, каталоги, release-age,
 // packageManager, ветка по умолчанию moon, копии пинов тулчейна. Правки одного файла друг от друга не
@@ -66,7 +67,9 @@ export function check(
 			...checkMoonDefaultBranch(repo),
 			...(canon.rules.includes('peers') ? checkPeers(repo, peers) : []),
 			...(canon.rules.includes('repo-rules') ? checkRepoRules(repoRules) : []),
-			...(canon.rules.includes('guardrails') ? checkGuardrails(guardrails) : []),
+			...(canon.rules.includes('guardrails')
+				? [...checkGuardrails(guardrails), ...checkWorkflowHygiene(repo.files)]
+				: []),
 		],
 		exceptions,
 	);

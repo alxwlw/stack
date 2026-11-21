@@ -28,9 +28,12 @@ on:
       registry-token:
         description: токен чтения приватного реестра; нужен вместе с входом registry
         required: false
+# GITHUB_TOKEN не нужен никому: checkout и gh идут токеном приложения (create-github-app-token), реестр — registry-token.
+permissions: {}
 jobs:
   sync:
     runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    timeout-minutes: 30
     env:
       # Значение не печатается и не пишется на диск: setup по умолчанию берёт эту переменную и кладёт в npmrc джоба ссылку ${STACK_REGISTRY_TOKEN}.
       STACK_REGISTRY_TOKEN: ${{ secrets.registry-token }}

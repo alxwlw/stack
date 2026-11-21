@@ -5,6 +5,16 @@ on:
       version:
         required: true
         type: string
+# sync.yml сегодня GITHUB_TOKEN не берёт: клон и PR идут токеном приложения (secrets app-id и app-private-key).
+# contents: read — потолок про запас: если sync.yml@v1 позже начнёт читать репозиторий этим токеном, workflow
+# потребителя всё равно запустится до того, как его sync-PR с новой копией будет открыт.
+permissions:
+  contents: read
+# Группа уникальна на прогон: очередь по версии держит джоб sync вызываемого (stack-sync-<версия>, без отмены).
+# Та же группа у вызывающего и вызываемого дала бы тупик.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.run_id }}
+  cancel-in-progress: false
 jobs:
   sync:
     uses: alxwlw/stack/.github/workflows/sync.yml@v1
