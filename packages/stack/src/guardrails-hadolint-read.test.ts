@@ -277,6 +277,19 @@ describe('читатель: hadolint с портом-таблицей', () => {
 			});
 		});
 
+		test('голый каталог копии в причине — точка', () => {
+			const root = repo({ Dockerfile: 'FROM alpine:3.20\n' });
+			const f = fakePort(
+				table((cwd) => ({ code: 1, out: '', err: `cwd: ${cwd}\n` })),
+				BINS,
+			);
+			withPrivateTmpdir(() => {
+				expect(hadolintPart(readGuardrails(root, PROTOTOOLS, f.port))).toStrictEqual({
+					unavailable: 'cwd: .',
+				});
+			});
+		});
+
 		test('TMPDIR через символическую ссылку: realpath копии содержит строку копии — тот же результат', () => {
 			const root = repo({ Dockerfile: 'FROM alpine:3.20\n' });
 			const saved = process.env.TMPDIR;
