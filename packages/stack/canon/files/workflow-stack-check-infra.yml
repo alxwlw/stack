@@ -3,6 +3,16 @@ on:
   pull_request:
   push:
     branches: [main]
+# Токен берёт check.yml: actions/checkout и git fetch шага history читают репозиторий — contents: read. Права
+# вызывающего — потолок для вызываемого, поэтому право записано здесь, а не только в check.yml.
+permissions:
+  contents: read
+# Группа: PR отменяет свой прежний прогон, push в main не отменяется (группа с run_id уникальна: общая группа
+# отменяла бы и ждущий прогон даже при cancel-in-progress: false). check.yml своего concurrency не имеет —
+# та же группа у вызываемого дала бы тупик.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   check:
     uses: alxwlw/stack/.github/workflows/check.yml@v1

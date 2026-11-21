@@ -5,6 +5,14 @@ on:
       version:
         required: true
         type: string
+# GITHUB_TOKEN здесь не нужен никому: sync.yml клонирует и открывает PR токеном приложения (secrets app-id и
+# app-private-key). Пустые права — минимум, потолок для вызываемого sync.yml (у него тоже {}).
+permissions: {}
+# Группа уникальна на прогон: очередь по версии держит джоб sync вызываемого (stack-sync-<версия>, без отмены).
+# Та же группа у вызывающего и вызываемого дала бы тупик.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.run_id }}
+  cancel-in-progress: false
 jobs:
   sync:
     uses: alxwlw/stack/.github/workflows/sync.yml@v1

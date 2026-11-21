@@ -3,9 +3,18 @@ on:
   pull_request:
   push:
     branches: [main]
+# Токен берёт только actions/checkout — contents: read.
+permissions:
+  contents: read
+# PR отменяет свой прежний прогон, push в main не отменяется: группа с run_id уникальна (общая группа отменяла бы
+# и ждущий прогон даже при cancel-in-progress: false).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   ci:
     runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
@@ -19,6 +28,7 @@ jobs:
 
   setup-action:
     runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    timeout-minutes: 15
     env:
       TEST_TOKEN: not-a-real-token
       STACK_REGISTRY_TOKEN: not-a-real-token
@@ -98,6 +108,7 @@ jobs:
 
   setup-action-bare:
     runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
       - name: .prototools ещё не на каноне — без пинов guardrails

@@ -11,6 +11,15 @@ on:
         type: choice
         options: [info, debug]
         default: info
+# Сам файл токен не берёт (Renovate работает под RENOVATE_TOKEN, это PAT), но renovate.yml@v1 просит contents: read,
+# а права вызывающего — потолок вызываемого: с {} workflow недействителен целиком.
+permissions:
+  contents: read
+# Группа уникальна на прогон: очередь держит джоб renovate вызываемого (renovate-<репозиторий>, без отмены).
+# Та же группа у вызывающего и вызываемого дала бы тупик.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.run_id }}
+  cancel-in-progress: false
 jobs:
   renovate:
     uses: alxwlw/stack/.github/workflows/renovate.yml@v1
