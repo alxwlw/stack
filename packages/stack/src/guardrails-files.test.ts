@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path';
 import { afterAll, beforeAll, expect, test } from 'bun:test';
 
 import {
+	dockerfiles,
 	isShellShebang,
 	regularFiles,
 	shellScripts,
@@ -181,4 +182,26 @@ test('shellScripts: расширения и шебанги, порядок вх�
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}
+});
+
+test('dockerfiles: все виды имён, порядок входа, без пропусков по каталогам', () => {
+	expect(
+		dockerfiles([
+			'README.md',
+			'build/Dockerfile',
+			'Dockerfile',
+			'Dockerfile.dockerignore',
+			'apps/api/Dockerfile.prod',
+			'deploy/web.Dockerfile',
+			'.Dockerfile',
+			'MyDockerfile',
+			'.github/workflows/ci.yml',
+		]),
+	).toStrictEqual([
+		'build/Dockerfile',
+		'Dockerfile',
+		'apps/api/Dockerfile.prod',
+		'deploy/web.Dockerfile',
+	]);
+	expect(dockerfiles([])).toStrictEqual([]);
 });

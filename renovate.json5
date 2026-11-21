@@ -27,6 +27,58 @@
 			datasourceTemplate: 'npm',
 			versioningTemplate: 'npm',
 		},
+		// Пины инструментов группы guardrails. Менеджер proto их не видит: инструменты из [plugins] он пропускает
+		// как unsupported-datasource (документация менеджера, «Limitations»). Комментарии `# renovate:` в prototools
+		// не подходят: канонный файл уходит потребителям, и их Renovate их бы увидел. Значение — только с цифры:
+		// строки [plugins] с file:// в то же имя не попадают.
+		{
+			customType: 'regex',
+			description: 'Пин actionlint в prototools: релизы rhysd/actionlint на GitHub',
+			managerFilePatterns: ['/^packages/stack/canon/files/prototools$/', '/^\\.prototools$/'],
+			matchStrings: ['(?:^|\\n)actionlint\\s*=\\s*"(?<currentValue>\\d[^"]*)"'],
+			depNameTemplate: 'actionlint',
+			datasourceTemplate: 'github-releases',
+			packageNameTemplate: 'rhysd/actionlint',
+			extractVersionTemplate: '^v(?<version>.+)$',
+		},
+		{
+			customType: 'regex',
+			description: 'Пин shellcheck в prototools: релизы koalaman/shellcheck на GitHub',
+			managerFilePatterns: ['/^packages/stack/canon/files/prototools$/', '/^\\.prototools$/'],
+			matchStrings: ['(?:^|\\n)shellcheck\\s*=\\s*"(?<currentValue>\\d[^"]*)"'],
+			depNameTemplate: 'shellcheck',
+			datasourceTemplate: 'github-releases',
+			packageNameTemplate: 'koalaman/shellcheck',
+			extractVersionTemplate: '^v(?<version>.+)$',
+		},
+		{
+			customType: 'regex',
+			description: 'Пин gitleaks в prototools: релизы gitleaks/gitleaks на GitHub',
+			managerFilePatterns: ['/^packages/stack/canon/files/prototools$/', '/^\\.prototools$/'],
+			matchStrings: ['(?:^|\\n)gitleaks\\s*=\\s*"(?<currentValue>\\d[^"]*)"'],
+			depNameTemplate: 'gitleaks',
+			datasourceTemplate: 'github-releases',
+			packageNameTemplate: 'gitleaks/gitleaks',
+			extractVersionTemplate: '^v(?<version>.+)$',
+		},
+		{
+			customType: 'regex',
+			description: 'Пин hadolint в prototools: релизы hadolint/hadolint на GitHub',
+			managerFilePatterns: ['/^packages/stack/canon/files/prototools$/', '/^\\.prototools$/'],
+			matchStrings: ['(?:^|\\n)hadolint\\s*=\\s*"(?<currentValue>\\d[^"]*)"'],
+			depNameTemplate: 'hadolint',
+			datasourceTemplate: 'github-releases',
+			packageNameTemplate: 'hadolint/hadolint',
+			extractVersionTemplate: '^v(?<version>.+)$',
+		},
+		{
+			customType: 'regex',
+			description: 'Версия yamllint: константа YAMLLINT_VERSION, релизы на PyPI',
+			managerFilePatterns: ['/^packages/stack/src/guardrails-yamllint\\.ts$/'],
+			matchStrings: ["YAMLLINT_VERSION = '(?<currentValue>[^']+)'"],
+			depNameTemplate: 'yamllint',
+			datasourceTemplate: 'pypi',
+		},
 	],
 	packageRules: [
 		{
@@ -48,6 +100,8 @@
 				'.prototools',
 				'pnpm-workspace.yaml',
 				'package.json',
+				'packages/stack/package.json',
+				'packages/stack/src/guardrails-yamllint.ts',
 			],
 		},
 		// Связки — packages/stack/canon/bundles.json: groupName правила — 'bundle <имя записи>', matchPackageNames — её match; сверяет packages/stack/src/renovate-self.test.ts.

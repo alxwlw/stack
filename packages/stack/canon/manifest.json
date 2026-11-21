@@ -64,6 +64,11 @@
 			"appliesTo": ["node", "contracts", "infra"]
 		},
 		{
+			"src": "files/proto-plugins/hadolint.toml",
+			"dest": ".moon/proto-plugins/hadolint.toml",
+			"appliesTo": ["node", "contracts", "infra"]
+		},
+		{
 			"src": "files/oxfmtrc.jsonc",
 			"dest": ".oxfmtrc.jsonc",
 			"appliesTo": ["node", "contracts"]

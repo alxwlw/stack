@@ -42,7 +42,7 @@ jobs:
           # умолчание не вмешалось: строка с токеном одна
           test "$(grep -c '^//npm.pkg.github.com/:_authToken=' "$NPM_CONFIG_USERCONFIG")" = 1
       - name: пути к бинарникам экспортированы
-        run: test -x "$ACTIONLINT_BIN" && test -x "$SHELLCHECK_BIN"
+        run: test -x "$ACTIONLINT_BIN" && test -x "$SHELLCHECK_BIN" && test -x "$GITLEAKS_BIN" && test -x "$HADOLINT_BIN"
       - name: повторный вызов
         uses: ./.github/actions/setup
         with:
@@ -100,10 +100,10 @@ jobs:
     runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v7
-      - name: .prototools ещё не на каноне — без actionlint и shellcheck
-        run: sed -i -E '/^(actionlint|shellcheck)[[:space:]]*=/d' .prototools
+      - name: .prototools ещё не на каноне — без пинов guardrails
+        run: sed -i -E '/^(actionlint|shellcheck|gitleaks|hadolint)[[:space:]]*=/d' .prototools
       - uses: ./.github/actions/setup
         with:
           install: false
       - name: action не упал и ничего не экспортировал
-        run: test -z "${ACTIONLINT_BIN:-}" && test -z "${SHELLCHECK_BIN:-}"
+        run: test -z "${ACTIONLINT_BIN:-}" && test -z "${SHELLCHECK_BIN:-}" && test -z "${GITLEAKS_BIN:-}" && test -z "${HADOLINT_BIN:-}"

@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { afterAll, describe, expect, test } from 'bun:test';
 import { parse as parseYaml } from 'yaml';
 
-import { GUARDRAIL_TOOLS } from './guardrails-port.ts';
+import { PROTO_GUARDRAIL_TOOLS } from './guardrails-port.ts';
 import { ROOT } from './testkit.ts';
 
 type Step = { name?: string; run?: string };
@@ -27,9 +27,9 @@ describe('setup: пути к бинарникам guardrails', () => {
 		for (const d of tmp) rmSync(d, { recursive: true, force: true });
 	});
 
-	test('список цикла равен инструментам группы guardrails', () => {
+	test('список цикла равен инструментам группы guardrails, которые ставит proto', () => {
 		const m = /for tool in ([a-z ]+); do/.exec(binsStep());
-		expect(m?.[1]?.trim().split(/\s+/)).toEqual([...GUARDRAIL_TOOLS]);
+		expect(m?.[1]?.trim().split(/\s+/)).toEqual([...PROTO_GUARDRAIL_TOOLS]);
 	});
 
 	test('run экспортирует *_BIN только для инструментов из .prototools', () => {

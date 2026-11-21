@@ -79,7 +79,7 @@ The rules of `@alxwlw/repo-rules` that Check runs in process for a consumer with
 _Avoid_: lint, policy
 
 **Guardrails**:
-The group that runs the tools of the canon (actionlint, shellcheck and gitleaks) on the files git tracks (gitleaks scans a temporary copy of them, and also the commits of a pull request) and turns their violations into findings: a violation at or above the threshold is a `guardrails-violation`, a tool that did not run or whose answer cannot be read is `guardrails-unavailable`. The version of each tool is the pin in the repo's `.prototools`. Neither finding is held by an exception. `readGuardrails` in `packages/stack/src/guardrails.ts`, `checkGuardrails` in `packages/stack/src/guardrails-rule.ts`, `prBase` in `packages/stack/src/guardrails-commits.ts`.
+The group that runs the six tools of the canon (actionlint, shellcheck, gitleaks, hadolint, markdownlint-cli2 and yamllint) on the files git tracks (gitleaks, hadolint, markdownlint-cli2 and yamllint run in a temporary copy of them, gitleaks also on the commits of a pull request) and turns their violations into findings: a violation at or above the threshold is a `guardrails-violation`, a tool that did not run or whose answer cannot be read is `guardrails-unavailable`. The version of actionlint, shellcheck, gitleaks and hadolint is the pin in the repo's `.prototools`, of markdownlint-cli2 the dependency of `@alxwlw/stack`, of yamllint a constant in `stack`, run through the pinned uv. Neither finding is held by an exception. `readGuardrails` in `packages/stack/src/guardrails.ts`, `checkGuardrails` in `packages/stack/src/guardrails-rule.ts`, `prBase` in `packages/stack/src/guardrails-commits.ts`.
 _Avoid_: lint, linters
 
 ### Commands

@@ -2,6 +2,7 @@ import { closeSync, lstatSync, openSync, readSync } from 'node:fs';
 import { basename, extname, join } from 'node:path';
 
 import { failureReason, type GuardrailRun, type Unavailable } from './guardrails-port.ts';
+import { pinSiteKind } from './toolchain-pins.ts';
 
 // Отслеживаемые файлы: `git ls-files -z` в корне репозитория, зовётся как run('git', TRACKED_FILES_ARGV).
 export const TRACKED_FILES_ARGV: readonly string[] = ['ls-files', '-z'];
@@ -28,6 +29,24 @@ export function regularFiles(root: string, paths: readonly string[]): string[] {
 
 export function workflowFiles(paths: readonly string[]): string[] {
 	return paths.filter((p) => WORKFLOW.test(p));
+}
+
+// Dockerfile любого вида (имя целиком, с суффиксом или с префиксом, как у pinSiteKind) в порядке
+// входа; без SKIP: отслеживаемый Dockerfile в любом каталоге — вход.
+export function dockerfiles(paths: readonly string[]): string[] {
+	return paths.filter((p) => pinSiteKind(p) === 'dockerfile');
+}
+
+// YAML-файлы по `yaml-files` канона yamllint: basename оканчивается на .yaml или .yml (регистр
+// важен), порядок входа.
+export function yamlFiles(paths: readonly string[]): string[] {
+	return paths.filter((p) => /\.ya?ml$/.test(basename(p)));
+}
+
+// Markdown-файлы по `globs` канона markdownlint-cli2: basename оканчивается на .md или .mdx (регистр
+// важен), порядок входа.
+export function markdownFiles(paths: readonly string[]): string[] {
+	return paths.filter((p) => /\.mdx?$/.test(basename(p)));
 }
 
 export function isShellShebang(firstLine: string): boolean {

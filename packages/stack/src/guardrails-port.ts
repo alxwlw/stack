@@ -9,8 +9,14 @@ export interface GuardrailRun {
 	err: string;
 }
 
-// cwd — каталог процесса; без него корень репозитория (spawnRunner).
-export type GuardrailRunner = (cmd: string, argv: string[], cwd?: string) => GuardrailRun;
+// cwd — каталог процесса; без него корень репозитория (spawnRunner). env дописывается поверх
+// окружения процесса, очищенного spawnRunner.
+export type GuardrailRunner = (
+	cmd: string,
+	argv: string[],
+	cwd?: string,
+	env?: Readonly<Record<string, string>>,
+) => GuardrailRun;
 
 export interface GuardrailsPort {
 	run: GuardrailRunner;
@@ -19,7 +25,18 @@ export interface GuardrailsPort {
 	base?: string;
 }
 
-export const GUARDRAIL_TOOLS = ['actionlint', 'shellcheck', 'gitleaks'] as const;
+// То, что ставит proto и что экспортирует setup action (пути *_BIN).
+export const PROTO_GUARDRAIL_TOOLS = ['actionlint', 'shellcheck', 'gitleaks', 'hadolint'] as const;
+export type ProtoTool = (typeof PROTO_GUARDRAIL_TOOLS)[number] | 'uv';
+// Порядок находок и пометок.
+export const GUARDRAIL_TOOLS = [
+	'actionlint',
+	'shellcheck',
+	'gitleaks',
+	'hadolint',
+	'markdownlint-cli2',
+	'yamllint',
+] as const;
 export type GuardrailTool = (typeof GUARDRAIL_TOOLS)[number];
 
 export interface GuardrailViolation {
@@ -44,15 +61,20 @@ export function failureReason(run: GuardrailRun): string {
 }
 
 // Адаптер порта: процесс в корне репозитория (или в cwd вызова), окружение родителя без
-// SHELLCHECK_OPTS, GITLEAKS_CONFIG и GITLEAKS_CONFIG_TOML: первая подменяет порог shellcheck, две
-// другие — конфиг gitleaks целиком (в обход конфига засева репозитория и его `[extend]`), и чужая
-// настройка из окружения сделала бы прогон другим, чем у соседа. Не запустился — код -1 и причина
+// SHELLCHECK_OPTS, GITLEAKS_CONFIG, GITLEAKS_CONFIG_TOML, всеми HADOLINT_* и YAMLLINT_CONFIG_FILE:
+// первая подменяет порог shellcheck, две следующие — конфиг gitleaks целиком (в обход конфига
+// засева репозитория и его `[extend]`), HADOLINT_* меняют уровни, игнор и формат вывода hadolint,
+// последняя — конфиг yamllint, и чужая настройка из окружения сделала бы прогон другим, чем у
+// соседа. UV_* не трогаются: прокси, зеркала и кэш uv нужны в CI. Не запустился — код -1 и причина
 // в stderr.
 export function spawnRunner(root: string): GuardrailRunner {
-	const env = { ...process.env };
+	const env: NodeJS.ProcessEnv = Object.fromEntries(
+		Object.entries(process.env).filter(([key]) => !key.startsWith('HADOLINT_')),
+	);
 	delete env.SHELLCHECK_OPTS;
 	delete env.GITLEAKS_CONFIG;
 	delete env.GITLEAKS_CONFIG_TOML;
+	delete env.YAMLLINT_CONFIG_FILE;
 	// Вывод `git log` внутри `gitleaks git` зависит от конфига git пользователя или репозитория, и
 	// gitleaks разбирает его как есть. При color.ui или color.diff = always печатаются escape-коды:
 	// gitleaks не разбирает дифф, выходит с 0 и `[]` без строки ERR, и секрет в коммите PR пропущен.
@@ -76,8 +98,14 @@ export function spawnRunner(root: string): GuardrailRunner {
 		env[`GIT_CONFIG_KEY_${n + i}`] = key;
 		env[`GIT_CONFIG_VALUE_${n + i}`] = value;
 	});
-	return (cmd, argv, cwd) => {
-		const r = spawnSync(cmd, argv, { cwd: cwd ?? root, env, encoding: 'utf8', maxBuffer: 1 << 30 });
+	return (cmd, argv, cwd, extra) => {
+		// extra последним: бьёт и process.env, и пары GIT_CONFIG_*.
+		const r = spawnSync(cmd, argv, {
+			cwd: cwd ?? root,
+			env: { ...env, ...extra },
+			encoding: 'utf8',
+			maxBuffer: 1 << 30,
+		});
 		if (r.error) return { code: -1, out: '', err: `${cmd}: ${r.error.message}` };
 		return { code: r.status ?? -1, out: r.stdout, err: r.stderr };
 	};

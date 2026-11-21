@@ -73,3 +73,15 @@ test('lockfile связывает repo-rules из workspace, а не из рее
 		version: 'link:../repo-rules',
 	});
 });
+
+test('markdownlint-cli2 — точная зависимость stack, раннер входит в публикуемые файлы', () => {
+	const own = JSON.parse(readFileSync(join(ROOT, 'packages/stack/package.json'), 'utf8')) as {
+		dependencies: Record<string, string>;
+	};
+	expect(own.dependencies['markdownlint-cli2']).toMatch(/^\d+\.\d+\.\d+$/);
+	const res = spawnSync('npm', ['publish', '--dry-run', '--provenance=false'], {
+		cwd: join(ROOT, 'packages', 'stack'),
+		encoding: 'utf8',
+	});
+	expect(`${res.stdout}${res.stderr}`).toContain('src/markdownlint-run.ts');
+}, 30_000);

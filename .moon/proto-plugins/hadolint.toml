@@ -1,0 +1,21 @@
+name = "hadolint"
+type = "cli"
+
+[resolve]
+git-url = "https://github.com/hadolint/hadolint"
+
+[platform.linux]
+download-file = "hadolint-linux-{arch}"
+checksum-file = "checksums.sha256"
+
+[platform.macos]
+download-file = "hadolint-macos-{arch}"
+checksum-file = "checksums.sha256"
+
+[install]
+download-url = "https://github.com/hadolint/hadolint/releases/download/v{version}/{download_file}"
+checksum-url = "https://github.com/hadolint/hadolint/releases/download/v{version}/{checksum_file}"
+
+[install.arch]
+aarch64 = "arm64"
+x86_64 = "x86_64"
