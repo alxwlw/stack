@@ -453,8 +453,8 @@ The version of a tool comes from one of three places:
   `stack`, under the same bun as `stack`, started with `--no-install`.
 - yamllint: the exact version `YAMLLINT_VERSION` in `packages/stack/src/guardrails-yamllint.ts`, with its
   dependencies pinned beside it (`PYYAML_VERSION`, `PATHSPEC_VERSION`), run through the uv of the repo's
-  `.prototools` pin (`uv tool run`); the Python interpreter is not pinned. The first run downloads the package from PyPI; with
-  no network and an empty cache the tool is `guardrails-unavailable`.
+  `.prototools` pin (`uv tool run`); the Python interpreter is not pinned. The first run downloads the package
+  from PyPI; with no network and an empty cache the tool is `guardrails-unavailable`.
 
 The binary of a proto tool, and uv, comes from the variable `ACTIONLINT_BIN`, `SHELLCHECK_BIN`, `GITLEAKS_BIN`,
 `HADOLINT_BIN` or `UV_BIN` when it is set and not empty,
@@ -549,7 +549,9 @@ uv tool run -q --from yamllint==<version> --with pyyaml==<version> --with pathsp
 ```
 
 For yamllint and markdownlint-cli2 use the version of the note `guardrails <tool> <version>` of the run you want
-to reproduce; the README holds no version. markdownlint-cli2 is run with `npx markdownlint-cli2@<version>`
+to reproduce; the README holds no version. The two `--with` versions are not in the note: take `PYYAML_VERSION`
+and `PATHSPEC_VERSION` from `packages/stack/src/guardrails-yamllint.ts` at the `stack` version of that run.
+markdownlint-cli2 is run with `npx markdownlint-cli2@<version>`
 in the repository, with `fix` off in its config. These commands read the working tree, not the copy of the
 tracked files: untracked and ignored files are read too.
 
