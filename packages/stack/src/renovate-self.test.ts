@@ -4,6 +4,9 @@ import { join } from 'node:path';
 import { describe, expect, test } from 'bun:test';
 import JSON5 from 'json5';
 
+import { parsePins } from './canon.ts';
+import { PROTO_GUARDRAIL_TOOLS } from './guardrails-port.ts';
+import { YAMLLINT_VERSION } from './guardrails-yamllint.ts';
 import { canonBundles } from './testkit.ts';
 
 const ROOT = join(import.meta.dir, '..', '..', '..');
@@ -17,6 +20,10 @@ const ownRenovate = JSON5.parse(readFileSync(join(ROOT, 'renovate.json5'), 'utf8
 		customType?: string;
 		managerFilePatterns?: string[];
 		matchStrings?: string[];
+		depNameTemplate?: string;
+		datasourceTemplate?: string;
+		packageNameTemplate?: string;
+		extractVersionTemplate?: string;
 	}[];
 	ignorePaths?: string[];
 	packageRules?: {
@@ -78,6 +85,8 @@ test('свой renovate.json5: канон и корень — одна груп�
 		'.prototools',
 		'pnpm-workspace.yaml',
 		'package.json',
+		'packages/stack/package.json',
+		'packages/stack/src/guardrails-yamllint.ts',
 	]) {
 		expect(existsSync(join(ROOT, f))).toBe(true);
 		expect((group?.matchFileNames ?? []).some((g) => new Bun.Glob(g).match(f))).toBe(true);
@@ -140,4 +149,53 @@ test('renovate.json5: typescript не поднимается на ночные �
 	const night = new RegExp(m?.[1] ?? '');
 	expect(night.test('7.1.0-dev.20261104.1')).toBe(true);
 	for (const v of ['7.1.0-beta', '7.1.0-rc', '7.1.0', '7.1.1']) expect(night.test(v)).toBe(false);
+});
+
+// Версии инструментов группы guardrails двигают свои customManagers: менеджер proto пропускает инструменты из
+// [plugins] (unsupported-datasource). Тексты файлов берутся с диска, ожидаемые значения — из parsePins и константы.
+describe('renovate.json5: версии инструментов guardrails', () => {
+	const managers = (ownRenovate.customManagers ?? []).filter((c) => c.customType === 'regex');
+	const read = (f: string) => readFileSync(join(ROOT, f), 'utf8');
+	const prototoolsFiles = ['packages/stack/canon/files/prototools', '.prototools'];
+	// Renovate читает '/regex/' как RE2; именованные группы и классы здесь общие с JS.
+	const toRegExp = (s: string) => new RegExp(s, 'g');
+	const covers = (c: { managerFilePatterns?: string[] }, f: string) =>
+		(c.managerFilePatterns ?? []).some((p) => hits(p, f));
+
+	test.each(PROTO_GUARDRAIL_TOOLS)(
+		'пин %s: одна запись regex, github-releases, пин из текста файла',
+		(tool) => {
+			const found = managers.filter((c) => c.depNameTemplate === tool);
+			expect(found).toHaveLength(1);
+			const c = found[0];
+			expect(c?.datasourceTemplate).toBe('github-releases');
+			const plugin = read(`packages/stack/canon/files/proto-plugins/${tool}.toml`);
+			const gitUrl = /^git-url\s*=\s*"https:\/\/github\.com\/([^"]+)"/m.exec(plugin)?.[1];
+			expect(gitUrl).toBeDefined();
+			expect(c?.packageNameTemplate).toBe(gitUrl);
+			const ex = /^\^v\(\?<version>(.+)\)\$$/.exec(c?.extractVersionTemplate ?? '');
+			expect(ex).not.toBeNull();
+			for (const f of prototoolsFiles) {
+				expect(covers(c ?? {}, f)).toBe(true);
+				const pin = parsePins(read(f))[tool];
+				expect(pin).toBeDefined();
+				expect(new RegExp(c?.extractVersionTemplate ?? '').exec(`v${pin}`)?.groups?.version).toBe(
+					pin,
+				);
+				const matches = (c?.matchStrings ?? []).flatMap((m) => [...read(f).matchAll(toRegExp(m))]);
+				expect(matches.map((m) => m.groups?.currentValue)).toStrictEqual([pin]);
+			}
+		},
+	);
+
+	test('yamllint: одна запись pypi, константа из файла', () => {
+		const found = managers.filter((c) => c.depNameTemplate === 'yamllint');
+		expect(found).toHaveLength(1);
+		const c = found[0];
+		const file = 'packages/stack/src/guardrails-yamllint.ts';
+		expect(c?.datasourceTemplate).toBe('pypi');
+		expect(covers(c ?? {}, file)).toBe(true);
+		const matches = (c?.matchStrings ?? []).flatMap((m) => [...read(file).matchAll(toRegExp(m))]);
+		expect(matches.map((m) => m.groups?.currentValue)).toStrictEqual([YAMLLINT_VERSION]);
+	});
 });
