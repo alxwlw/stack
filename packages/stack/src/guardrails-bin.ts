@@ -19,6 +19,7 @@ export interface LocatedTool {
 export const VERSION_ARGV: Readonly<Record<GuardrailTool, readonly string[]>> = {
 	actionlint: ['-version'],
 	shellcheck: ['--version'],
+	gitleaks: ['version'],
 };
 
 export function repoPins(prototools: string | undefined): Record<string, string> | Unavailable {
@@ -35,9 +36,10 @@ export function binVar(tool: GuardrailTool): string {
 	return `${tool.toUpperCase()}_BIN`;
 }
 
-// actionlint: первая строка, если это версия; shellcheck: строка `version: <v>`.
+// actionlint и gitleaks: первая строка, если это версия (у gitleaks `version`; вывод `--version`
+// другой — `gitleaks version 8.x`, и его проба не принимает); shellcheck: строка `version: <v>`.
 export function toolVersion(tool: GuardrailTool, out: string): string | undefined {
-	if (tool === 'actionlint') {
+	if (tool === 'actionlint' || tool === 'gitleaks') {
 		const first = out.split('\n')[0]?.trim() ?? '';
 		return /^\d+\.\d+\.\d+$/.test(first) ? first : undefined;
 	}

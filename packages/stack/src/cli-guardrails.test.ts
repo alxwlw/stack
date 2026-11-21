@@ -35,13 +35,18 @@ describe('check с группой guardrails через настоящий cli',
 	let tools: Record<string, string>;
 	beforeAll(() => {
 		restore = isolateGitConfig();
-		tools = { ACTIONLINT_BIN: protoBin('actionlint'), SHELLCHECK_BIN: protoBin('shellcheck') };
+		tools = {
+			ACTIONLINT_BIN: protoBin('actionlint'),
+			SHELLCHECK_BIN: protoBin('shellcheck'),
+			GITLEAKS_BIN: protoBin('gitleaks'),
+		};
 	});
 	afterAll(() => restore());
 
 	const MISSING = {
 		ACTIONLINT_BIN: '/nonexistent/actionlint',
 		SHELLCHECK_BIN: '/nonexistent/shellcheck',
+		GITLEAKS_BIN: '/nonexistent/gitleaks',
 	};
 
 	// Репозиторий под git: init с группой (или без), sync, всё закоммичено.

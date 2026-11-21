@@ -1,9 +1,9 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
-import { stringify } from 'yaml';
+import { parse as parseYaml, stringify } from 'yaml';
 
 import { type Canon, canonDir, canonFor, loadCanon, readCanonSource } from './canon.ts';
 import type { Profile } from './config.ts';
@@ -23,6 +23,21 @@ import {
 	syncPr,
 	type SyncPrOptions,
 } from './sync-pr.ts';
+
+// Тест со своим TMPDIR: перечисление временных каталогов видит только каталоги этого теста, а не
+// соседние процессы на том же хосте (раннеры CI делят /tmp). Каталог удаляется, TMPDIR возвращается.
+export function withPrivateTmpdir<T>(fn: (dir: string) => T): T {
+	const saved = process.env.TMPDIR;
+	const dir = mkdtempSync(join(tmpdir(), 'stack-private-tmp-'));
+	process.env.TMPDIR = dir;
+	try {
+		return fn(dir);
+	} finally {
+		if (saved === undefined) Reflect.deleteProperty(process.env, 'TMPDIR');
+		else process.env.TMPDIR = saved;
+		rmSync(dir, { recursive: true, force: true });
+	}
+}
 
 // Корень репозитория стека: тесты запускают proto и moon из него.
 export const ROOT = join(import.meta.dir, '..', '..', '..');
@@ -296,6 +311,45 @@ export function gitRepo(files: Record<string, string>): { dir: string; remote: s
 	git(dir, 'remote', 'add', 'origin', remote);
 	git(dir, 'push', 'origin', 'main');
 	return { dir, remote };
+}
+
+// Скрипт шага history из check.yml: исполняется как на runner, bash -e -c в корне checkout.
+export function historyScript(): string {
+	const wf = parseYaml(
+		readFileSync(join(import.meta.dir, '../../../.github/workflows/check.yml'), 'utf8'),
+	) as { jobs: Record<string, { steps: { id?: string; run?: string }[] }> };
+	const step = Object.values(wf.jobs)
+		.flatMap((j) => j.steps)
+		.find((s) => s.id === 'history');
+	if (!step?.run) throw new Error('check.yml has no history step');
+	return step.run;
+}
+
+export function historyStep(cwd: string, baseRef = 'main'): { code: number | null; err: string } {
+	const r = spawnSync('bash', ['-e', '-c', historyScript()], {
+		cwd,
+		encoding: 'utf8',
+		env: { ...process.env, GITHUB_BASE_REF: baseRef },
+	});
+	return { code: r.status, err: r.stderr };
+}
+
+// Каталог, каким его оставляет actions/checkout в PR-джобе с fetch-depth 1: один коммит, HEAD — merge-коммит,
+// origin/<база> нет.
+export function shallowPrCheckout(remote: string): string {
+	const work = mkdtempSync(join(tmpdir(), 'stack-pr-'));
+	git(work, 'init', '-b', 'main');
+	git(work, 'remote', 'add', 'origin', `file://${remote}`);
+	git(
+		work,
+		'fetch',
+		'--no-tags',
+		'--depth=1',
+		'origin',
+		'+refs/pull/1/merge:refs/remotes/pull/1/merge',
+	);
+	git(work, 'checkout', '--force', 'refs/remotes/pull/1/merge');
+	return work;
 }
 
 // Помощники тестов sync-pr: поддельный порт GitHub и запуск publishChanges.

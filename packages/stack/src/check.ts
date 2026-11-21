@@ -43,7 +43,7 @@ export function plan(repo: Repo, canon: Canon, exceptions: readonly Exception[] 
 // Находки в порядке: план, нечитаемые файлы загрузчика, правила «только отчёт» из deps.ts, засевы и moon,
 // правила групп peers, repo-rules и guardrails, если они включены (в этом порядке); затем протухшие исключения.
 // Все они проходят через исключения. peers — исход `pnpm peers check`, repoRules — исход двух вызовов
-// repo-rules, guardrails — исход чтения отслеживаемых файлов и двух инструментов; все три получает checkRepo.
+// repo-rules, guardrails — исход чтения отслеживаемых файлов, инструментов и скана коммитов PR; все три получает checkRepo.
 export function check(
 	repo: Repo,
 	canon: Canon,
@@ -95,7 +95,7 @@ export interface CheckReport {
 
 // pnpm запускается, только если группа peers включена и лок есть: без лока правило отвечает само.
 // repo-rules — только если включена группа: два вызова через порт, пометки идут отдельно от находок.
-// guardrails — тоже только если включена группа: один `git ls-files`, пробы версий и до двух запусков инструментов.
+// guardrails — тоже только если включена группа: один `git ls-files`, пробы версий, запуски инструментов, `git merge-base` и второй запуск gitleaks по коммитам PR.
 export function checkRepo(
 	repoRoot: string,
 	canon: Canon,
