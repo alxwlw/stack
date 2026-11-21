@@ -453,7 +453,7 @@ on the `run:` steps of the workflows, at the pinned version; pyflakes inside act
 
 What the repo has to provide for the new tools:
 
-- yamllint: a yamllint config file among the tracked files (`.yamllint`, also with the suffix `.yaml` or `.yml`)
+- yamllint: a yamllint config file in the repository root, among the tracked files (`.yamllint`, also with the suffix `.yaml` or `.yml`)
   whenever there are YAML files; without one the tool is `guardrails-unavailable`, because yamllint would
   otherwise look for a config upward from the copy and in the home directory.
 - markdownlint-cli2: a tracked markdownlint-cli2 config with `globs`; without them the tool is

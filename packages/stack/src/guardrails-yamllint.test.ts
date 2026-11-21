@@ -50,6 +50,7 @@ describe('аргументы, конфиг и файлы', () => {
 		expect(yamllintConfig(['.yamllint.yml', '.yamllint.yaml'])).toBe('.yamllint.yaml');
 		expect(yamllintConfig([])).toBeUndefined();
 		expect(yamllintConfig(['sub/.yamllint'])).toBeUndefined();
+		expect(yamllintConfig(['apps/api/.yamllint', 'a.yml'])).toBeUndefined();
 	});
 
 	test('yamlFiles: .yaml и .yml по basename, регистр важен, порядок входа', () => {
