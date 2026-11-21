@@ -6,7 +6,7 @@ import JSON5 from 'json5';
 
 import { parsePins } from './canon.ts';
 import { PROTO_GUARDRAIL_TOOLS } from './guardrails-port.ts';
-import { YAMLLINT_VERSION } from './guardrails-yamllint.ts';
+import { PATHSPEC_VERSION, PYYAML_VERSION, YAMLLINT_VERSION } from './guardrails-yamllint.ts';
 import { canonBundles } from './testkit.ts';
 
 const ROOT = join(import.meta.dir, '..', '..', '..');
@@ -197,5 +197,19 @@ describe('renovate.json5: версии инструментов guardrails', () 
 		expect(covers(c ?? {}, file)).toBe(true);
 		const matches = (c?.matchStrings ?? []).flatMap((m) => [...read(file).matchAll(toRegExp(m))]);
 		expect(matches.map((m) => m.groups?.currentValue)).toStrictEqual([YAMLLINT_VERSION]);
+	});
+
+	test.each([
+		['pyyaml', PYYAML_VERSION],
+		['pathspec', PATHSPEC_VERSION],
+	])('%s: одна запись pypi, константа из файла', (name, version) => {
+		const found = managers.filter((c) => c.depNameTemplate === name);
+		expect(found).toHaveLength(1);
+		const c = found[0];
+		const file = 'packages/stack/src/guardrails-yamllint.ts';
+		expect(c?.datasourceTemplate).toBe('pypi');
+		expect(covers(c ?? {}, file)).toBe(true);
+		const matches = (c?.matchStrings ?? []).flatMap((m) => [...read(file).matchAll(toRegExp(m))]);
+		expect(matches.map((m) => m.groups?.currentValue)).toStrictEqual([version]);
 	});
 });

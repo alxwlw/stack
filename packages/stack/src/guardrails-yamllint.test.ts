@@ -9,6 +9,8 @@ import { yamlFiles } from './guardrails-files.ts';
 import { type GuardrailRun, spawnRunner } from './guardrails-port.ts';
 import {
 	parseYamllint,
+	PATHSPEC_VERSION,
+	PYYAML_VERSION,
 	YAMLLINT_VERSION,
 	yamllintArgv,
 	yamllintConfig,
@@ -23,13 +25,17 @@ const run = (out: string, over: Partial<GuardrailRun> = {}): GuardrailRun => ({
 });
 
 describe('аргументы, конфиг и файлы', () => {
-	test('argv собран из YAMLLINT_VERSION', () => {
+	test('argv собран из YAMLLINT_VERSION, PYYAML_VERSION и PATHSPEC_VERSION', () => {
 		expect(yamllintArgv('.yamllint')).toStrictEqual([
 			'tool',
 			'run',
 			'-q',
 			'--from',
 			`yamllint==${YAMLLINT_VERSION}`,
+			'--with',
+			`pyyaml==${PYYAML_VERSION}`,
+			'--with',
+			`pathspec==${PATHSPEC_VERSION}`,
 			'yamllint',
 			'-f',
 			'parsable',
@@ -40,8 +46,10 @@ describe('аргументы, конфиг и файлы', () => {
 		expect(yamllintArgv('.yamllint.yml').at(-2)).toBe('.yamllint.yml');
 	});
 
-	test('версия — точная x.y.z', () => {
+	test('версии — точные x.y.z', () => {
 		expect(YAMLLINT_VERSION).toMatch(/^\d+\.\d+\.\d+$/);
+		expect(PYYAML_VERSION).toMatch(/^\d+\.\d+\.\d+$/);
+		expect(PATHSPEC_VERSION).toMatch(/^\d+\.\d+\.\d+$/);
 	});
 
 	test('конфиг — первый из списка, что есть среди файлов', () => {
