@@ -5,9 +5,11 @@ on:
       version:
         required: true
         type: string
-# GITHUB_TOKEN здесь не нужен никому: sync.yml клонирует и открывает PR токеном приложения (secrets app-id и
-# app-private-key). Пустые права — минимум, потолок для вызываемого sync.yml (у него тоже {}).
-permissions: {}
+# sync.yml сегодня GITHUB_TOKEN не берёт: клон и PR идут токеном приложения (secrets app-id и app-private-key).
+# contents: read — потолок про запас: если sync.yml@v1 позже начнёт читать репозиторий этим токеном, workflow
+# потребителя всё равно запустится до того, как его sync-PR с новой копией будет открыт.
+permissions:
+  contents: read
 # Группа уникальна на прогон: очередь по версии держит джоб sync вызываемого (stack-sync-<версия>, без отмены).
 # Та же группа у вызывающего и вызываемого дала бы тупик.
 concurrency:

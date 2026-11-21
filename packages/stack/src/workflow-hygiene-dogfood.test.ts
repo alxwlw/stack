@@ -139,6 +139,19 @@ describe('канонные workflow проходят гигиену', () => {
 	});
 });
 
+test('все четыре канонных workflow объявляют permissions ровно contents: read', () => {
+	expect(canonEntries.length).toBe(4);
+	for (const e of canonEntries) {
+		expect({
+			src: e.src,
+			permissions: (parseYaml(e.content) as Workflow).permissions,
+		}).toStrictEqual({
+			src: e.src,
+			permissions: { contents: 'read' },
+		});
+	}
+});
+
 describe('права вызываемого reusable не шире прав вызывающего', () => {
 	test('вызовов не меньше пяти: четыре канонных и renovate-self.yml', () => {
 		expect(calls.length).toBeGreaterThanOrEqual(5);
