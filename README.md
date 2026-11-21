@@ -193,16 +193,16 @@ opt-in groups layered on top — extra files, extra catalog entries, or an extra
 | `contracts` | A Hardhat/Solidity repo with a TypeScript test/deploy layer — same JS/TS canon as `node`.                                                                                                                                                                                       |
 | `infra`     | A repo with no pnpm workspace/TS toolchain — canon reduces to what's stack-agnostic (editorconfig, gitleaks, yamllint, markdownlint, `.prototools`, one moon task, its own `stack-check` workflow, Renovate). Catalog checks are skipped when there's no `pnpm-workspace.yaml`. |
 
-| Group        | Adds                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Profiles                     |
-| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- |
-| `libs`       | Catalog pins for common application libraries (a NestJS/Prisma/React-ish stack) — grows over time                                                                                                                                                                                                                                                                                                                                                                                                 | any                          |
-| `moon-tasks` | Syncs `.moon/tasks/{typescript,oxlint,oxfmt,bun-test}.yml` **verbatim** — Bun-run `typecheck` (`tsc --noEmit`), `lint`, `format`, `test` — for `node`/`contracts`; seeds `stack.yml` (repo-owned) for every profile, the only file `infra` gets. `typecheck` is `--noEmit` and does not build project `references` (refs/nest presets) — override it with `tsc --build`; override a task's args in a project's `moon.yml` with `mergeArgs: 'replace'`; skip the group if you hand-roll moon tasks | `node`, `contracts`, `infra` |
-| `knip`       | Syncs `knip.base.json` **verbatim** — the canon's base for unused-code detection; build your own knip config on top of it                                                                                                                                                                                                                                                                                                                                                                         | `node`                       |
-| `depcruise`  | Syncs `.dependency-cruiser.base.cjs` **verbatim** — import/architecture boundary rules; your own `.dependency-cruiser.cjs` pulls them in with `extends`                                                                                                                                                                                                                                                                                                                                           | `node`, `contracts`          |
-| `peers`      | Adds the `pnpm peers check` gate to `stack check`, against a committed baseline (see [Peer dependencies](#peer-dependencies)); needs `pnpm-lock.yaml`                                                                                                                                                                                                                                                                                                                                             | `node`, `contracts`          |
-| `repo-rules` | Adds the rules of `@alxwlw/repo-rules` to `stack check`, at the version of `@alxwlw/stack` and against the repo's own repo-rules baseline (see [Repo rules](#repo-rules)); needs a git repository                                                                                                                                                                                                                                                                                                 | any                          |
-| `guardrails` | Adds actionlint, shellcheck, gitleaks, hadolint, markdownlint-cli2 and yamllint to `stack check`, over the files git tracks; the versions are the pins in the repo's `.prototools` (four tools), the `@alxwlw/stack` dependency (markdownlint-cli2) and a constant in `stack` (yamllint, run through the pinned uv); gitleaks also scans the commits of a pull request (see [Guardrails](#guardrails)); needs a git repository                                                                    | any                          |
-| `renovate`   | Deprecated, does nothing: Renovate is the canon's dependency bot for every profile. Still accepted so older `.stack.jsonc` files parse                                                                                                                                                                                                                                                                                                                                                            | —                            |
+| Group        | Adds                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Profiles                     |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- |
+| `libs`       | Catalog pins for common application libraries (a NestJS/Prisma/React-ish stack) — grows over time                                                                                                                                                                                                                                                                                                                                                                                                                       | any                          |
+| `moon-tasks` | Syncs `.moon/tasks/{typescript,oxlint,oxfmt,bun-test}.yml` **verbatim** — Bun-run `typecheck` (`tsc --noEmit`), `lint`, `format`, `test` — for `node`/`contracts`; seeds `stack.yml` (repo-owned) for every profile, the only file `infra` gets. `typecheck` is `--noEmit` and does not build project `references` (refs/nest presets) — override it with `tsc --build`; override a task's args in a project's `moon.yml` with `mergeArgs: 'replace'`; skip the group if you hand-roll moon tasks                       | `node`, `contracts`, `infra` |
+| `knip`       | Syncs `knip.base.json` **verbatim** — the canon's base for unused-code detection; build your own knip config on top of it                                                                                                                                                                                                                                                                                                                                                                                               | `node`                       |
+| `depcruise`  | Syncs `.dependency-cruiser.base.cjs` **verbatim** — import/architecture boundary rules; your own `.dependency-cruiser.cjs` pulls them in with `extends`                                                                                                                                                                                                                                                                                                                                                                 | `node`, `contracts`          |
+| `peers`      | Adds the `pnpm peers check` gate to `stack check`, against a committed baseline (see [Peer dependencies](#peer-dependencies)); needs `pnpm-lock.yaml`                                                                                                                                                                                                                                                                                                                                                                   | `node`, `contracts`          |
+| `repo-rules` | Adds the rules of `@alxwlw/repo-rules` to `stack check`, at the version of `@alxwlw/stack` and against the repo's own repo-rules baseline (see [Repo rules](#repo-rules)); needs a git repository                                                                                                                                                                                                                                                                                                                       | any                          |
+| `guardrails` | Adds actionlint, shellcheck, gitleaks, hadolint, markdownlint-cli2 and yamllint to `stack check`, over the files git tracks; the versions are the pins in the repo's `.prototools` (four tools), the `@alxwlw/stack` dependency (markdownlint-cli2) and a constant in `stack` (yamllint, run through the pinned uv); gitleaks also scans the commits of a pull request, and every workflow file must declare `timeout-minutes`, `permissions` and `concurrency` (see [Guardrails](#guardrails)); needs a git repository | any                          |
+| `renovate`   | Deprecated, does nothing: Renovate is the canon's dependency bot for every profile. Still accepted so older `.stack.jsonc` files parse                                                                                                                                                                                                                                                                                                                                                                                  | —                            |
 
 ```bash
 npx stack init --profile node --with libs --with moon-tasks
@@ -282,6 +282,14 @@ The same release reports a moon toolchain config left under its moon 1 file name
 does not fix it, so delete the file in that PR, or hold it with an exception.
 
 Upgrading to the release that checks seeds: on the first `stack/v<version>` PR after it, `check` goes red on `canon-not-extended` in a repo whose gitleaks seed, `.oxlintrc.json` or `tsconfig.options.json` no longer extends the canon — typically a gitleaks config that predates the canon ruleset and still says `useDefault = true`, or a `tsconfig.options.json` that spells every option out. `sync` does not fix it. In that PR, restore the link (for gitleaks: replace `useDefault = true` with the `path` the finding names) or hold the file with an exception (`{ "file": "<path>", "reason": "…" }`). The link can also be restored before the release: it needs nothing from the new version.
+
+Upgrading to the release that adds the `guardrails` group: the first `stack/v<version>` PR adds the hadolint pin and
+its plugin to `.prototools` and to the moon proto plugins directory, changes the lockfile (markdownlint-cli2 joins
+the dependencies of `@alxwlw/stack`) and rewrites the three canon workflow files (`permissions` and
+`concurrency`). Without the group `check` reports nothing new. Before adding `"with": ["guardrails"]`, run the
+tools by hand (the commands of [Guardrails](#guardrails)), fix what they report or hold it with the means of the
+tool itself, and add the keys of [Workflow hygiene](#workflow-hygiene) to your own workflow files. None of the
+findings can be held by an exception.
 
 ## Exceptions
 
@@ -406,7 +414,9 @@ fails (a baseline file that does not parse, for one), `stack sync-pr` prints one
 
 The opt-in `guardrails` group makes `stack check` run six tools — actionlint, shellcheck, gitleaks, hadolint,
 markdownlint-cli2 and yamllint — on the files git tracks, gitleaks also on the commits of a pull request, and
-turn their violations into findings. Without the group no tool is run and nothing changes in the output.
+turn their violations into findings. It also checks the hygiene of the workflow files (see
+[Workflow hygiene](#workflow-hygiene)). Without the group no tool is run, no workflow is checked and nothing
+changes in the output.
 
 ```bash
 # .stack.jsonc: "with": ["guardrails"]
@@ -510,12 +520,13 @@ ignored paths in the actionlint config apply: actionlint runs shellcheck without
 `error` and `warning` are findings; `info` and `style` are not, inside actionlint too. `stack` runs the tools
 without the `SHELLCHECK_OPTS` variable of the caller, so it cannot move the threshold. A shellcheck config file
 above the repository root, such as one in the home directory, is still read by shellcheck; it is not part of
-the repository. Two findings come out of the group:
+the repository. Three findings come out of the group:
 
-| Code                     | When                                                                                                                                                                                   |
-| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `guardrails-violation`   | a tool reports a violation at or above the threshold; the line reads `guardrails-violation: <path>:<line> — <tool> <rule>: <message>`, without `:<line>` when the tool gives no line   |
-| `guardrails-unavailable` | a tool did not run or its answer cannot be read (no pin, no binary, a binary of another version, a crash, output that does not parse, a directory outside git); never read as no drift |
+| Code                     | When                                                                                                                                                                                                |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `guardrails-violation`   | a tool reports a violation at or above the threshold; the line reads `guardrails-violation: <path>:<line> — <tool> <rule>: <message>`, without `:<line>` when the tool gives no line                |
+| `guardrails-unavailable` | a tool did not run or its answer cannot be read (no pin, no binary, a binary of another version, a crash, output that does not parse, a directory outside git); never read as no drift              |
+| `workflow-hygiene`       | a workflow file lacks `timeout-minutes`, `permissions` or `concurrency`, or cannot be read; the line reads `workflow-hygiene: <path> — missing <parts>` (see [Workflow hygiene](#workflow-hygiene)) |
 
 None of them can be held by an exception. To turn the gate off, drop `guardrails` from `with`.
 
@@ -551,6 +562,25 @@ GIT_CONFIG_VALUE_1=medium` in front.
 These commands are for a plain shell. In an AI agent environment `proto bin` prints JSON lines instead of a
 path, and actionlint then runs without shellcheck and reports nothing for the `run:` steps; there,
 `stack check` is the way to reproduce the exact run.
+
+### Workflow hygiene
+
+Every workflow file directly under `.github/workflows` (composite actions and subdirectories are not workflows)
+declares three keys. `timeout-minutes` is declared in every job that runs on a runner; a job with `uses:` is a call
+and is left out, because GitHub does not accept the key there. `permissions` and `concurrency` are declared at the
+top level or in every job. A workflow whose only trigger is `workflow_call` needs no `concurrency`: its caller sets
+the group. Only the presence of a key is checked, not its value, and a key with no value does not count.
+
+There is one finding per file, listing what is missing:
+
+```text
+workflow-hygiene: .github/workflows/ci.yml — missing timeout-minutes (test, lint); permissions (top level, or in lint); concurrency (top level, or in test, lint)
+```
+
+A file that does not parse, or whose top level is not a mapping, is one finding too: `missing` is replaced by
+`cannot read: <reason>`. An exception does not hold the finding. When a key is not needed, its value is the
+decision: `permissions: {}`, a timeout sized for a long job, or a `concurrency` group with
+`${{ github.run_id }}` in it for a workflow that needs parallel runs.
 
 ## CI
 
@@ -596,6 +626,16 @@ synced into a consumer wire them to the repository variable `STACK_REGISTRY` and
 `STACK_REGISTRY=npm.pkg.github.com`, secret `STACK_REGISTRY_TOKEN`). `check.yml` and `sync.yml` call
 the action with `registry` only and set `STACK_REGISTRY_TOKEN` in the job env from the
 `registry-token` secret. `renovate.yml` also gives Renovate an npm host rule for that host and token.
+
+The canon workflow files `stack-check.yml`, `stack-sync.yml` and `renovate.yml` that `stack sync` writes into a
+consumer declare `permissions: contents: read`, and `stack-sync.yml` declares `permissions: {}`. The permissions of
+a caller are the ceiling of the workflow it calls, so the reusable workflows ask for no more: `check.yml` and
+`renovate.yml` ask for `contents: read`, `sync.yml` for nothing (its tokens are GitHub App tokens). A workflow of
+your own that calls them with its own `permissions` must give at least that; otherwise GitHub does not start it
+at all (`Error calling workflow …`). Each canon file also declares a `concurrency` group. The group of your own
+caller must differ from the group of the job it calls, `stack-sync-<version>` in `sync.yml` and
+`renovate-<repository>` in `renovate.yml`: the same group is a deadlock. The canon files put `github.run_id` into
+the group of a workflow that queues in the called job, which keeps the two apart.
 
 The action also exports `ACTIONLINT_BIN`, `SHELLCHECK_BIN`, `GITLEAKS_BIN` and `HADOLINT_BIN` — the real binaries
 behind the proto shims, which race each other when run in parallel — only for those four tools, and only when the
