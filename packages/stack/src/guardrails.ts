@@ -112,7 +112,7 @@ function readGitleaks(
 }
 
 // hadolint ищет конфиг в cwd, затем в XDG_CONFIG_HOME и HOME: оба указывают на новый пустой каталог,
-// поэтому действует только отслеживаемый `.hadolint.yaml` копии, иначе встроенный.
+// поэтому действует только отслеживаемый конфиг hadolint копии, иначе встроенный.
 function readHadolint(
 	set: readonly string[],
 	hadolint: { bin: string; version: string },

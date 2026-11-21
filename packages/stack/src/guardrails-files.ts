@@ -31,8 +31,8 @@ export function workflowFiles(paths: readonly string[]): string[] {
 	return paths.filter((p) => WORKFLOW.test(p));
 }
 
-// Dockerfile любого вида (`Dockerfile`, `Dockerfile.prod`, `web.Dockerfile`) в порядке входа; без SKIP:
-// отслеживаемый `build/Dockerfile` — вход.
+// Dockerfile любого вида (имя целиком, с суффиксом или с префиксом, как у pinSiteKind) в порядке
+// входа; без SKIP: отслеживаемый Dockerfile в любом каталоге — вход.
 export function dockerfiles(paths: readonly string[]): string[] {
 	return paths.filter((p) => pinSiteKind(p) === 'dockerfile');
 }
