@@ -83,5 +83,7 @@ test('markdownlint-cli2 — точная зависимость stack, ранн�
 		cwd: join(ROOT, 'packages', 'stack'),
 		encoding: 'utf8',
 	});
-	expect(`${res.stdout}${res.stderr}`).toContain('src/markdownlint-run.ts');
+	const out = `${res.stdout}${res.stderr}`;
+	expect(out).toContain('src/markdownlint-run.ts');
+	expect(out).toContain('src/markdownlint-run.bunfig.toml');
 }, 30_000);
