@@ -1,3 +1,3 @@
 # Empty bun config for the markdownlint-cli2 runner (passed as --config=<this file>).
-# It replaces the bunfig.toml of the checked repository, so a `preload` there is not executed
+# It replaces the bunfig of the checked repository, so a `preload` there is not executed
 # by the runner process. Keep this file free of settings.

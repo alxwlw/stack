@@ -30,7 +30,7 @@ export interface MarkdownlintReport {
 // результаты структурой. Запускается под тем же bun, что и stack.
 export const MARKDOWNLINT_RUNNER = fileURLToPath(new URL('./markdownlint-run.ts', import.meta.url));
 
-// Пустой конфиг bun для раннера: `--config=` заменяет `bunfig.toml` копии, и его `preload` не исполняется
+// Пустой конфиг bun для раннера: `--config=` заменяет bunfig копии, и его `preload` не исполняется
 // (форма только с `=` и абсолютным путём к существующему файлу: `-c`, `--config <файл>` не действуют).
 export const MARKDOWNLINT_BUNFIG = fileURLToPath(
 	new URL('./markdownlint-run.bunfig.toml', import.meta.url),
