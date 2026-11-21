@@ -90,6 +90,7 @@ test.each([
 	['on: [workflow_call, workflow_dispatch]'],
 	['on: { workflow_call: {}, push: {} }'],
 	['name: x'],
+	['on: []'],
 ])('workflow_call и ещё триггер или нет on — concurrency нужен (%s)', (on) => {
 	const text = `${on}\npermissions: { contents: read }\njobs:\n  build:\n    runs-on: x\n    timeout-minutes: 5\n    steps: []\n`;
 	expect(h(text)).toStrictEqual(msg('missing concurrency (top level, or in build)'));
