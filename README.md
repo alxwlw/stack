@@ -627,8 +627,8 @@ synced into a consumer wire them to the repository variable `STACK_REGISTRY` and
 the action with `registry` only and set `STACK_REGISTRY_TOKEN` in the job env from the
 `registry-token` secret. `renovate.yml` also gives Renovate an npm host rule for that host and token.
 
-The canon workflow files `stack-check.yml`, `stack-sync.yml` and `renovate.yml` that `stack sync` writes into a
-consumer declare `permissions: contents: read`, and `stack-sync.yml` declares `permissions: {}`. The permissions of
+The three canon workflow files that `stack sync` writes into a consumer (the check, the sync and the renovate
+workflow) declare `permissions: contents: read`, except the sync one, which declares `permissions: {}`. The permissions of
 a caller are the ceiling of the workflow it calls, so the reusable workflows ask for no more: `check.yml` and
 `renovate.yml` ask for `contents: read`, `sync.yml` for nothing (its tokens are GitHub App tokens). A workflow of
 your own that calls them with its own `permissions` must give at least that; otherwise GitHub does not start it
