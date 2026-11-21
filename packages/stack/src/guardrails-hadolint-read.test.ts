@@ -118,6 +118,7 @@ describe('читатель: hadolint с портом-таблицей', () => {
 					shellcheck: NO_FILES,
 					gitleaks: { version: GL_PIN, files: 5, violations: [] },
 					hadolint: { version: HL_PIN, files: 4, violations: [] },
+					yamllint: NO_FILES,
 				},
 				commits: NO_BASE,
 			});
@@ -167,6 +168,7 @@ describe('читатель: hadolint с портом-таблицей', () => {
 				shellcheck: NO_FILES,
 				gitleaks: { version: GL_PIN, files: 1, violations: [] },
 				hadolint: { unavailable: '.prototools has no hadolint pin' },
+				yamllint: NO_FILES,
 			},
 			commits: NO_BASE,
 		});
@@ -206,6 +208,7 @@ describe('читатель: hadolint с портом-таблицей', () => {
 						},
 					],
 				},
+				yamllint: NO_FILES,
 			},
 			commits: { skipped: 'gitleaks unavailable' },
 		});

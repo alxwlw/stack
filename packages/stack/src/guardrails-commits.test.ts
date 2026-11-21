@@ -134,7 +134,13 @@ describe('mergeBase', () => {
 
 describe('находки и пометки по commits', () => {
 	const tool = { version: PIN, files: 1, violations: [] };
-	const tools = { actionlint: NO_FILES, shellcheck: NO_FILES, gitleaks: tool, hadolint: NO_FILES };
+	const tools = {
+		actionlint: NO_FILES,
+		shellcheck: NO_FILES,
+		gitleaks: tool,
+		hadolint: NO_FILES,
+		yamllint: NO_FILES,
+	};
 	const gl = (path: string, line: number, message: string) => ({
 		tool: 'gitleaks' as const,
 		rule: RULE,
@@ -186,6 +192,7 @@ describe('находки и пометки по commits', () => {
 			'guardrails shellcheck: skipped (no files)',
 			`guardrails gitleaks ${PIN}: 1 file(s), 0 finding(s)`,
 			'guardrails hadolint: skipped (no files)',
+			'guardrails yamllint: skipped (no files)',
 			'guardrails gitleaks commits: skipped (not a pull request)',
 		]);
 	});
@@ -342,6 +349,7 @@ describe('читатель с портом-таблицей', () => {
 				shellcheck: NO_FILES,
 				gitleaks: { unavailable: 'FTL unable to load gitleaks config' },
 				hadolint: NO_FILES,
+				yamllint: NO_FILES,
 			},
 			commits: { skipped: 'gitleaks unavailable' },
 		});
@@ -418,7 +426,13 @@ describe('читатель с портом-таблицей', () => {
 		const root = repo({});
 		const f = fakePort({ [GIT]: ok('') }, PR_ENV);
 		expect(readGuardrails(root, undefined, f.port)).toStrictEqual({
-			tools: { actionlint: NO_FILES, shellcheck: NO_FILES, gitleaks: NO_FILES, hadolint: NO_FILES },
+			tools: {
+				actionlint: NO_FILES,
+				shellcheck: NO_FILES,
+				gitleaks: NO_FILES,
+				hadolint: NO_FILES,
+				yamllint: NO_FILES,
+			},
 			commits: NO_FILES,
 		});
 		expect(f.calls).toHaveLength(1);

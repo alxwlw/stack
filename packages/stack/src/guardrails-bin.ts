@@ -21,6 +21,7 @@ export const VERSION_ARGV: Readonly<Record<ProtoTool, readonly string[]>> = {
 	shellcheck: ['--version'],
 	gitleaks: ['version'],
 	hadolint: ['--version'],
+	uv: ['--version'],
 };
 
 export function repoPins(prototools: string | undefined): Record<string, string> | Unavailable {
@@ -39,11 +40,12 @@ export function binVar(tool: ProtoTool): string {
 
 // actionlint и gitleaks: первая строка, если это версия (у gitleaks `version`; вывод `--version`
 // другой — `gitleaks version 8.x`, и его проба не принимает); hadolint: первая строка
-// `Haskell Dockerfile Linter <v>`; shellcheck: строка `version: <v>`.
+// `Haskell Dockerfile Linter <v>`; uv: первая строка `uv <v> (…)`; shellcheck: строка `version: <v>`.
 export function toolVersion(tool: ProtoTool, out: string): string | undefined {
 	if (tool === 'hadolint') {
 		return /^Haskell Dockerfile Linter (\d+\.\d+\.\d+)$/.exec(out.split('\n')[0] ?? '')?.[1];
 	}
+	if (tool === 'uv') return /^uv (\d+\.\d+\.\d+)\b/.exec(out.split('\n')[0] ?? '')?.[1];
 	if (tool === 'actionlint' || tool === 'gitleaks') {
 		const first = out.split('\n')[0]?.trim() ?? '';
 		return /^\d+\.\d+\.\d+$/.test(first) ? first : undefined;

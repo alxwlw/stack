@@ -27,9 +27,15 @@ export interface GuardrailsPort {
 
 // То, что ставит proto и что экспортирует setup action (пути *_BIN).
 export const PROTO_GUARDRAIL_TOOLS = ['actionlint', 'shellcheck', 'gitleaks', 'hadolint'] as const;
-export type ProtoTool = (typeof PROTO_GUARDRAIL_TOOLS)[number];
+export type ProtoTool = (typeof PROTO_GUARDRAIL_TOOLS)[number] | 'uv';
 // Порядок находок и пометок.
-export const GUARDRAIL_TOOLS = ['actionlint', 'shellcheck', 'gitleaks', 'hadolint'] as const;
+export const GUARDRAIL_TOOLS = [
+	'actionlint',
+	'shellcheck',
+	'gitleaks',
+	'hadolint',
+	'yamllint',
+] as const;
 export type GuardrailTool = (typeof GUARDRAIL_TOOLS)[number];
 
 export interface GuardrailViolation {

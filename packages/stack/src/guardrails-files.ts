@@ -37,6 +37,12 @@ export function dockerfiles(paths: readonly string[]): string[] {
 	return paths.filter((p) => pinSiteKind(p) === 'dockerfile');
 }
 
+// YAML-файлы по `yaml-files` канона yamllint: basename оканчивается на .yaml или .yml (регистр
+// важен), порядок входа.
+export function yamlFiles(paths: readonly string[]): string[] {
+	return paths.filter((p) => /\.ya?ml$/.test(basename(p)));
+}
+
 export function isShellShebang(firstLine: string): boolean {
 	if (!firstLine.startsWith('#!')) return false;
 	const tokens = firstLine

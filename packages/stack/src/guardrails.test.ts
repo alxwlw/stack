@@ -33,6 +33,10 @@ const SC_VERSION = '/x/sc --version';
 const AL_OUT = ok('1.7.12\ninstalled by downloading from release page\n');
 const SC_OUT = ok('ShellCheck - shell script analysis tool\nversion: 0.11.0\nlicense: GPL\n');
 const NO_FILES = { skipped: 'no files' } as const;
+// Канон кладёт workflow (.yml), а конфиг yamllint в этих фикстурах не отслеживается.
+const NO_YAMLLINT_CONFIG = {
+	unavailable: 'no yamllint config among tracked files (.yamllint)',
+} as const;
 
 const shellcheckJson = (...lines: number[]): GuardrailRun => ({
 	code: lines.length > 0 ? 1 : 0,
@@ -62,6 +66,7 @@ test('только README.md без пина gitleaks — actionlint и shellche
 			shellcheck: NO_FILES,
 			gitleaks: { unavailable: '.prototools has no gitleaks pin' },
 			hadolint: NO_FILES,
+			yamllint: NO_FILES,
 		},
 		commits: { skipped: 'gitleaks unavailable' },
 	});
@@ -99,6 +104,7 @@ test('только скрипт — shellcheck запущен, actionlint skippe
 			},
 			gitleaks: { unavailable: '.prototools has no gitleaks pin' },
 			hadolint: NO_FILES,
+			yamllint: NO_FILES,
 		},
 		commits: { skipped: 'gitleaks unavailable' },
 	});
@@ -128,6 +134,7 @@ test('файл из git, которого нет на диске, инструм
 			shellcheck: NO_FILES,
 			gitleaks: { unavailable: '.prototools has no gitleaks pin' },
 			hadolint: NO_FILES,
+			yamllint: NO_YAMLLINT_CONFIG,
 		},
 		commits: { skipped: 'gitleaks unavailable' },
 	});
@@ -160,6 +167,7 @@ test('только workflow без пина shellcheck — shellcheck недос
 			shellcheck: { unavailable: '.prototools has no shellcheck pin' },
 			gitleaks: { unavailable: '.prototools has no gitleaks pin' },
 			hadolint: NO_FILES,
+			yamllint: NO_YAMLLINT_CONFIG,
 		},
 		commits: { skipped: 'gitleaks unavailable' },
 	});
@@ -191,6 +199,7 @@ test('скрипты и workflow, нет пина actionlint — actionlint не
 			shellcheck: { version: '0.11.0', files: 2, violations: [] },
 			gitleaks: { unavailable: '.prototools has no gitleaks pin' },
 			hadolint: NO_FILES,
+			yamllint: NO_YAMLLINT_CONFIG,
 		},
 		commits: { skipped: 'gitleaks unavailable' },
 	});
@@ -235,6 +244,7 @@ test('actionlint: два workflow — files 2, находки разобраны
 			shellcheck: NO_FILES,
 			gitleaks: { unavailable: '.prototools has no gitleaks pin' },
 			hadolint: NO_FILES,
+			yamllint: NO_YAMLLINT_CONFIG,
 		},
 		commits: { skipped: 'gitleaks unavailable' },
 	});
@@ -250,6 +260,7 @@ test('нет .prototools — нужные инструменты недосту�
 			shellcheck: { unavailable: '.prototools is missing' },
 			gitleaks: { unavailable: '.prototools is missing' },
 			hadolint: NO_FILES,
+			yamllint: NO_FILES,
 		},
 		commits: { skipped: 'gitleaks unavailable' },
 	});
@@ -265,6 +276,7 @@ test('нет .prototools при workflow — недоступны оба', () =>
 			shellcheck: { unavailable: '.prototools is missing' },
 			gitleaks: { unavailable: '.prototools is missing' },
 			hadolint: NO_FILES,
+			yamllint: NO_YAMLLINT_CONFIG,
 		},
 		commits: { skipped: 'gitleaks unavailable' },
 	});
@@ -291,6 +303,7 @@ test('shellcheck вернул код 2 — часть недоступна с п
 			shellcheck: { unavailable: 'a.sh: openBinaryFile: does not exist' },
 			gitleaks: { unavailable: '.prototools has no gitleaks pin' },
 			hadolint: NO_FILES,
+			yamllint: NO_FILES,
 		},
 		commits: { skipped: 'gitleaks unavailable' },
 	});
@@ -316,6 +329,7 @@ test('скрипт без расширения с шебангом считае�
 			shellcheck: { version: '0.11.0', files: 1, violations: [] },
 			gitleaks: { unavailable: '.prototools has no gitleaks pin' },
 			hadolint: NO_FILES,
+			yamllint: NO_FILES,
 		},
 		commits: { skipped: 'gitleaks unavailable' },
 	});
@@ -338,6 +352,7 @@ test('отслеживаемый скрипт, которого нет на ди
 			shellcheck: { version: '0.11.0', files: 1, violations: [] },
 			gitleaks: { unavailable: '.prototools has no gitleaks pin' },
 			hadolint: NO_FILES,
+			yamllint: NO_FILES,
 		},
 		commits: { skipped: 'gitleaks unavailable' },
 	});

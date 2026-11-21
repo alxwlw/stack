@@ -39,6 +39,7 @@ describe('check с группой guardrails через настоящий cli',
 			ACTIONLINT_BIN: protoBin('actionlint'),
 			SHELLCHECK_BIN: protoBin('shellcheck'),
 			GITLEAKS_BIN: protoBin('gitleaks'),
+			UV_BIN: protoBin('uv'),
 		};
 	});
 	afterAll(() => restore());
@@ -47,6 +48,7 @@ describe('check с группой guardrails через настоящий cli',
 		ACTIONLINT_BIN: '/nonexistent/actionlint',
 		SHELLCHECK_BIN: '/nonexistent/shellcheck',
 		GITLEAKS_BIN: '/nonexistent/gitleaks',
+		UV_BIN: '/nonexistent/uv',
 	};
 
 	// Репозиторий под git: init с группой (или без), sync, всё закоммичено.

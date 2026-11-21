@@ -42,6 +42,7 @@ describe('check с группой guardrails: gitleaks через настоящ
 			ACTIONLINT_BIN: protoBin('actionlint'),
 			SHELLCHECK_BIN: protoBin('shellcheck'),
 			GITLEAKS_BIN: protoBin('gitleaks'),
+			UV_BIN: protoBin('uv'),
 		};
 	});
 	afterAll(() => restore());
