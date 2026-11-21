@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, rmSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
@@ -45,7 +45,12 @@ describe('check с группой guardrails: gitleaks через настоящ
 			UV_BIN: protoBin('uv'),
 		};
 	});
-	afterAll(() => restore());
+	// Каталоги фикстур файла: убираются в afterAll, в том числе после упавшего теста.
+	const madeDirs: string[] = [];
+	afterAll(() => {
+		restore();
+		for (const d of madeDirs) rmSync(d, { recursive: true, force: true });
+	});
 
 	// Репозиторий под git: init с группой (или без), sync, всё закоммичено и отправлено в origin/main.
 	async function guardRepo(
@@ -53,6 +58,7 @@ describe('check с группой guardrails: gitleaks через настоящ
 		opts: { group?: boolean } = {},
 	): Promise<{ dir: string; remote: string }> {
 		const made = gitRepo({ ...BARE, ...files });
+		madeDirs.push(made.dir, made.remote);
 		const withGroup = opts.group === false ? [] : ['--with', 'guardrails'];
 		expect((await run(['init', '--profile', 'node', ...withGroup], made.dir)).code).toBe(0);
 		expect((await run(['sync'], made.dir)).code).toBe(0);

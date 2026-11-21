@@ -105,6 +105,7 @@ describe('parseHadolint', () => {
 	test.each([
 		['не массив', '{}'],
 		['элемент не объект', '[1]'],
+		['элемент null', '[null]'],
 		['без line', JSON.stringify([item({ line: undefined })])],
 		['line строкой', JSON.stringify([item({ line: '4' })])],
 		['без code', JSON.stringify([item({ code: undefined })])],

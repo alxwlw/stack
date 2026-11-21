@@ -1,6 +1,6 @@
-import { mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 
@@ -74,7 +74,12 @@ describe('check с группой guardrails: все шесть инструме
 			UV_BIN: protoBin('uv'),
 		};
 	});
-	afterAll(() => restore());
+	// Каталоги фикстур файла: убираются в afterAll, в том числе после упавшего теста.
+	const made: string[] = [];
+	afterAll(() => {
+		restore();
+		for (const d of made) rmSync(d, { recursive: true, force: true });
+	});
 
 	// Репозиторий под git: init с группой (или без), sync, всё закоммичено.
 	async function guardRepo(
@@ -82,7 +87,8 @@ describe('check с группой guardrails: все шесть инструме
 		opts: { group?: boolean; profile?: 'node' | 'infra' } = {},
 	): Promise<string> {
 		const profile = opts.profile ?? 'node';
-		const { dir } = gitRepo(profile === 'node' ? { ...BARE, ...files } : files);
+		const { dir, remote } = gitRepo(profile === 'node' ? { ...BARE, ...files } : files);
+		made.push(dir, remote);
 		const withGroup = opts.group === false ? [] : ['--with', 'guardrails'];
 		expect((await run(['init', '--profile', profile, ...withGroup], dir)).code).toBe(0);
 		expect((await run(['sync'], dir)).code).toBe(0);
@@ -238,6 +244,39 @@ describe('check с группой guardrails: все шесть инструме
 			expect(line).not.toContain(tmpdir());
 			expect(line).not.toContain(realpathSync(tmpdir()));
 			expect(line.length).toBeLessThan(200);
+			expect(r.code).toBe(1);
+		},
+		TIMEOUT,
+	);
+
+	test(
+		'hadolint из HOME и XDG_CONFIG_HOME не действует: находка DL3025 остаётся',
+		async () => {
+			const dir = await guardRepo({ ...CLEAN_FILES, Dockerfile: BAD_DOCKERFILE });
+			const home = mkdtempSync(join(tmpdir(), 'stack-foreign-home-'));
+			made.push(home);
+			// Все места, где hadolint ищет конфиг вне репозитория; имена собираются (cite-check).
+			const plain = ['hadolint', 'yaml'].join('.');
+			for (const rel of [
+				plain,
+				join('.config', plain),
+				HADOLINT_CONFIG,
+				join('.hadolint', plain),
+			]) {
+				mkdirSync(dirname(join(home, rel)), { recursive: true });
+				writeFileSync(join(home, rel), 'ignored: [DL3025]\n');
+			}
+			// proto ищет инструменты через ~/.proto: без PROTO_HOME чужой HOME ломает поиск, а не конфиг.
+			const env = {
+				...tools,
+				HOME: home,
+				XDG_CONFIG_HOME: home,
+				PROTO_HOME: process.env.PROTO_HOME ?? join(homedir(), '.proto'),
+			};
+			const r = await run(['check'], dir, env);
+			expect(r.err).not.toContain('guardrails-unavailable');
+			expect(hadolintFindings(r.err)).toHaveLength(1);
+			expect(r.err).toContain(' — hadolint DL3025: ');
 			expect(r.code).toBe(1);
 		},
 		TIMEOUT,

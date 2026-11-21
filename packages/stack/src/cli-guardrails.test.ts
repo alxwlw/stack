@@ -42,7 +42,12 @@ describe('check с группой guardrails через настоящий cli',
 			UV_BIN: protoBin('uv'),
 		};
 	});
-	afterAll(() => restore());
+	// Каталоги фикстур файла: убираются в afterAll, в том числе после упавшего теста.
+	const made: string[] = [];
+	afterAll(() => {
+		restore();
+		for (const d of made) rmSync(d, { recursive: true, force: true });
+	});
 
 	const MISSING = {
 		ACTIONLINT_BIN: '/nonexistent/actionlint',
@@ -56,7 +61,8 @@ describe('check с группой guardrails через настоящий cli',
 		files: Record<string, string>,
 		opts: { group?: boolean } = {},
 	): Promise<string> {
-		const { dir } = gitRepo({ ...BARE, ...files });
+		const { dir, remote } = gitRepo({ ...BARE, ...files });
+		made.push(dir, remote);
 		const withGroup = opts.group === false ? [] : ['--with', 'guardrails'];
 		expect((await run(['init', '--profile', 'node', ...withGroup], dir)).code).toBe(0);
 		expect((await run(['sync'], dir)).code).toBe(0);
@@ -146,6 +152,7 @@ describe('check с группой guardrails через настоящий cli',
 		'вне git: guardrails-unavailable для git ls-files, не no drift',
 		async () => {
 			const dir = repoDir(BARE);
+			made.push(dir);
 			expect((await run(['init', '--profile', 'node', '--with', 'guardrails'], dir)).code).toBe(0);
 			expect((await run(['sync'], dir)).code).toBe(0);
 			const r = await run(['check'], dir, { ...tools, GIT_CEILING_DIRECTORIES: dirname(dir) });
@@ -156,7 +163,6 @@ describe('check с группой guardrails через настоящий cli',
 			expect(r.err).not.toContain('guardrails actionlint');
 			expect(r.err).not.toContain('guardrails shellcheck');
 			expect(r.out).not.toContain('canon: no drift');
-			rmSync(dir, { recursive: true, force: true });
 		},
 		TIMEOUT,
 	);
