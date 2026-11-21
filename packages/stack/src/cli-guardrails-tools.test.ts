@@ -41,7 +41,7 @@ describe('check с группой guardrails: все шесть инструме
 
 	const BAD_RUN = '      - run: echo "${{ github.event.foo( }}"\n';
 	const workflow = (step: string) =>
-		`name: lint\non: push\njobs:\n  lint:\n    runs-on: ubuntu-latest\n    steps:\n${step}`;
+		`name: lint\non: push\npermissions:\n  contents: read\nconcurrency: lint\njobs:\n  lint:\n    runs-on: ubuntu-latest\n    timeout-minutes: 5\n    steps:\n${step}`;
 	const BAD_SCRIPT = '#!/bin/bash\ncd dir\necho $HOME\n';
 	const BAD_DOCKERFILE = 'FROM node:20\nCMD node server.js\n';
 	// Образ не node: toolchain-pin смотрит и неотслеживаемые Dockerfile независимо от группы.
