@@ -201,7 +201,7 @@ opt-in groups layered on top — extra files, extra catalog entries, or an extra
 | `depcruise`  | Syncs `.dependency-cruiser.base.cjs` **verbatim** — import/architecture boundary rules; your own `.dependency-cruiser.cjs` pulls them in with `extends`                                                                                                                                                                                                                                                                                                                                           | `node`, `contracts`          |
 | `peers`      | Adds the `pnpm peers check` gate to `stack check`, against a committed baseline (see [Peer dependencies](#peer-dependencies)); needs `pnpm-lock.yaml`                                                                                                                                                                                                                                                                                                                                             | `node`, `contracts`          |
 | `repo-rules` | Adds the rules of `@alxwlw/repo-rules` to `stack check`, at the version of `@alxwlw/stack` and against the repo's own repo-rules baseline (see [Repo rules](#repo-rules)); needs a git repository                                                                                                                                                                                                                                                                                                 | any                          |
-| `guardrails` | Adds actionlint, shellcheck and gitleaks to `stack check`, at the versions pinned in the repo's `.prototools`, over the files git tracks; gitleaks also scans the commits of a pull request (see [Guardrails](#guardrails)); needs a git repository                                                                                                                                                                                                                                               | any                          |
+| `guardrails` | Adds actionlint, shellcheck, gitleaks, hadolint, markdownlint-cli2 and yamllint to `stack check`, over the files git tracks; the versions are the pins in the repo's `.prototools` (four tools), the `@alxwlw/stack` dependency (markdownlint-cli2) and a constant in `stack` (yamllint, run through the pinned uv); gitleaks also scans the commits of a pull request (see [Guardrails](#guardrails)); needs a git repository                                                                    | any                          |
 | `renovate`   | Deprecated, does nothing: Renovate is the canon's dependency bot for every profile. Still accepted so older `.stack.jsonc` files parse                                                                                                                                                                                                                                                                                                                                                            | —                            |
 
 ```bash
@@ -404,8 +404,9 @@ fails (a baseline file that does not parse, for one), `stack sync-pr` prints one
 
 ## Guardrails
 
-The opt-in `guardrails` group makes `stack check` run actionlint, shellcheck and gitleaks on the files git
-tracks, gitleaks also on the commits of a pull request, and turn their violations into findings. Without the group no tool is run and nothing changes in the output.
+The opt-in `guardrails` group makes `stack check` run six tools — actionlint, shellcheck, gitleaks, hadolint,
+markdownlint-cli2 and yamllint — on the files git tracks, gitleaks also on the commits of a pull request, and
+turn their violations into findings. Without the group no tool is run and nothing changes in the output.
 
 ```bash
 # .stack.jsonc: "with": ["guardrails"]
@@ -420,19 +421,49 @@ repository are not checked; a directory outside git is `guardrails-unavailable`.
 - shellcheck: `*.sh` and `*.bash` files, and files with no extension whose first line is a shebang for sh,
   bash, dash or ksh (also through `env`). shellcheck runs without `-x`.
 
-- gitleaks: every tracked file of the working tree. `stack` scans a temporary copy of those files, so the seeded
-  config, its `[extend]`, the gitleaks ignore file and the paths in fingerprints are the same as in the
-  repository, while untracked and ignored files (a local `.env`, a worktree inside the repository) are never
-  read. The copy is removed when the scan ends.
+- gitleaks: every tracked file of the working tree.
+- hadolint: the tracked Dockerfiles in any directory, named like the Dockerfiles of the toolchain pins (`Dockerfile`,
+  with a suffix or with a prefix).
+- markdownlint-cli2: the tracked `*.md` and `*.mdx` files.
+- yamllint: the tracked `*.yaml` and `*.yml` files.
 
-A tool with no files is not run. actionlint is needed only when there are workflow files; shellcheck is needed
-when there are scripts or workflow files, because actionlint runs the pinned shellcheck on the `run:` steps.
+gitleaks, hadolint, markdownlint-cli2 and yamllint run in a temporary copy of the tracked files, so the seeded
+configs, the gitleaks `[extend]`, the ignore files and the paths in findings are the same as in the repository,
+while untracked and ignored files (a local `.env`, a worktree inside the repository) are never read, and an
+untracked config or ignore file has no effect. The copy is removed when the run ends.
 
-The version of each tool is the pin in the repo's `.prototools`; a missing pin is `guardrails-unavailable`.
-The binary comes from the variable `ACTIONLINT_BIN`, `SHELLCHECK_BIN` or `GITLEAKS_BIN` when it is set and not empty,
+A tool with no files is not run, and its binary, uv and the runner are not looked up. actionlint is needed only
+when there are workflow files; shellcheck is needed when there are scripts or workflow files, because actionlint
+runs the pinned shellcheck on the `run:` steps.
+
+The version of a tool comes from one of three places:
+
+- actionlint, shellcheck, gitleaks and hadolint: the pin in the repo's `.prototools`; a missing pin is
+  `guardrails-unavailable`.
+- markdownlint-cli2: the exact dependency of `@alxwlw/stack`. It runs as a library through a runner script of
+  `stack`, under the same bun as `stack`, started with `--no-install`.
+- yamllint: the exact version `YAMLLINT_VERSION` in `packages/stack/src/guardrails-yamllint.ts`, run through
+  the uv of the repo's `.prototools` pin (`uv tool run`). The first run downloads the package from PyPI; with
+  no network and an empty cache the tool is `guardrails-unavailable`.
+
+The binary of a proto tool, and uv, comes from the variable `ACTIONLINT_BIN`, `SHELLCHECK_BIN`, `GITLEAKS_BIN`,
+`HADOLINT_BIN` or `UV_BIN` when it is set and not empty,
 otherwise from `proto bin`; its version must equal the pin, so a stale variable or an untrusted
 `.prototools` (proto then ignores the pins) is never read as clean. shellcheck also runs inside actionlint,
 on the `run:` steps of the workflows, at the pinned version; pyflakes inside actionlint is switched off.
+
+What the repo has to provide for the new tools:
+
+- yamllint: a yamllint config file among the tracked files (`.yamllint`, `.yamllint.yaml` or `.yamllint.yml`)
+  whenever there are YAML files; without one the tool is `guardrails-unavailable`, because yamllint would
+  otherwise look for a config upward from the copy and in the home directory.
+- markdownlint-cli2: a tracked markdownlint-cli2 config with `globs`; without them the tool is
+  `guardrails-unavailable`. `stack` switches `fix` off, also when the config turns it on, so no file is
+  rewritten. A rule from a package (`customRules` by a package name) is not found in the copy, because the
+  runner does not install packages: the tool is `guardrails-unavailable`.
+- hadolint: its config file only in the repository root, among the tracked files; the home directory and the
+  XDG config directory are replaced by an empty one, so no other config is read. A config that does not parse
+  is `guardrails-unavailable`, not the default config.
 
 ### Commits of a pull request
 
@@ -463,7 +494,18 @@ coloured output would hide a secret from gitleaks, and another log format would 
 Any `ERR` or `FTL` line in the stderr of gitleaks is `guardrails-unavailable` with target `gitleaks`, or
 `gitleaks commits` for the scan of the commits, even with exit code 0.
 
-The threshold is the output of the tool, after the repo's own decisions about a single rule. For scripts, the
+The other tools are held by their own means too: hadolint by its inline directives in the Dockerfile and by the
+`ignored` and `override` lists of its config file; markdownlint-cli2 by its inline comments and by its ignore
+file, the one the seeded config names in `gitignore`; yamllint by its inline directives and by the ignore files
+of the seeded canon (the canon file and the repo-local one the config lists in `ignore-from-file`).
+`stack` removes the variables `HADOLINT_*` and `YAMLLINT_CONFIG_FILE` from the environment of the tools, as it
+does `SHELLCHECK_OPTS`: the first change the levels, the ignores and the output of hadolint, the second replaces
+the yamllint config, and a setting of the caller's environment would make the run differ from the run of a
+neighbour. The `UV_*` variables stay: the proxy, mirror and cache settings of uv are needed in CI.
+
+The threshold is the output of the tool, after the repo's own decisions about a single rule: `warning` and above
+for all six tools. For markdownlint-cli2 a rule set to the severity `warning` is a finding too. For hadolint the
+`failure-threshold` of its config has no effect, while its `override` and `ignored` lists do. For scripts, the
 shellcheck config file and directives in the code apply. For workflows, only directives in the code and the
 ignored paths in the actionlint config apply: actionlint runs shellcheck without reading its config file.
 `error` and `warning` are findings; `info` and `style` are not, inside actionlint too. `stack` runs the tools
@@ -479,7 +521,7 @@ the repository. Two findings come out of the group:
 None of them can be held by an exception. To turn the gate off, drop `guardrails` from `with`.
 
 Inside a git repository each tool also leaves one note on stderr: `guardrails <tool> <version>: <m> file(s),
-<n> finding(s)`, `guardrails <tool>: skipped (no files)` or `guardrails <tool>: unavailable`. After the three
+<n> finding(s)`, `guardrails <tool>: skipped (no files)` or `guardrails <tool>: unavailable`. After the six
 tools comes one more note for the commits of a pull request: `guardrails gitleaks commits <range>: <n> finding(s)`,
 `guardrails gitleaks commits: skipped (<reason>)`, for example `skipped (no --base outside GitHub Actions)` or
 `skipped (not a pull request)`, or `guardrails gitleaks commits: unavailable`. Outside git there are no notes,
@@ -491,7 +533,14 @@ To run the tools by hand at the pinned versions:
 proto run shellcheck -- <files>
 proto run actionlint -- -shellcheck="$(proto bin shellcheck)" -pyflakes=
 proto run gitleaks -- git --redact --log-opts="$(git merge-base origin/main HEAD)..HEAD"
+proto run hadolint -- -f json --no-fail -- <Dockerfiles>
+uv tool run -q --from yamllint==<version> yamllint -f parsable -c <config> .
 ```
+
+For yamllint and markdownlint-cli2 use the version of the note `guardrails <tool> <version>` of the run you want
+to reproduce; the README holds no version. markdownlint-cli2 is run with `npx markdownlint-cli2@<version>`
+in the repository, with `fix` off in its config. These commands read the working tree, not the copy of the
+tracked files: untracked and ignored files are read too.
 
 The last line scans the commits of a branch. For the files there is no equal one: `proto run gitleaks -- dir
 --redact .` reads untracked and ignored files too, which the group does not. It reads the git config of the
@@ -549,9 +598,9 @@ synced into a consumer wire them to the repository variable `STACK_REGISTRY` and
 the action with `registry` only and set `STACK_REGISTRY_TOKEN` in the job env from the
 `registry-token` secret. `renovate.yml` also gives Renovate an npm host rule for that host and token.
 
-The action also exports `ACTIONLINT_BIN`, `SHELLCHECK_BIN` and `GITLEAKS_BIN` — the real binaries behind the
-proto shims, which race each other when run in parallel — only for those three tools, and only when the
-repository-root `.prototools` pins them.
+The action also exports `ACTIONLINT_BIN`, `SHELLCHECK_BIN`, `GITLEAKS_BIN` and `HADOLINT_BIN` — the real binaries
+behind the proto shims, which race each other when run in parallel — only for those four tools, and only when the
+repository-root `.prototools` pins them. It does not export `UV_BIN`: in CI `proto bin uv` passes the trust check.
 
 With the `guardrails` group, `stack check` takes the binaries from these variables and compares their version with the pin.
 
