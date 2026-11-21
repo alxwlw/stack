@@ -269,7 +269,8 @@ describe('check с группой guardrails: все шесть инструме
 			// proto ищет инструменты через ~/.proto, uv кладёт кэш в ~/.cache/uv: без PROTO_HOME и UV_CACHE_DIR
 			// чужой HOME ломает поиск и заставляет качать yamllint заново, а не проверяет конфиг hadolint.
 			const realCache =
-				process.env.UV_CACHE_DIR ?? join(process.env.XDG_CACHE_HOME ?? join(homedir(), '.cache'), 'uv');
+				process.env.UV_CACHE_DIR ??
+				join(process.env.XDG_CACHE_HOME ?? join(homedir(), '.cache'), 'uv');
 			const env = {
 				...tools,
 				HOME: home,
