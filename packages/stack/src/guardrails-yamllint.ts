@@ -9,6 +9,11 @@ import {
 // менять её вид без правки правила Renovate.
 export const YAMLLINT_VERSION = '1.38.0';
 
+// Зависимости yamllint, закреплённые так же: без них uv берёт свежие в момент запуска, и вывод
+// инструмента зависит от дня. Строки читает customManagers Renovate, правило то же.
+export const PYYAML_VERSION = '6.0.4';
+export const PATHSPEC_VERSION = '1.1.1';
+
 // Порядок поиска конфига среди отслеживаемых файлов.
 export const YAMLLINT_CONFIG_FILES = ['.yamllint', '.yamllint.yaml', '.yamllint.yml'] as const;
 
@@ -17,7 +22,9 @@ export function yamllintConfig(files: readonly string[]): string | undefined {
 	return YAMLLINT_CONFIG_FILES.find((name) => files.includes(name));
 }
 
-// uv ставит и запускает yamllint ровно версии YAMLLINT_VERSION (`==`: точную версию держит сам uv).
+// uv ставит и запускает yamllint ровно версии YAMLLINT_VERSION, а его зависимости pyyaml и pathspec —
+// ровно PYYAML_VERSION и PATHSPEC_VERSION (`==`: точную версию держит сам uv; версия вне диапазона
+// yamllint или несуществующая — сбой uv, то есть недоступность). Интерпретатор Python не закрепляется.
 // Запуск идёт в копии отслеживаемых файлов (cwd), `.` — вся копия, набор сужает `yaml-files` конфига.
 // `-c` обязателен: без него yamllint ищет конфиг вверх от cwd и в домашнем каталоге, и ему мог бы
 // попасться неотслеживаемый. `-q` убирает из stderr строку `Installed N packages`: непустой stderr
@@ -30,6 +37,10 @@ export function yamllintArgv(config: string): string[] {
 		'-q',
 		'--from',
 		`yamllint==${YAMLLINT_VERSION}`,
+		'--with',
+		`pyyaml==${PYYAML_VERSION}`,
+		'--with',
+		`pathspec==${PATHSPEC_VERSION}`,
 		'yamllint',
 		'-f',
 		'parsable',

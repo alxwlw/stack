@@ -450,10 +450,12 @@ The version of a tool comes from one of three places:
 - actionlint, shellcheck, gitleaks and hadolint: the pin in the repo's `.prototools`; a missing pin is
   `guardrails-unavailable`.
 - markdownlint-cli2: the exact dependency of `@alxwlw/stack`. It runs as a library through a runner script of
-  `stack`, under the same bun as `stack`, started with `--no-install`.
-- yamllint: the exact version `YAMLLINT_VERSION` in `packages/stack/src/guardrails-yamllint.ts`, run through
-  the uv of the repo's `.prototools` pin (`uv tool run`). The first run downloads the package from PyPI; with
-  no network and an empty cache the tool is `guardrails-unavailable`.
+  `stack`, under the same bun as `stack`, started with `--no-install` and with an empty bun config, so the `preload`
+  of a repository's bun config file does not run.
+- yamllint: the exact version `YAMLLINT_VERSION` in `packages/stack/src/guardrails-yamllint.ts`, with its
+  dependencies pinned beside it (`PYYAML_VERSION`, `PATHSPEC_VERSION`), run through the uv of the repo's
+  `.prototools` pin (`uv tool run`); the Python interpreter is not pinned. The first run downloads the package
+  from PyPI; with no network and an empty cache the tool is `guardrails-unavailable`.
 
 The binary of a proto tool, and uv, comes from the variable `ACTIONLINT_BIN`, `SHELLCHECK_BIN`, `GITLEAKS_BIN`,
 `HADOLINT_BIN` or `UV_BIN` when it is set and not empty,
@@ -544,13 +546,14 @@ proto run shellcheck -- <files>
 proto run actionlint -- -shellcheck="$(proto bin shellcheck)" -pyflakes=
 proto run gitleaks -- git --redact --log-opts="$(git merge-base origin/main HEAD)..HEAD"
 proto run hadolint -- -f json --no-fail -- <Dockerfiles>
-uv tool run -q --from yamllint==<version> yamllint -f parsable -c <config> .
+uv tool run -q --from yamllint==<version> --with pyyaml==<version> --with pathspec==<version> yamllint -f parsable -c <config> .
 ```
 
 For yamllint and markdownlint-cli2 use the version of the note `guardrails <tool> <version>` of the run you want
-to reproduce; the README holds no version. markdownlint-cli2 is run with `npx markdownlint-cli2@<version>`
-in the repository, with `fix` off in its config. These commands read the working tree, not the copy of the
-tracked files: untracked and ignored files are read too.
+to reproduce; the README holds no version. The two `--with` versions are not in the note: take `PYYAML_VERSION`
+and `PATHSPEC_VERSION` from `packages/stack/src/guardrails-yamllint.ts` at the `stack` version of that run.
+markdownlint-cli2 is run with `npx markdownlint-cli2@<version>` in the repository, with `fix` off in its config. These
+commands read the working tree, not the copy of the tracked files: untracked and ignored files are read too.
 
 The last line scans the commits of a branch. For the files there is no equal one: `proto run gitleaks -- dir
 --redact .` reads untracked and ignored files too, which the group does not. It reads the git config of the

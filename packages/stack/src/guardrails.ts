@@ -3,7 +3,7 @@
 // (файлы и коммиты PR), когда скан коммитов идёт. Всё внешнее идёт через порт; правило и пометки —
 // guardrails-rule.ts.
 
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -90,6 +90,29 @@ function withTrackedCopy<T>(
 	} finally {
 		rmSync(copy.dir, { recursive: true, force: true });
 	}
+}
+
+// Пометка недоступности по копии называет пути репозитория: `<copy>/` и `<realpath(copy)>/` убраны,
+// оставшееся имя каталога — `.`. Длинная форма первой: на macOS копия `/tmp/X` — часть пути
+// `/private/tmp/X`, и короткая первой исказила бы длинную.
+export function inRepoTerms(reason: string, copy: string): string {
+	let real = copy;
+	try {
+		real = realpathSync(copy);
+	} catch {
+		// каталога нет — остаётся форма `dir`
+	}
+	const forms = [...new Set([real, copy])].sort((a, b) => b.length - a.length);
+	let out = reason;
+	for (const f of forms) out = out.split(`${f}/`).join('');
+	for (const f of forms) out = out.split(f).join('.');
+	return out;
+}
+
+function inRepo<T extends object>(part: T, copy: string): T | Unavailable {
+	return 'unavailable' in part && typeof part.unavailable === 'string'
+		? { unavailable: inRepoTerms(part.unavailable, copy) }
+		: part;
 }
 
 function toViolation(leak: GitleaksLeak, suffix = ''): GuardrailViolation {
@@ -305,6 +328,12 @@ export function readGuardrails(
 			if (uvReady !== undefined && yamlConfig !== undefined) {
 				yamllintPart = readYamllint(yamlSet, yamlConfig, uvReady, dir, port);
 			}
+			// Недоступность частей, шедших по копии, — пути репозитория, а не копии (она удаляется).
+			gitleaksPart = inRepo(gitleaksPart, dir);
+			commits = inRepo(commits, dir);
+			hadolintPart = inRepo(hadolintPart, dir);
+			markdownlintPart = inRepo(markdownlintPart, dir);
+			yamllintPart = inRepo(yamllintPart, dir);
 			return null;
 		});
 		// Сбой копии — недоступность у каждой части, которая в копии шла бы.

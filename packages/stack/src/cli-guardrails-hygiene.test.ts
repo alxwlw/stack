@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
@@ -31,12 +31,18 @@ describe('гигиена workflow в check с группой guardrails чере
 			UV_BIN: protoBin('uv'),
 		};
 	});
-	afterAll(() => restore());
+	// Каталоги фикстур файла: убираются в afterAll, в том числе после упавшего теста.
+	const made: string[] = [];
+	afterAll(() => {
+		restore();
+		for (const d of made) rmSync(d, { recursive: true, force: true });
+	});
 
 	// Репозиторий под git: init с группой (или без), sync, всё закоммичено; файл BUILD — после sync, чтобы
 	// чужой пин дожил до check.
 	async function guardRepo(build: string, opts: { group?: boolean } = {}): Promise<string> {
-		const { dir } = gitRepo({ ...BARE });
+		const { dir, remote } = gitRepo({ ...BARE });
+		made.push(dir, remote);
 		const withGroup = opts.group === false ? [] : ['--with', 'guardrails'];
 		expect((await run(['init', '--profile', 'node', ...withGroup], dir)).code).toBe(0);
 		expect((await run(['sync'], dir)).code).toBe(0);

@@ -79,6 +79,22 @@
 			depNameTemplate: 'yamllint',
 			datasourceTemplate: 'pypi',
 		},
+		{
+			customType: 'regex',
+			description: 'Версия pyyaml для yamllint: константа PYYAML_VERSION, релизы на PyPI',
+			managerFilePatterns: ['/^packages/stack/src/guardrails-yamllint\\.ts$/'],
+			matchStrings: ["PYYAML_VERSION = '(?<currentValue>[^']+)'"],
+			depNameTemplate: 'pyyaml',
+			datasourceTemplate: 'pypi',
+		},
+		{
+			customType: 'regex',
+			description: 'Версия pathspec для yamllint: константа PATHSPEC_VERSION, релизы на PyPI',
+			managerFilePatterns: ['/^packages/stack/src/guardrails-yamllint\\.ts$/'],
+			matchStrings: ["PATHSPEC_VERSION = '(?<currentValue>[^']+)'"],
+			depNameTemplate: 'pathspec',
+			datasourceTemplate: 'pypi',
+		},
 	],
 	packageRules: [
 		{

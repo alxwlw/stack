@@ -242,6 +242,33 @@ describe('читатель: yamllint с портом-таблицей', () => {
 		expect(other.calls).toStrictEqual([GIT, GL_VERSION, UV_VERSION, GL_DIR]);
 	});
 
+	test('причина yamllint с путём копии — путь репозитория', () => {
+		const TRACKED = ['.yamllint', 'a.yml'];
+		const root = repo(Object.fromEntries(TRACKED.map((p) => [p, 'x: 1\n'])));
+		const f = fakePort(
+			{
+				[GIT]: tracked(...TRACKED),
+				[GL_VERSION]: ok(`${GL_PIN}\n`),
+				[GL_DIR]: ok('[]'),
+				[UV_VERSION]: ok(uvBanner),
+				[UV_RUN]: (cwd) => ({
+					code: 2,
+					out: '',
+					err: `Traceback\nFileNotFoundError: [Errno 2] No such file or directory: '${cwd}/.yamllint-ignores'\n`,
+				}),
+			},
+			BINS,
+		);
+		withPrivateTmpdir((tmp) => {
+			const p = part(readGuardrails(root, PROTOTOOLS, f.port));
+			if (!('unavailable' in p)) throw new Error('expected unavailable');
+			expect(p.unavailable).toBe(
+				"FileNotFoundError: [Errno 2] No such file or directory: '.yamllint-ignores'",
+			);
+			expect(p.unavailable).not.toContain(tmp);
+		});
+	});
+
 	test('TMPDIR недоступен — yamllint недоступен с copy:, uv не запущен', () => {
 		const TRACKED = ['.yamllint', 'a.yml'];
 		const root = repo(Object.fromEntries(TRACKED.map((p) => [p, 'x: 1\n'])));

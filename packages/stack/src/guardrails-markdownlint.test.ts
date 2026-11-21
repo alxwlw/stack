@@ -1,10 +1,12 @@
-import { existsSync, readFileSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { isAbsolute, join } from 'node:path';
 
 import { afterAll, describe, expect, test } from 'bun:test';
 
 import { markdownFiles } from './guardrails-files.ts';
 import {
+	MARKDOWNLINT_BUNFIG,
 	MARKDOWNLINT_RUNNER,
 	markdownlintCommand,
 	type MarkdownlintReport,
@@ -49,8 +51,10 @@ describe('команда, файлы', () => {
 	test('markdownlintCommand: bun-процесс с раннером stack, файл раннера существует', () => {
 		expect(markdownlintCommand()).toStrictEqual({
 			cmd: process.execPath,
-			argv: ['--no-install', MARKDOWNLINT_RUNNER],
+			argv: ['--no-install', `--config=${MARKDOWNLINT_BUNFIG}`, MARKDOWNLINT_RUNNER],
 		});
+		expect(existsSync(MARKDOWNLINT_BUNFIG)).toBe(true);
+		expect(isAbsolute(MARKDOWNLINT_BUNFIG)).toBe(true);
 		expect(MARKDOWNLINT_RUNNER.endsWith('/markdownlint-run.ts')).toBe(true);
 		expect(existsSync(MARKDOWNLINT_RUNNER)).toBe(true);
 	});
@@ -190,6 +194,47 @@ describe('настоящий раннер', () => {
 		if ('unavailable' in p) throw new Error(p.unavailable);
 		return p;
 	};
+
+	const CANON_FILES = {
+		'.markdownlint-cli2.jsonc': canonFile('.markdownlint-cli2.jsonc'),
+		'doc.md': BAD,
+	};
+	const FINDING = [{ rule: 'MD040', path: 'doc.md', line: 3 }];
+
+	test.each([
+		['preload отсутствующего файла', 'preload = ["./missing.ts"]\n', {}],
+		[
+			'preload файла, который бросает',
+			'preload = ["./boom.ts"]\n',
+			{ 'boom.ts': "throw new Error('boom');\n" },
+		],
+	])(
+		'bunfig копии с preload не ломает раннер: %s',
+		(_name, bunfig, extra) => {
+			const dir = fixture({ ...CANON_FILES, 'bunfig.toml': bunfig, ...extra });
+			const { violations } = parsed(dir);
+			expect(violations).toMatchObject(FINDING);
+			expect(violations).toHaveLength(1);
+		},
+		TIMEOUT,
+	);
+
+	test(
+		'bunfig пользователя не мешает (охрана: bun его и так не читает)',
+		() => {
+			const home = mkdtempSync(join(tmpdir(), 'stack-mdhome-'));
+			dirs.push(home);
+			writeFileSync(join(home, '.bunfig.toml'), 'preload = ["./missing.ts"]\n');
+			const dir = fixture(CANON_FILES);
+			const { cmd, argv } = markdownlintCommand();
+			const r = spawnRunner(dir)(cmd, argv, dir, { HOME: home, XDG_CONFIG_HOME: home });
+			const p = parseMarkdownlint(r);
+			if ('unavailable' in p) throw new Error(p.unavailable);
+			expect(p.violations).toMatchObject(FINDING);
+			expect(p.violations).toHaveLength(1);
+		},
+		TIMEOUT,
+	);
 
 	test(
 		'канонный конфиг: игнор-файл и канонные ignores действуют, файлы с пробелом и # — находки',

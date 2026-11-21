@@ -9,6 +9,8 @@ import { yamlFiles } from './guardrails-files.ts';
 import { type GuardrailRun, spawnRunner } from './guardrails-port.ts';
 import {
 	parseYamllint,
+	PATHSPEC_VERSION,
+	PYYAML_VERSION,
 	YAMLLINT_VERSION,
 	yamllintArgv,
 	yamllintConfig,
@@ -23,13 +25,17 @@ const run = (out: string, over: Partial<GuardrailRun> = {}): GuardrailRun => ({
 });
 
 describe('аргументы, конфиг и файлы', () => {
-	test('argv собран из YAMLLINT_VERSION', () => {
+	test('argv собран из YAMLLINT_VERSION, PYYAML_VERSION и PATHSPEC_VERSION', () => {
 		expect(yamllintArgv('.yamllint')).toStrictEqual([
 			'tool',
 			'run',
 			'-q',
 			'--from',
 			`yamllint==${YAMLLINT_VERSION}`,
+			'--with',
+			`pyyaml==${PYYAML_VERSION}`,
+			'--with',
+			`pathspec==${PATHSPEC_VERSION}`,
 			'yamllint',
 			'-f',
 			'parsable',
@@ -40,8 +46,14 @@ describe('аргументы, конфиг и файлы', () => {
 		expect(yamllintArgv('.yamllint.yml').at(-2)).toBe('.yamllint.yml');
 	});
 
-	test('версия — точная x.y.z', () => {
+	test('версии — точные x.y.z', () => {
 		expect(YAMLLINT_VERSION).toMatch(/^\d+\.\d+\.\d+$/);
+		// PyPI-пакеты выходят и как x.y (6.1), и как x.y.z: форма точной версии, не диапазона.
+		const EXACT_PYPI = /^\d+(\.\d+)+$/;
+		expect(PYYAML_VERSION).toMatch(EXACT_PYPI);
+		expect(PATHSPEC_VERSION).toMatch(EXACT_PYPI);
+		for (const ok of ['6.1', '6.0.5']) expect(ok).toMatch(EXACT_PYPI);
+		for (const bad of ['>=6', '^6.0.4', '6.*']) expect(bad).not.toMatch(EXACT_PYPI);
 	});
 
 	test('конфиг — первый из списка, что есть среди файлов', () => {
@@ -253,11 +265,8 @@ describe('настоящий uv и yamllint', () => {
 		'yamllint --version печатает версию из константы',
 		() => {
 			const dir = fixture();
-			const r = spawnRunner(dir)(
-				uv,
-				['tool', 'run', '-q', '--from', `yamllint==${YAMLLINT_VERSION}`, 'yamllint', '--version'],
-				dir,
-			);
+			// argv — из yamllintArgv с хвостом `-f parsable -c <config> .`, заменённым на `--version`.
+			const r = spawnRunner(dir)(uv, [...yamllintArgv('.yamllint').slice(0, -5), '--version'], dir);
 			expect(r.out.trim()).toBe(`yamllint ${YAMLLINT_VERSION}`);
 		},
 		TIMEOUT,

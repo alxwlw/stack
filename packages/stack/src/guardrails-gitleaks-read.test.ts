@@ -1,12 +1,12 @@
 import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 
 import { parsePins } from './canon.ts';
 import { readGuardrails } from './guardrails.ts';
-import { gitleaksDirArgv } from './guardrails-gitleaks.ts';
+import { gitleaksDirArgv, gitleaksGitArgv } from './guardrails-gitleaks.ts';
 import { type GuardrailRun, type GuardrailsPort, spawnRunner } from './guardrails-port.ts';
 import {
 	canonFile,
@@ -198,6 +198,36 @@ describe('читатель с портом-таблицей', () => {
 		});
 		expect(cwd).toBeDefined();
 		expect(existsSync(cwd ?? root)).toBe(false);
+	});
+
+	test('причина gitleaks по файлам: путь копии — путь репозитория, голый каталог — точка', () => {
+		const root = repo({ 'README.txt': '# acme\n' });
+		const f = fakePort({
+			[GIT]: tracked('README.txt'),
+			[VERSION]: ok(`${PIN}\n`),
+			[DIR]: (c) => ({ code: 1, out: '', err: `boom ${c}/x in ${c}\n` }),
+		});
+		const out = readGuardrails(root, PROTOTOOLS, f.port);
+		expect('tools' in out && out.tools.gitleaks).toStrictEqual({ unavailable: 'boom x in .' });
+	});
+
+	test('причина gitleaks по коммитам: путь копии — путь репозитория, голый каталог — точка', () => {
+		const root = repo({ 'README.txt': '# acme\n' });
+		const MB = '0123456789abcdef0123456789abcdef01234567';
+		const range = `${MB}..HEAD`;
+		const f = fakePort({
+			[GIT]: tracked('README.txt'),
+			[VERSION]: ok(`${PIN}\n`),
+			[DIR]: ok('[]'),
+			'git merge-base origin/main HEAD': ok(`${MB}\n`),
+			[`/x/gl ${gitleaksGitArgv(resolve(root), range, false).join(' ')}`]: (c) => ({
+				code: 1,
+				out: '',
+				err: `boom ${c}/x in ${c}\n`,
+			}),
+		});
+		const out = readGuardrails(root, PROTOTOOLS, { ...f.port, base: 'origin/main' });
+		expect('tools' in out && out.commits).toStrictEqual({ unavailable: 'boom x in .' });
 	});
 
 	test('порт бросил посреди скана — каталог копии всё равно удалён', () => {

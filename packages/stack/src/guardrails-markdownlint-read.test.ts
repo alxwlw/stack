@@ -75,6 +75,19 @@ describe('читатель: markdownlint-cli2 с портом-таблицей',
 		return dir;
 	};
 
+	test('причина markdownlint: путь копии — путь репозитория, голый каталог — точка', () => {
+		const root = repo({ 'README.md': '# x\n' });
+		const f = fakePort({
+			[GIT]: tracked('README.md'),
+			[RUN]: (c) => ({ code: 1, out: '', err: `boom ${c}/x in ${c}\n` }),
+		});
+		withPrivateTmpdir(() => {
+			expect(part(readGuardrails(root, PROTOTOOLS, f.port))).toStrictEqual({
+				unavailable: 'boom x in .',
+			});
+		});
+	});
+
 	test('Markdown есть — раннер в копии с командой markdownlintCommand, неотслеживаемого нет, версия из отчёта', () => {
 		const TRACKED = ['README.md', 'docs/a.md', 'docs/b.mdx', 'c.txt'];
 		const root = repo({
