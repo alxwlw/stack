@@ -48,8 +48,12 @@ describe('аргументы, конфиг и файлы', () => {
 
 	test('версии — точные x.y.z', () => {
 		expect(YAMLLINT_VERSION).toMatch(/^\d+\.\d+\.\d+$/);
-		expect(PYYAML_VERSION).toMatch(/^\d+\.\d+\.\d+$/);
-		expect(PATHSPEC_VERSION).toMatch(/^\d+\.\d+\.\d+$/);
+		// PyPI-пакеты выходят и как x.y (6.1), и как x.y.z: форма точной версии, не диапазона.
+		const EXACT_PYPI = /^\d+(\.\d+)+$/;
+		expect(PYYAML_VERSION).toMatch(EXACT_PYPI);
+		expect(PATHSPEC_VERSION).toMatch(EXACT_PYPI);
+		for (const ok of ['6.1', '6.0.5']) expect(ok).toMatch(EXACT_PYPI);
+		for (const bad of ['>=6', '^6.0.4', '6.*']) expect(bad).not.toMatch(EXACT_PYPI);
 	});
 
 	test('конфиг — первый из списка, что есть среди файлов', () => {
@@ -261,11 +265,8 @@ describe('настоящий uv и yamllint', () => {
 		'yamllint --version печатает версию из константы',
 		() => {
 			const dir = fixture();
-			const r = spawnRunner(dir)(
-				uv,
-				['tool', 'run', '-q', '--from', `yamllint==${YAMLLINT_VERSION}`, 'yamllint', '--version'],
-				dir,
-			);
+			// argv — из yamllintArgv с хвостом `-f parsable -c <config> .`, заменённым на `--version`.
+			const r = spawnRunner(dir)(uv, [...yamllintArgv('.yamllint').slice(0, -5), '--version'], dir);
 			expect(r.out.trim()).toBe(`yamllint ${YAMLLINT_VERSION}`);
 		},
 		TIMEOUT,
