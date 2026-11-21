@@ -1,13 +1,16 @@
 // Читатель группы guardrails: отслеживаемые файлы, бинарники ровно версии пина, запуск actionlint,
-// shellcheck и gitleaks за прогон; gitleaks запускается дважды (файлы и коммиты PR), когда скан коммитов идёт. Всё внешнее идёт через порт; правило и пометки — guardrails-rule.ts.
+// shellcheck, gitleaks и hadolint за прогон; gitleaks запускается дважды (файлы и коммиты PR), когда
+// скан коммитов идёт. Всё внешнее идёт через порт; правило и пометки — guardrails-rule.ts.
 
-import { rmSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 
 import { actionlintArgv, parseActionlint } from './guardrails-actionlint.ts';
 import { locateTool, repoPins } from './guardrails-bin.ts';
 import { type CommitsPart, mergeBase, mergeBaseArgv, prBase } from './guardrails-commits.ts';
 import {
+	dockerfiles,
 	regularFiles,
 	shellScripts,
 	TRACKED_FILES_ARGV,
@@ -22,6 +25,7 @@ import {
 	type GitleaksLeak,
 	parseGitleaks,
 } from './guardrails-gitleaks.ts';
+import { hadolintArgv, parseHadolint } from './guardrails-hadolint.ts';
 import {
 	type GuardrailsPort,
 	type GuardrailTool,
@@ -43,23 +47,26 @@ function isUnavailable(v: object): v is Unavailable {
 	return 'unavailable' in v;
 }
 
-// Бинарник найден, файлы есть — инструмент запущен на них; разбор — parse.
+// Бинарник найден, файлы есть — инструмент запущен на них; разбор — parse. cwd и env — каталог и
+// переопределения окружения процесса (порт: корень репозитория и окружение родителя без них).
 function runPart(
 	located: { bin: string; version: string },
 	argv: string[],
 	files: number,
 	port: GuardrailsPort,
 	parse: (run: ReturnType<GuardrailsPort['run']>) => GuardrailViolation[] | Unavailable,
+	cwd?: string,
+	env?: Readonly<Record<string, string>>,
 ): ToolPart {
-	const parsed = parse(port.run(located.bin, argv));
+	const parsed = parse(port.run(located.bin, argv, cwd, env));
 	if (!Array.isArray(parsed)) return parsed;
 	return { version: located.version, files, violations: parsed };
 }
 
 // Копия отслеживаемых обычных файлов на время fn; каталог удаляется при любом исходе. Вход — только
 // вывод regularFiles: copyTracked не проверяет, что пути остаются внутри каталога. Единственное
-// место копии и её уборки: оба прогона gitleaks (файлы и коммиты PR) идут внутри одного вызова, по
-// одной копии.
+// место копии и её уборки: за прогон одна копия, и в ней идут оба прогона gitleaks (файлы и коммиты
+// PR) и hadolint.
 function withTrackedCopy<T>(
 	root: string,
 	files: readonly string[],
@@ -84,25 +91,43 @@ function toViolation(leak: GitleaksLeak, suffix = ''): GuardrailViolation {
 	};
 }
 
-// Часть gitleaks и часть коммитов; обе используют одну копию файлов (cwd обоих запусков).
+// Часть gitleaks и часть коммитов; обе идут в копии файлов dir (cwd обоих запусков).
 function readGitleaks(
 	root: string,
 	files: readonly string[],
 	gitleaks: { bin: string; version: string },
+	dir: string,
 	port: GuardrailsPort,
 ): { part: ToolPart; commits: CommitsPart } {
-	let commits: CommitsPart = { skipped: 'gitleaks unavailable' };
-	const part = withTrackedCopy(root, files, (dir): ToolPart => {
-		const parsed = parseGitleaks(port.run(gitleaks.bin, gitleaksDirArgv(), dir));
-		if (!Array.isArray(parsed)) return parsed;
-		commits = readCommits(root, files, gitleaks.bin, dir, port);
-		return {
+	const parsed = parseGitleaks(port.run(gitleaks.bin, gitleaksDirArgv(), dir));
+	if (!Array.isArray(parsed)) return { part: parsed, commits: { skipped: 'gitleaks unavailable' } };
+	return {
+		part: {
 			version: gitleaks.version,
 			files: files.length,
 			violations: parsed.map((leak) => toViolation(leak)),
-		};
-	});
-	return { part, commits };
+		},
+		commits: readCommits(root, files, gitleaks.bin, dir, port),
+	};
+}
+
+// hadolint ищет конфиг в cwd, затем в XDG_CONFIG_HOME и HOME: оба указывают на новый пустой каталог,
+// поэтому действует только отслеживаемый `.hadolint.yaml` копии, иначе встроенный.
+function readHadolint(
+	set: readonly string[],
+	hadolint: { bin: string; version: string },
+	dir: string,
+	port: GuardrailsPort,
+): ToolPart {
+	const home = mkdtempSync(join(tmpdir(), 'stack-home-'));
+	try {
+		return runPart(hadolint, hadolintArgv(set), set.length, port, parseHadolint, dir, {
+			HOME: home,
+			XDG_CONFIG_HOME: home,
+		});
+	} finally {
+		rmSync(home, { recursive: true, force: true });
+	}
 }
 
 function readCommits(
@@ -143,7 +168,7 @@ export function readGuardrails(
 	const none: ToolPart = { skipped: 'no files' };
 	if (files.length === 0) {
 		return {
-			tools: { actionlint: none, shellcheck: none, gitleaks: none },
+			tools: { actionlint: none, shellcheck: none, gitleaks: none, hadolint: none },
 			commits: { skipped: 'no files' },
 		};
 	}
@@ -181,14 +206,41 @@ export function readGuardrails(
 				);
 	}
 
-	// Копия файлов всегда непуста (files.length > 0), поэтому gitleaks ищется всегда.
-	let gitleaksPart: ToolPart;
-	let commits: CommitsPart = { skipped: 'gitleaks unavailable' };
+	// Одна копия на прогон: в ней gitleaks и hadolint. Бинарники ищутся до копии, и копия не создаётся,
+	// когда ни один из них не найден. Копия файлов всегда непуста (files.length > 0), поэтому gitleaks
+	// ищется всегда; hadolint — только при Dockerfile среди файлов.
 	const gitleaks = locateTool('gitleaks', pins, port);
-	if (isUnavailable(gitleaks)) gitleaksPart = gitleaks;
-	else ({ part: gitleaksPart, commits } = readGitleaks(root, files, gitleaks, port));
+	const dockerSet = dockerfiles(files);
+	const hadolint = dockerSet.length > 0 ? locateTool('hadolint', pins, port) : undefined;
+	let gitleaksPart: ToolPart = isUnavailable(gitleaks) ? gitleaks : none;
+	let hadolintPart: ToolPart =
+		hadolint === undefined ? none : isUnavailable(hadolint) ? hadolint : none;
+	let commits: CommitsPart = { skipped: 'gitleaks unavailable' };
+	const gitleaksReady = isUnavailable(gitleaks) ? undefined : gitleaks;
+	const hadolintReady = hadolint === undefined || isUnavailable(hadolint) ? undefined : hadolint;
+	if (gitleaksReady !== undefined || hadolintReady !== undefined) {
+		const copied = withTrackedCopy(root, files, (dir) => {
+			if (gitleaksReady !== undefined) {
+				({ part: gitleaksPart, commits } = readGitleaks(root, files, gitleaksReady, dir, port));
+			}
+			if (hadolintReady !== undefined) {
+				hadolintPart = readHadolint(dockerSet, hadolintReady, dir, port);
+			}
+			return null;
+		});
+		// Сбой копии — недоступность у каждой части, которая в копии шла бы.
+		if (copied !== null) {
+			if (gitleaksReady !== undefined) gitleaksPart = { ...copied };
+			if (hadolintReady !== undefined) hadolintPart = { ...copied };
+		}
+	}
 	return {
-		tools: { actionlint: actionlintPart, shellcheck: shellcheckPart, gitleaks: gitleaksPart },
+		tools: {
+			actionlint: actionlintPart,
+			shellcheck: shellcheckPart,
+			gitleaks: gitleaksPart,
+			hadolint: hadolintPart,
+		},
 		commits,
 	};
 }

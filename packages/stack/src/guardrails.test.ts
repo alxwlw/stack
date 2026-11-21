@@ -61,6 +61,7 @@ test('только README.md без пина gitleaks — actionlint и shellche
 			actionlint: NO_FILES,
 			shellcheck: NO_FILES,
 			gitleaks: { unavailable: '.prototools has no gitleaks pin' },
+			hadolint: NO_FILES,
 		},
 		commits: { skipped: 'gitleaks unavailable' },
 	});
@@ -97,6 +98,7 @@ test('только скрипт — shellcheck запущен, actionlint skippe
 				],
 			},
 			gitleaks: { unavailable: '.prototools has no gitleaks pin' },
+			hadolint: NO_FILES,
 		},
 		commits: { skipped: 'gitleaks unavailable' },
 	});
@@ -125,6 +127,7 @@ test('файл из git, которого нет на диске, инструм
 			actionlint: { version: '1.7.12', files: 1, violations: [] },
 			shellcheck: NO_FILES,
 			gitleaks: { unavailable: '.prototools has no gitleaks pin' },
+			hadolint: NO_FILES,
 		},
 		commits: { skipped: 'gitleaks unavailable' },
 	});
@@ -156,6 +159,7 @@ test('только workflow без пина shellcheck — shellcheck недос
 			actionlint: { version: '1.7.12', files: 1, violations: [] },
 			shellcheck: { unavailable: '.prototools has no shellcheck pin' },
 			gitleaks: { unavailable: '.prototools has no gitleaks pin' },
+			hadolint: NO_FILES,
 		},
 		commits: { skipped: 'gitleaks unavailable' },
 	});
@@ -186,6 +190,7 @@ test('скрипты и workflow, нет пина actionlint — actionlint не
 			actionlint: { unavailable: '.prototools has no actionlint pin' },
 			shellcheck: { version: '0.11.0', files: 2, violations: [] },
 			gitleaks: { unavailable: '.prototools has no gitleaks pin' },
+			hadolint: NO_FILES,
 		},
 		commits: { skipped: 'gitleaks unavailable' },
 	});
@@ -229,6 +234,7 @@ test('actionlint: два workflow — files 2, находки разобраны
 			},
 			shellcheck: NO_FILES,
 			gitleaks: { unavailable: '.prototools has no gitleaks pin' },
+			hadolint: NO_FILES,
 		},
 		commits: { skipped: 'gitleaks unavailable' },
 	});
@@ -243,6 +249,7 @@ test('нет .prototools — нужные инструменты недосту�
 			actionlint: NO_FILES,
 			shellcheck: { unavailable: '.prototools is missing' },
 			gitleaks: { unavailable: '.prototools is missing' },
+			hadolint: NO_FILES,
 		},
 		commits: { skipped: 'gitleaks unavailable' },
 	});
@@ -257,6 +264,7 @@ test('нет .prototools при workflow — недоступны оба', () =>
 			actionlint: { unavailable: '.prototools is missing' },
 			shellcheck: { unavailable: '.prototools is missing' },
 			gitleaks: { unavailable: '.prototools is missing' },
+			hadolint: NO_FILES,
 		},
 		commits: { skipped: 'gitleaks unavailable' },
 	});
@@ -282,6 +290,7 @@ test('shellcheck вернул код 2 — часть недоступна с п
 			actionlint: NO_FILES,
 			shellcheck: { unavailable: 'a.sh: openBinaryFile: does not exist' },
 			gitleaks: { unavailable: '.prototools has no gitleaks pin' },
+			hadolint: NO_FILES,
 		},
 		commits: { skipped: 'gitleaks unavailable' },
 	});
@@ -306,6 +315,7 @@ test('скрипт без расширения с шебангом считае�
 			actionlint: NO_FILES,
 			shellcheck: { version: '0.11.0', files: 1, violations: [] },
 			gitleaks: { unavailable: '.prototools has no gitleaks pin' },
+			hadolint: NO_FILES,
 		},
 		commits: { skipped: 'gitleaks unavailable' },
 	});
@@ -327,6 +337,7 @@ test('отслеживаемый скрипт, которого нет на ди
 			actionlint: NO_FILES,
 			shellcheck: { version: '0.11.0', files: 1, violations: [] },
 			gitleaks: { unavailable: '.prototools has no gitleaks pin' },
+			hadolint: NO_FILES,
 		},
 		commits: { skipped: 'gitleaks unavailable' },
 	});

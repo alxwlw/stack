@@ -103,6 +103,7 @@ describe('читатель с портом-таблицей', () => {
 				actionlint: NO_FILES,
 				shellcheck: NO_FILES,
 				gitleaks: { version: PIN, files: 1, violations: [] },
+				hadolint: NO_FILES,
 			},
 			commits: { skipped: 'no --base outside GitHub Actions' },
 		});
@@ -135,6 +136,7 @@ describe('читатель с портом-таблицей', () => {
 						{ tool: 'gitleaks', rule: RULE, path: 'README.md', line: 2, message: DESCRIPTION },
 					],
 				},
+				hadolint: NO_FILES,
 			},
 			commits: { skipped: 'no --base outside GitHub Actions' },
 		});
@@ -234,7 +236,7 @@ describe('читатель с портом-таблицей', () => {
 		const f = fakePort({ [GIT]: ok('') });
 		// .prototools нет: недоступность была бы, если бы пины читались.
 		expect(readGuardrails(root, undefined, f.port)).toStrictEqual({
-			tools: { actionlint: NO_FILES, shellcheck: NO_FILES, gitleaks: NO_FILES },
+			tools: { actionlint: NO_FILES, shellcheck: NO_FILES, gitleaks: NO_FILES, hadolint: NO_FILES },
 			commits: { skipped: 'no files' },
 		});
 		expect(f.calls).toStrictEqual([['git', ['ls-files', '-z']]]);

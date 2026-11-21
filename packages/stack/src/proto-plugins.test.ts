@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { describe, expect, test } from 'bun:test';
 
 import { parsePins } from './canon.ts';
+import { PROTO_GUARDRAIL_TOOLS } from './guardrails-port.ts';
 import { canonFile, ROOT } from './testkit.ts';
 
 // Связь трёх мест: [plugins] канонного prototools, файлы плагинов в canon/files/proto-plugins и записи
@@ -68,10 +69,13 @@ describe('proto-плагины канона', () => {
 		);
 	});
 
-	test('hadolint: плагин и пин в каноне', () => {
-		expect(plugins.hadolint).toBeString();
-		expect(pins.hadolint).toBeString();
-	});
+	test.each([...PROTO_GUARDRAIL_TOOLS])(
+		'%s (guardrails): пин и строка [plugins] в каноне',
+		(tool) => {
+			expect(plugins[tool]).toBeString();
+			expect(pins[tool]).toBeString();
+		},
+	);
 });
 
 describe('корень stack ест свой канон', () => {
