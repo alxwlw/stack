@@ -33,7 +33,7 @@ describe('гигиена workflow в check с группой guardrails чере
 	});
 	afterAll(() => restore());
 
-	// Репозиторий под git: init с группой (или без), sync, всё закоммичено; build.yml — после sync, чтобы
+	// Репозиторий под git: init с группой (или без), sync, всё закоммичено; файл BUILD — после sync, чтобы
 	// чужой пин дожил до check.
 	async function guardRepo(build: string, opts: { group?: boolean } = {}): Promise<string> {
 		const { dir } = gitRepo({ ...BARE });
