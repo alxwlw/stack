@@ -49,7 +49,7 @@ describe('команда, файлы', () => {
 	test('markdownlintCommand: bun-процесс с раннером stack, файл раннера существует', () => {
 		expect(markdownlintCommand()).toStrictEqual({
 			cmd: process.execPath,
-			argv: [MARKDOWNLINT_RUNNER],
+			argv: ['--no-install', MARKDOWNLINT_RUNNER],
 		});
 		expect(MARKDOWNLINT_RUNNER.endsWith('/markdownlint-run.ts')).toBe(true);
 		expect(existsSync(MARKDOWNLINT_RUNNER)).toBe(true);

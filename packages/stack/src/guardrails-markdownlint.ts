@@ -30,8 +30,10 @@ export interface MarkdownlintReport {
 // результаты структурой. Запускается под тем же bun, что и stack.
 export const MARKDOWNLINT_RUNNER = fileURLToPath(new URL('./markdownlint-run.ts', import.meta.url));
 
+// `--no-install`: в копии нет node_modules, и автоустановка bun скачала бы из npm пакет из customRules
+// вместо исключения, которое даёт недоступность.
 export function markdownlintCommand(): { cmd: string; argv: string[] } {
-	return { cmd: process.execPath, argv: [MARKDOWNLINT_RUNNER] };
+	return { cmd: process.execPath, argv: ['--no-install', MARKDOWNLINT_RUNNER] };
 }
 
 function isRecord(v: unknown): v is Record<string, unknown> {
