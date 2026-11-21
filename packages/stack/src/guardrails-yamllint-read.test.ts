@@ -142,10 +142,10 @@ describe('читатель: yamllint с портом-таблицей', () => {
 	});
 
 	test('YAML нет — часть skipped, ни proto bin uv, ни вызова uv', () => {
-		const root = repo({ 'README.md': '# acme\n', '.yamllint': 'extends: default\n' });
+		const root = repo({ 'README.txt': '# acme\n', '.yamllint': 'extends: default\n' });
 		const f = fakePort(
 			{
-				[GIT]: tracked('README.md', '.yamllint'),
+				[GIT]: tracked('README.txt', '.yamllint'),
 				[GL_VERSION]: ok(`${GL_PIN}\n`),
 				[GL_DIR]: ok('[]'),
 			},

@@ -34,6 +34,7 @@ export const GUARDRAIL_TOOLS = [
 	'shellcheck',
 	'gitleaks',
 	'hadolint',
+	'markdownlint-cli2',
 	'yamllint',
 ] as const;
 export type GuardrailTool = (typeof GUARDRAIL_TOOLS)[number];

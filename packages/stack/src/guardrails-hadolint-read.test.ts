@@ -118,6 +118,7 @@ describe('читатель: hadolint с портом-таблицей', () => {
 					shellcheck: NO_FILES,
 					gitleaks: { version: GL_PIN, files: 5, violations: [] },
 					hadolint: { version: HL_PIN, files: 4, violations: [] },
+					'markdownlint-cli2': NO_FILES,
 					yamllint: NO_FILES,
 				},
 				commits: NO_BASE,
@@ -144,9 +145,9 @@ describe('читатель: hadolint с портом-таблицей', () => {
 	});
 
 	test('Dockerfile нет — hadolint не ищется и не зовётся', () => {
-		const root = repo({ 'README.md': '# acme\n' });
+		const root = repo({ 'README.txt': '# acme\n' });
 		const f = fakePort(
-			{ [GIT]: tracked('README.md'), [GL_VERSION]: ok(`${GL_PIN}\n`), [GL_DIR]: ok('[]') },
+			{ [GIT]: tracked('README.txt'), [GL_VERSION]: ok(`${GL_PIN}\n`), [GL_DIR]: ok('[]') },
 			{ GITLEAKS_BIN: '/x/gl' },
 		);
 		const out = readGuardrails(root, PROTOTOOLS, f.port);
@@ -168,6 +169,7 @@ describe('читатель: hadolint с портом-таблицей', () => {
 				shellcheck: NO_FILES,
 				gitleaks: { version: GL_PIN, files: 1, violations: [] },
 				hadolint: { unavailable: '.prototools has no hadolint pin' },
+				'markdownlint-cli2': NO_FILES,
 				yamllint: NO_FILES,
 			},
 			commits: NO_BASE,
@@ -208,6 +210,7 @@ describe('читатель: hadolint с портом-таблицей', () => {
 						},
 					],
 				},
+				'markdownlint-cli2': NO_FILES,
 				yamllint: NO_FILES,
 			},
 			commits: { skipped: 'gitleaks unavailable' },

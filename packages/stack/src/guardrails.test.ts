@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test';
 
 import { readGuardrails } from './guardrails.ts';
 import { actionlintArgv } from './guardrails-actionlint.ts';
+import { markdownlintCommand, type MarkdownlintReport } from './guardrails-markdownlint.ts';
 import { type GuardrailRun, type GuardrailsPort } from './guardrails-port.ts';
 import { shellcheckArgv } from './guardrails-shellcheck.ts';
 import { repoDir } from './testkit.ts';
@@ -56,9 +57,14 @@ const shellcheckJson = (...lines: number[]): GuardrailRun => ({
 	}),
 });
 
-test('только README.md без пина gitleaks — actionlint и shellcheck skipped, gitleaks недоступен, зовётся один git', () => {
+test('только README.md без пина gitleaks — копия нужна одному markdownlint-cli2, gitleaks недоступен', () => {
 	const root = repoDir({ 'README.md': '# acme\n' });
-	const f = fakePort({ [GIT]: tracked('README.md') }, ENV);
+	const { cmd, argv } = markdownlintCommand();
+	const report: MarkdownlintReport = { version: '9.8.7', code: 0, formatted: true, results: [] };
+	const f = fakePort(
+		{ [GIT]: tracked('README.md'), [[cmd, ...argv].join(' ')]: ok(JSON.stringify(report)) },
+		ENV,
+	);
 	const out = readGuardrails(root, PROTOTOOLS, f.port);
 	expect(out).toStrictEqual({
 		tools: {
@@ -66,11 +72,15 @@ test('только README.md без пина gitleaks — actionlint и shellche
 			shellcheck: NO_FILES,
 			gitleaks: { unavailable: '.prototools has no gitleaks pin' },
 			hadolint: NO_FILES,
+			'markdownlint-cli2': { version: '9.8.7', files: 1, violations: [] },
 			yamllint: NO_FILES,
 		},
 		commits: { skipped: 'gitleaks unavailable' },
 	});
-	expect(f.calls).toStrictEqual([['git', ['ls-files', '-z']]]);
+	expect(f.calls).toStrictEqual([
+		['git', ['ls-files', '-z']],
+		[cmd, argv],
+	]);
 });
 
 test('git вне репозитория — вся группа недоступна, один вызов', () => {
@@ -104,6 +114,7 @@ test('только скрипт — shellcheck запущен, actionlint skippe
 			},
 			gitleaks: { unavailable: '.prototools has no gitleaks pin' },
 			hadolint: NO_FILES,
+			'markdownlint-cli2': NO_FILES,
 			yamllint: NO_FILES,
 		},
 		commits: { skipped: 'gitleaks unavailable' },
@@ -134,6 +145,7 @@ test('файл из git, которого нет на диске, инструм
 			shellcheck: NO_FILES,
 			gitleaks: { unavailable: '.prototools has no gitleaks pin' },
 			hadolint: NO_FILES,
+			'markdownlint-cli2': NO_FILES,
 			yamllint: NO_YAMLLINT_CONFIG,
 		},
 		commits: { skipped: 'gitleaks unavailable' },
@@ -167,6 +179,7 @@ test('только workflow без пина shellcheck — shellcheck недос
 			shellcheck: { unavailable: '.prototools has no shellcheck pin' },
 			gitleaks: { unavailable: '.prototools has no gitleaks pin' },
 			hadolint: NO_FILES,
+			'markdownlint-cli2': NO_FILES,
 			yamllint: NO_YAMLLINT_CONFIG,
 		},
 		commits: { skipped: 'gitleaks unavailable' },
@@ -199,6 +212,7 @@ test('скрипты и workflow, нет пина actionlint — actionlint не
 			shellcheck: { version: '0.11.0', files: 2, violations: [] },
 			gitleaks: { unavailable: '.prototools has no gitleaks pin' },
 			hadolint: NO_FILES,
+			'markdownlint-cli2': NO_FILES,
 			yamllint: NO_YAMLLINT_CONFIG,
 		},
 		commits: { skipped: 'gitleaks unavailable' },
@@ -244,6 +258,7 @@ test('actionlint: два workflow — files 2, находки разобраны
 			shellcheck: NO_FILES,
 			gitleaks: { unavailable: '.prototools has no gitleaks pin' },
 			hadolint: NO_FILES,
+			'markdownlint-cli2': NO_FILES,
 			yamllint: NO_YAMLLINT_CONFIG,
 		},
 		commits: { skipped: 'gitleaks unavailable' },
@@ -260,6 +275,7 @@ test('нет .prototools — нужные инструменты недосту�
 			shellcheck: { unavailable: '.prototools is missing' },
 			gitleaks: { unavailable: '.prototools is missing' },
 			hadolint: NO_FILES,
+			'markdownlint-cli2': NO_FILES,
 			yamllint: NO_FILES,
 		},
 		commits: { skipped: 'gitleaks unavailable' },
@@ -276,6 +292,7 @@ test('нет .prototools при workflow — недоступны оба', () =>
 			shellcheck: { unavailable: '.prototools is missing' },
 			gitleaks: { unavailable: '.prototools is missing' },
 			hadolint: NO_FILES,
+			'markdownlint-cli2': NO_FILES,
 			yamllint: NO_YAMLLINT_CONFIG,
 		},
 		commits: { skipped: 'gitleaks unavailable' },
@@ -303,6 +320,7 @@ test('shellcheck вернул код 2 — часть недоступна с п
 			shellcheck: { unavailable: 'a.sh: openBinaryFile: does not exist' },
 			gitleaks: { unavailable: '.prototools has no gitleaks pin' },
 			hadolint: NO_FILES,
+			'markdownlint-cli2': NO_FILES,
 			yamllint: NO_FILES,
 		},
 		commits: { skipped: 'gitleaks unavailable' },
@@ -329,6 +347,7 @@ test('скрипт без расширения с шебангом считае�
 			shellcheck: { version: '0.11.0', files: 1, violations: [] },
 			gitleaks: { unavailable: '.prototools has no gitleaks pin' },
 			hadolint: NO_FILES,
+			'markdownlint-cli2': NO_FILES,
 			yamllint: NO_FILES,
 		},
 		commits: { skipped: 'gitleaks unavailable' },
@@ -352,6 +371,7 @@ test('отслеживаемый скрипт, которого нет на ди
 			shellcheck: { version: '0.11.0', files: 1, violations: [] },
 			gitleaks: { unavailable: '.prototools has no gitleaks pin' },
 			hadolint: NO_FILES,
+			'markdownlint-cli2': NO_FILES,
 			yamllint: NO_FILES,
 		},
 		commits: { skipped: 'gitleaks unavailable' },

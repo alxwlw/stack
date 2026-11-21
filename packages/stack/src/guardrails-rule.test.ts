@@ -50,6 +50,7 @@ test('checkGuardrails: порядок — инструмент, путь, стр
 				violations: [viol('gitleaks', 'src/b.ts', 2, 'eth-private-key-no-prefix')],
 			},
 			hadolint: NO_FILES,
+			'markdownlint-cli2': NO_FILES,
 			yamllint: NO_FILES,
 		},
 		commits: { skipped: 'no files' },
@@ -93,6 +94,7 @@ test('checkGuardrails: порядок инструментов не зависи
 		tools: {
 			gitleaks: { version: '8.30.1', files: 1, violations: [viol('gitleaks', 'a.env', 1)] },
 			hadolint: NO_FILES,
+			'markdownlint-cli2': NO_FILES,
 			yamllint: NO_FILES,
 			shellcheck: { version: '0.11.0', files: 1, violations: [viol('shellcheck', 'a.sh', 1)] },
 			actionlint: {
@@ -125,6 +127,7 @@ test('checkGuardrails: недоступность всей группы, час�
 				shellcheck: { unavailable: '.prototools has no shellcheck pin' },
 				gitleaks: NO_FILES,
 				hadolint: NO_FILES,
+				'markdownlint-cli2': NO_FILES,
 				yamllint: NO_FILES,
 			},
 			commits: { skipped: 'no files' },
@@ -143,6 +146,7 @@ test('checkGuardrails: недоступность всей группы, час�
 				shellcheck: NO_FILES,
 				gitleaks: { unavailable: 'no gl' },
 				hadolint: NO_FILES,
+				'markdownlint-cli2': NO_FILES,
 				yamllint: NO_FILES,
 			},
 			commits: { skipped: 'no files' },
@@ -158,6 +162,7 @@ test('checkGuardrails: недоступность всей группы, час�
 				shellcheck: NO_FILES,
 				gitleaks: NO_FILES,
 				hadolint: NO_FILES,
+				'markdownlint-cli2': NO_FILES,
 				yamllint: NO_FILES,
 			},
 			commits: { skipped: 'no files' },
@@ -170,6 +175,7 @@ test('checkGuardrails: недоступность всей группы, час�
 				shellcheck: { version: '0.11.0', files: 1, violations: [] },
 				gitleaks: { version: '8.30.1', files: 1, violations: [] },
 				hadolint: NO_FILES,
+				'markdownlint-cli2': NO_FILES,
 				yamllint: NO_FILES,
 			},
 			commits: { skipped: 'no files' },
@@ -195,6 +201,7 @@ test('guardrailsNotes: строка на инструмент в порядке 
 				shellcheck: NO_FILES,
 				gitleaks: { version: '8.30.1', files: 5, violations: [viol('gitleaks', 'a.env', 1)] },
 				hadolint: NO_FILES,
+				'markdownlint-cli2': NO_FILES,
 				yamllint: NO_FILES,
 			},
 			commits: { skipped: 'no files' },
@@ -204,6 +211,7 @@ test('guardrailsNotes: строка на инструмент в порядке 
 		'guardrails shellcheck: skipped (no files)',
 		'guardrails gitleaks 8.30.1: 5 file(s), 1 finding(s)',
 		'guardrails hadolint: skipped (no files)',
+		'guardrails markdownlint-cli2: skipped (no files)',
 		'guardrails yamllint: skipped (no files)',
 		'guardrails gitleaks commits: skipped (no files)',
 	]);
@@ -214,6 +222,7 @@ test('guardrailsNotes: строка на инструмент в порядке 
 				shellcheck: { version: '0.11.0', files: 3, violations: [] },
 				gitleaks: NO_FILES,
 				hadolint: NO_FILES,
+				'markdownlint-cli2': NO_FILES,
 				yamllint: NO_FILES,
 			},
 			commits: { skipped: 'no files' },
@@ -223,6 +232,7 @@ test('guardrailsNotes: строка на инструмент в порядке 
 		'guardrails shellcheck 0.11.0: 3 file(s), 0 finding(s)',
 		'guardrails gitleaks: skipped (no files)',
 		'guardrails hadolint: skipped (no files)',
+		'guardrails markdownlint-cli2: skipped (no files)',
 		'guardrails yamllint: skipped (no files)',
 		'guardrails gitleaks commits: skipped (no files)',
 	]);
@@ -233,6 +243,7 @@ test('guardrailsNotes: строка на инструмент в порядке 
 				shellcheck: { unavailable: 'x' },
 				gitleaks: NO_FILES,
 				hadolint: NO_FILES,
+				'markdownlint-cli2': NO_FILES,
 				yamllint: NO_FILES,
 			},
 			commits: { skipped: 'no files' },
@@ -242,6 +253,7 @@ test('guardrailsNotes: строка на инструмент в порядке 
 		'guardrails shellcheck: unavailable',
 		'guardrails gitleaks: skipped (no files)',
 		'guardrails hadolint: skipped (no files)',
+		'guardrails markdownlint-cli2: skipped (no files)',
 		'guardrails yamllint: skipped (no files)',
 		'guardrails gitleaks commits: skipped (no files)',
 	]);
@@ -260,6 +272,7 @@ const SCRIPT_VIOLATION: GuardrailsOutcome = {
 		},
 		gitleaks: NO_FILES,
 		hadolint: NO_FILES,
+		'markdownlint-cli2': NO_FILES,
 		yamllint: NO_FILES,
 	},
 	commits: { skipped: 'no files' },
@@ -407,6 +420,7 @@ test('checkRepo: .prototools репозитория доходит до чита
 		'guardrails shellcheck 0.11.0: 1 file(s), 1 finding(s)',
 		`guardrails gitleaks ${gitleaksPin}: 2 file(s), 0 finding(s)`,
 		'guardrails hadolint: skipped (no files)',
+		'guardrails markdownlint-cli2: skipped (no files)',
 		'guardrails yamllint: skipped (no files)',
 		'guardrails gitleaks commits: skipped (no --base outside GitHub Actions)',
 	]);
@@ -450,7 +464,7 @@ test('checkRepo: notes guardrails после repo-rules', () => {
 	const both = testCanon({ rules: ['repo-rules', 'guardrails'] });
 	const root = repoDir({
 		'renovate.json5': `{ extends: ['${STACK_RENOVATE_PRESET}'] }\n`,
-		'README.md': '# acme\n',
+		'README.txt': '# acme\n',
 	});
 	const repoRules: RepoRulesPort = {
 		env: { GITHUB_ACTIONS: '' },
@@ -463,7 +477,7 @@ test('checkRepo: notes guardrails после repo-rules', () => {
 	};
 	const guardrails: GuardrailsPort = {
 		env: {},
-		run: () => ({ code: 0, out: 'README.md\0', err: '' }),
+		run: () => ({ code: 0, out: 'README.txt\0', err: '' }),
 	};
 	expect(checkRepo(root, both, [], { repoRules, guardrails }).notes).toStrictEqual([
 		'repo-rules diff: skipped (no --base outside GitHub Actions)',
@@ -471,6 +485,7 @@ test('checkRepo: notes guardrails после repo-rules', () => {
 		'guardrails shellcheck: skipped (no files)',
 		'guardrails gitleaks: unavailable',
 		'guardrails hadolint: skipped (no files)',
+		'guardrails markdownlint-cli2: skipped (no files)',
 		'guardrails yamllint: skipped (no files)',
 		'guardrails gitleaks commits: skipped (gitleaks unavailable)',
 	]);

@@ -139,6 +139,7 @@ describe('находки и пометки по commits', () => {
 		shellcheck: NO_FILES,
 		gitleaks: tool,
 		hadolint: NO_FILES,
+		'markdownlint-cli2': NO_FILES,
 		yamllint: NO_FILES,
 	};
 	const gl = (path: string, line: number, message: string) => ({
@@ -192,6 +193,7 @@ describe('находки и пометки по commits', () => {
 			'guardrails shellcheck: skipped (no files)',
 			`guardrails gitleaks ${PIN}: 1 file(s), 0 finding(s)`,
 			'guardrails hadolint: skipped (no files)',
+			'guardrails markdownlint-cli2: skipped (no files)',
 			'guardrails yamllint: skipped (no files)',
 			'guardrails gitleaks commits: skipped (not a pull request)',
 		]);
@@ -253,8 +255,8 @@ describe('читатель с портом-таблицей', () => {
 	]);
 
 	test.each([
-		['конфиг в наборе', ['README.md', '.gitleaks.toml'], true],
-		['конфига нет', ['README.md'], false],
+		['конфиг в наборе', ['README.txt', '.gitleaks.toml'], true],
+		['конфига нет', ['README.txt'], false],
 	])('PR: gitleaks git в каталоге копии, как dir — %s', (_name, paths, withConfig) => {
 		const root = repo(Object.fromEntries(paths.map((p) => [p, 'x\n'])));
 		const range = `${SHA}..HEAD`;
@@ -300,12 +302,12 @@ describe('читатель с портом-таблицей', () => {
 	});
 
 	test('--base при push: merge-base от него, копия одна и удаляется после обоих запусков', () => {
-		const root = repo({ 'README.md': 'x\n' });
+		const root = repo({ 'README.txt': 'x\n' });
 		const seen: string[] = [];
 		const GIT_RUN = `/x/gl ${gitleaksGitArgv(root, `${SHA}..HEAD`, false).join(' ')}`;
 		const f = fakePort(
 			{
-				[GIT]: tracked('README.md'),
+				[GIT]: tracked('README.txt'),
 				[VERSION]: ok(`${PIN}\n`),
 				[DIR]: (cwd) => {
 					seen.push(cwd ?? '');
@@ -315,7 +317,7 @@ describe('читатель с портом-таблицей', () => {
 				[GIT_RUN]: (cwd) => {
 					seen.push(cwd ?? '');
 					// Копия ещё жива, пока идёт второй запуск.
-					expect(existsSync(join(cwd ?? root, 'README.md'))).toBe(true);
+					expect(existsSync(join(cwd ?? root, 'README.txt'))).toBe(true);
 					return ok('[]');
 				},
 			},
@@ -333,10 +335,10 @@ describe('читатель с портом-таблицей', () => {
 	});
 
 	test('часть gitleaks недоступна — commits skipped, merge-base не зовётся', () => {
-		const root = repo({ 'README.md': 'x\n' });
+		const root = repo({ 'README.txt': 'x\n' });
 		const f = fakePort(
 			{
-				[GIT]: tracked('README.md'),
+				[GIT]: tracked('README.txt'),
 				[VERSION]: ok(`${PIN}\n`),
 				[DIR]: { code: 1, out: '', err: '12:00AM FTL unable to load gitleaks config\n' },
 			},
@@ -349,6 +351,7 @@ describe('читатель с портом-таблицей', () => {
 				shellcheck: NO_FILES,
 				gitleaks: { unavailable: 'FTL unable to load gitleaks config' },
 				hadolint: NO_FILES,
+				'markdownlint-cli2': NO_FILES,
 				yamllint: NO_FILES,
 			},
 			commits: { skipped: 'gitleaks unavailable' },
@@ -357,16 +360,16 @@ describe('читатель с портом-таблицей', () => {
 	});
 
 	test('нет бинарника gitleaks — commits skipped, merge-base не зовётся', () => {
-		const root = repo({ 'README.md': 'x\n' });
-		const f = fakePort({ [GIT]: tracked('README.md') }, PR_ENV);
+		const root = repo({ 'README.txt': 'x\n' });
+		const f = fakePort({ [GIT]: tracked('README.txt') }, PR_ENV);
 		const out = readGuardrails(root, '', f.port);
 		expect('tools' in out && out.commits).toStrictEqual({ skipped: 'gitleaks unavailable' });
 		expect(f.calls.map(([cmd]) => cmd)).toStrictEqual(['git']);
 	});
 
 	test('сбой копии (TMPDIR) — commits skipped, merge-base не зовётся', () => {
-		const root = repo({ 'README.md': 'x\n' });
-		const f = fakePort({ [GIT]: tracked('README.md'), [VERSION]: ok(`${PIN}\n`) }, PR_ENV);
+		const root = repo({ 'README.txt': 'x\n' });
+		const f = fakePort({ [GIT]: tracked('README.txt'), [VERSION]: ok(`${PIN}\n`) }, PR_ENV);
 		const saved = process.env.TMPDIR;
 		process.env.TMPDIR = '/nonexistent';
 		try {
@@ -383,10 +386,10 @@ describe('читатель с портом-таблицей', () => {
 	});
 
 	test('merge-base упал — commits недоступны с причиной, gitleaks git не зовётся', () => {
-		const root = repo({ 'README.md': 'x\n' });
+		const root = repo({ 'README.txt': 'x\n' });
 		const f = fakePort(
 			{
-				[GIT]: tracked('README.md'),
+				[GIT]: tracked('README.txt'),
 				[VERSION]: ok(`${PIN}\n`),
 				[DIR]: ok('[]'),
 				[MB]: { code: 128, out: '', err: 'fatal: Not a valid object name origin/main\n' },
@@ -401,11 +404,11 @@ describe('читатель с портом-таблицей', () => {
 	});
 
 	test('gitleaks git: ERR в stderr — commits недоступны, часть файлов цела', () => {
-		const root = repo({ 'README.md': 'x\n' });
+		const root = repo({ 'README.txt': 'x\n' });
 		const GIT_RUN = `/x/gl ${gitleaksGitArgv(root, `${SHA}..HEAD`, false).join(' ')}`;
 		const f = fakePort(
 			{
-				[GIT]: tracked('README.md'),
+				[GIT]: tracked('README.txt'),
 				[VERSION]: ok(`${PIN}\n`),
 				[DIR]: ok('[]'),
 				[MB]: ok(`${SHA}\n`),
@@ -431,6 +434,7 @@ describe('читатель с портом-таблицей', () => {
 				shellcheck: NO_FILES,
 				gitleaks: NO_FILES,
 				hadolint: NO_FILES,
+				'markdownlint-cli2': NO_FILES,
 				yamllint: NO_FILES,
 			},
 			commits: NO_FILES,
@@ -439,8 +443,8 @@ describe('читатель с портом-таблицей', () => {
 	});
 
 	test('вне PR и без --base — skipped, второго запуска нет', () => {
-		const root = repo({ 'README.md': 'x\n' });
-		const table = { [GIT]: tracked('README.md'), [VERSION]: ok(`${PIN}\n`), [DIR]: ok('[]') };
+		const root = repo({ 'README.txt': 'x\n' });
+		const table = { [GIT]: tracked('README.txt'), [VERSION]: ok(`${PIN}\n`), [DIR]: ok('[]') };
 		const outside = fakePort(table);
 		const a = readGuardrails(root, PROTOTOOLS, outside.port);
 		expect('tools' in a && a.commits).toStrictEqual({
@@ -454,9 +458,9 @@ describe('читатель с портом-таблицей', () => {
 	});
 
 	test('PR без GITHUB_BASE_REF — commits недоступны', () => {
-		const root = repo({ 'README.md': 'x\n' });
+		const root = repo({ 'README.txt': 'x\n' });
 		const f = fakePort(
-			{ [GIT]: tracked('README.md'), [VERSION]: ok(`${PIN}\n`), [DIR]: ok('[]') },
+			{ [GIT]: tracked('README.txt'), [VERSION]: ok(`${PIN}\n`), [DIR]: ok('[]') },
 			{ ...PR_ENV, GITHUB_BASE_REF: '' },
 		);
 		const out = readGuardrails(root, PROTOTOOLS, f.port);

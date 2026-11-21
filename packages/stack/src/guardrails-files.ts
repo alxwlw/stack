@@ -43,6 +43,12 @@ export function yamlFiles(paths: readonly string[]): string[] {
 	return paths.filter((p) => /\.ya?ml$/.test(basename(p)));
 }
 
+// Markdown-файлы по `globs` канона markdownlint-cli2: basename оканчивается на .md или .mdx (регистр
+// важен), порядок входа.
+export function markdownFiles(paths: readonly string[]): string[] {
+	return paths.filter((p) => /\.mdx?$/.test(basename(p)));
+}
+
 export function isShellShebang(firstLine: string): boolean {
 	if (!firstLine.startsWith('#!')) return false;
 	const tokens = firstLine

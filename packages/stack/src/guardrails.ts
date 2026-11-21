@@ -1,5 +1,5 @@
 // Читатель группы guardrails: отслеживаемые файлы, бинарники ровно версии пина, запуск actionlint,
-// shellcheck, gitleaks, hadolint и yamllint за прогон; gitleaks запускается дважды (файлы и коммиты PR), когда
+// shellcheck, gitleaks, hadolint, markdownlint-cli2 и yamllint за прогон; gitleaks запускается дважды (файлы и коммиты PR), когда
 // скан коммитов идёт. Всё внешнее идёт через порт; правило и пометки — guardrails-rule.ts.
 
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -11,6 +11,7 @@ import { locateTool, repoPins } from './guardrails-bin.ts';
 import { type CommitsPart, mergeBase, mergeBaseArgv, prBase } from './guardrails-commits.ts';
 import {
 	dockerfiles,
+	markdownFiles,
 	regularFiles,
 	shellScripts,
 	TRACKED_FILES_ARGV,
@@ -27,6 +28,7 @@ import {
 	parseGitleaks,
 } from './guardrails-gitleaks.ts';
 import { hadolintArgv, parseHadolint } from './guardrails-hadolint.ts';
+import { markdownlintCommand, parseMarkdownlint } from './guardrails-markdownlint.ts';
 import {
 	type GuardrailsPort,
 	type GuardrailTool,
@@ -74,7 +76,7 @@ function runPart(
 // Копия отслеживаемых обычных файлов на время fn; каталог удаляется при любом исходе. Вход — только
 // вывод regularFiles: copyTracked не проверяет, что пути остаются внутри каталога. Единственное
 // место копии и её уборки: за прогон одна копия, и в ней идут оба прогона gitleaks (файлы и коммиты
-// PR), hadolint и yamllint.
+// PR), hadolint, markdownlint-cli2 и yamllint.
 function withTrackedCopy<T>(
 	root: string,
 	files: readonly string[],
@@ -162,6 +164,15 @@ function readYamllint(
 	);
 }
 
+// markdownlint-cli2 идёт раннером stack под bun в копии: версия — из отчёта раннера (точная
+// зависимость stack), число в пометке — число кандидатов (*.md, *.mdx), а не файлов после игноров.
+function readMarkdownlint(set: readonly string[], dir: string, port: GuardrailsPort): ToolPart {
+	const { cmd, argv } = markdownlintCommand();
+	const parsed = parseMarkdownlint(port.run(cmd, argv, dir));
+	if ('unavailable' in parsed) return parsed;
+	return { version: parsed.version, files: set.length, violations: parsed.violations };
+}
+
 function readCommits(
 	root: string,
 	files: readonly string[],
@@ -205,6 +216,7 @@ export function readGuardrails(
 				shellcheck: none,
 				gitleaks: none,
 				hadolint: none,
+				'markdownlint-cli2': none,
 				yamllint: none,
 			},
 			commits: { skipped: 'no files' },
@@ -244,13 +256,15 @@ export function readGuardrails(
 				);
 	}
 
-	// Одна копия на прогон: в ней gitleaks, hadolint и yamllint. Бинарники ищутся до копии, и копия не
+	// Одна копия на прогон: в ней gitleaks, hadolint, markdownlint-cli2 и yamllint. Бинарники ищутся до копии, и копия не
 	// создаётся, когда ни один из них не найден. Копия файлов всегда непуста (files.length > 0),
-	// поэтому gitleaks ищется всегда; hadolint — только при Dockerfile среди файлов, yamllint — только
-	// при YAML и конфиге среди них (иначе uv не ищется).
+	// поэтому gitleaks ищется всегда; hadolint — только при Dockerfile среди файлов, markdownlint-cli2 —
+	// только при Markdown (бинарника нет: раннер — скрипт stack), yamllint — только при YAML и конфиге
+	// среди них (иначе uv не ищется).
 	const gitleaks = locateTool('gitleaks', pins, port);
 	const dockerSet = dockerfiles(files);
 	const hadolint = dockerSet.length > 0 ? locateTool('hadolint', pins, port) : undefined;
+	const markdownSet = markdownFiles(files);
 	const yamlSet = yamlFiles(files);
 	const yamlConfig = yamllintConfig(files);
 	const uv =
@@ -258,6 +272,7 @@ export function readGuardrails(
 	let gitleaksPart: ToolPart = isUnavailable(gitleaks) ? gitleaks : none;
 	let hadolintPart: ToolPart =
 		hadolint === undefined ? none : isUnavailable(hadolint) ? hadolint : none;
+	let markdownlintPart: ToolPart = none;
 	let yamllintPart: ToolPart = none;
 	if (yamlSet.length > 0) {
 		if (yamlConfig === undefined) {
@@ -270,13 +285,21 @@ export function readGuardrails(
 	const gitleaksReady = isUnavailable(gitleaks) ? undefined : gitleaks;
 	const hadolintReady = hadolint === undefined || isUnavailable(hadolint) ? undefined : hadolint;
 	const uvReady = uv === undefined || isUnavailable(uv) ? undefined : uv;
-	if (gitleaksReady !== undefined || hadolintReady !== undefined || uvReady !== undefined) {
+	if (
+		gitleaksReady !== undefined ||
+		hadolintReady !== undefined ||
+		markdownSet.length > 0 ||
+		uvReady !== undefined
+	) {
 		const copied = withTrackedCopy(root, files, (dir) => {
 			if (gitleaksReady !== undefined) {
 				({ part: gitleaksPart, commits } = readGitleaks(root, files, gitleaksReady, dir, port));
 			}
 			if (hadolintReady !== undefined) {
 				hadolintPart = readHadolint(dockerSet, hadolintReady, dir, port);
+			}
+			if (markdownSet.length > 0) {
+				markdownlintPart = readMarkdownlint(markdownSet, dir, port);
 			}
 			if (uvReady !== undefined && yamlConfig !== undefined) {
 				yamllintPart = readYamllint(yamlSet, yamlConfig, uvReady, dir, port);
@@ -287,6 +310,7 @@ export function readGuardrails(
 		if (copied !== null) {
 			if (gitleaksReady !== undefined) gitleaksPart = { ...copied };
 			if (hadolintReady !== undefined) hadolintPart = { ...copied };
+			if (markdownSet.length > 0) markdownlintPart = { ...copied };
 			if (uvReady !== undefined) yamllintPart = { ...copied };
 		}
 	}
@@ -296,6 +320,7 @@ export function readGuardrails(
 			shellcheck: shellcheckPart,
 			gitleaks: gitleaksPart,
 			hadolint: hadolintPart,
+			'markdownlint-cli2': markdownlintPart,
 			yamllint: yamllintPart,
 		},
 		commits,

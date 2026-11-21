@@ -66,7 +66,7 @@ const finding = (over: Record<string, unknown> = {}): string =>
 			RuleID: RULE,
 			Description: DESCRIPTION,
 			StartLine: 2,
-			File: 'README.md',
+			File: 'README.txt',
 			Commit: '',
 			Secret: 'REDACTED',
 			Match: 'REDACTED',
@@ -87,10 +87,10 @@ describe('читатель с портом-таблицей', () => {
 
 	test('копия отслеживаемых файлов в чужом каталоге, после возврата её нет; shellcheck не ищется', () => {
 		// На диске лежит ещё и неотслеживаемый .env: git его не печатает, в копию он не попадает.
-		const root = repo({ 'README.md': '# acme\n', '.env': LINE });
+		const root = repo({ 'README.txt': '# acme\n', '.env': LINE });
 		let seen: { cwd: string | undefined; listing: string[] } | undefined;
 		const f = fakePort({
-			[GIT]: tracked('README.md'),
+			[GIT]: tracked('README.txt'),
 			[VERSION]: ok(`${PIN}\n`),
 			[DIR]: (cwd) => {
 				seen = { cwd, listing: cwd === undefined ? [] : readdirSync(cwd) };
@@ -104,6 +104,7 @@ describe('читатель с портом-таблицей', () => {
 				shellcheck: NO_FILES,
 				gitleaks: { version: PIN, files: 1, violations: [] },
 				hadolint: NO_FILES,
+				'markdownlint-cli2': NO_FILES,
 				yamllint: NO_FILES,
 			},
 			commits: { skipped: 'no --base outside GitHub Actions' },
@@ -115,14 +116,14 @@ describe('читатель с портом-таблицей', () => {
 		]);
 		expect(seen?.cwd).not.toBe(root);
 		expect(seen?.cwd?.startsWith(join(tmpdir(), 'stack-gitleaks-'))).toBe(true);
-		expect(seen?.listing).toStrictEqual(['README.md']);
+		expect(seen?.listing).toStrictEqual(['README.txt']);
 		expect(existsSync(seen?.cwd ?? root)).toBe(false);
 	});
 
 	test('код 3 с находкой — нарушение gitleaks, files по числу скопированных', () => {
-		const root = repo({ 'README.md': '# acme\n', 'a.txt': 'a\n' });
+		const root = repo({ 'README.txt': '# acme\n', 'a.txt': 'a\n' });
 		const f = fakePort({
-			[GIT]: tracked('README.md', 'a.txt'),
+			[GIT]: tracked('README.txt', 'a.txt'),
 			[VERSION]: ok(`${PIN}\n`),
 			[DIR]: { code: 3, out: finding(), err: '' },
 		});
@@ -134,10 +135,11 @@ describe('читатель с портом-таблицей', () => {
 					version: PIN,
 					files: 2,
 					violations: [
-						{ tool: 'gitleaks', rule: RULE, path: 'README.md', line: 2, message: DESCRIPTION },
+						{ tool: 'gitleaks', rule: RULE, path: 'README.txt', line: 2, message: DESCRIPTION },
 					],
 				},
 				hadolint: NO_FILES,
+				'markdownlint-cli2': NO_FILES,
 				yamllint: NO_FILES,
 			},
 			commits: { skipped: 'no --base outside GitHub Actions' },
@@ -145,9 +147,9 @@ describe('читатель с портом-таблицей', () => {
 	});
 
 	test('пустой Description — сообщение secret detected', () => {
-		const root = repo({ 'README.md': '# acme\n' });
+		const root = repo({ 'README.txt': '# acme\n' });
 		const f = fakePort({
-			[GIT]: tracked('README.md'),
+			[GIT]: tracked('README.txt'),
 			[VERSION]: ok(`${PIN}\n`),
 			[DIR]: { code: 3, out: finding({ Description: '' }), err: '' },
 		});
@@ -156,20 +158,20 @@ describe('читатель с портом-таблицей', () => {
 			version: PIN,
 			files: 1,
 			violations: [
-				{ tool: 'gitleaks', rule: RULE, path: 'README.md', line: 2, message: 'secret detected' },
+				{ tool: 'gitleaks', rule: RULE, path: 'README.txt', line: 2, message: 'secret detected' },
 			],
 		});
 	});
 
 	test('нет пина gitleaks — недоступен, бинарник не зовётся, копии нет', () => {
-		const root = repo({ 'README.md': '# acme\n' });
+		const root = repo({ 'README.txt': '# acme\n' });
 		const withoutGitleaks = Object.entries(ROOT_PINS)
 			.filter(([name]) => name !== 'gitleaks')
 			.map(([name, version]) => `${name} = "${version}"\n`)
 			.join('');
 		withPrivateTmpdir(() => {
 			const before = copies();
-			const f = fakePort({ [GIT]: tracked('README.md') });
+			const f = fakePort({ [GIT]: tracked('README.txt') });
 			const out = readGuardrails(root, withoutGitleaks, f.port);
 			expect('tools' in out && out.tools.gitleaks).toStrictEqual({
 				unavailable: '.prototools has no gitleaks pin',
@@ -180,10 +182,10 @@ describe('читатель с портом-таблицей', () => {
 	});
 
 	test('FTL в stderr — недоступен с этой причиной, каталог копии удалён', () => {
-		const root = repo({ 'README.md': '# acme\n' });
+		const root = repo({ 'README.txt': '# acme\n' });
 		let cwd: string | undefined;
 		const f = fakePort({
-			[GIT]: tracked('README.md'),
+			[GIT]: tracked('README.txt'),
 			[VERSION]: ok(`${PIN}\n`),
 			[DIR]: (c) => {
 				cwd = c;
@@ -199,10 +201,10 @@ describe('читатель с портом-таблицей', () => {
 	});
 
 	test('порт бросил посреди скана — каталог копии всё равно удалён', () => {
-		const root = repo({ 'README.md': '# acme\n' });
+		const root = repo({ 'README.txt': '# acme\n' });
 		let cwd: string | undefined;
 		const f = fakePort({
-			[GIT]: tracked('README.md'),
+			[GIT]: tracked('README.txt'),
 			[VERSION]: ok(`${PIN}\n`),
 			[DIR]: (c) => {
 				cwd = c;
@@ -215,8 +217,8 @@ describe('читатель с портом-таблицей', () => {
 	});
 
 	test('TMPDIR недоступен — gitleaks недоступен с copy:, скан не запускается и корень не сканируется', () => {
-		const root = repo({ 'README.md': '# acme\n', '.env': LINE });
-		const f = fakePort({ [GIT]: tracked('README.md'), [VERSION]: ok(`${PIN}\n`) });
+		const root = repo({ 'README.txt': '# acme\n', '.env': LINE });
+		const f = fakePort({ [GIT]: tracked('README.txt'), [VERSION]: ok(`${PIN}\n`) });
 		const saved = process.env.TMPDIR;
 		process.env.TMPDIR = '/nonexistent';
 		try {
@@ -243,6 +245,7 @@ describe('читатель с портом-таблицей', () => {
 				shellcheck: NO_FILES,
 				gitleaks: NO_FILES,
 				hadolint: NO_FILES,
+				'markdownlint-cli2': NO_FILES,
 				yamllint: NO_FILES,
 			},
 			commits: { skipped: 'no files' },
