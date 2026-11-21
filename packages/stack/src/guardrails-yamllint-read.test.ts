@@ -91,7 +91,7 @@ describe('читатель: yamllint с портом-таблицей', () => {
 		withPrivateTmpdir(() => {
 			const out = readGuardrails(root, PROTOTOOLS, f.port);
 			if ('unavailable' in out) throw new Error(out.unavailable);
-			// Два файла из набора: a.yml и docs/b.yaml; конфиги без .yaml/.yml в набор не входят.
+			// В наборе два YAML-файла; конфиги без суффикса .yaml/.yml и прочие файлы в набор не входят.
 			expect(out.tools.yamllint).toStrictEqual({
 				version: YAMLLINT_VERSION,
 				files: 2,
