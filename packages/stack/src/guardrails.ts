@@ -1,6 +1,7 @@
 // Читатель группы guardrails: отслеживаемые файлы, бинарники ровно версии пина, запуск actionlint,
 // shellcheck, gitleaks, hadolint, markdownlint-cli2 и yamllint за прогон; gitleaks запускается дважды
-// (файлы и коммиты PR), когда скан коммитов идёт. Всё внешнее идёт через порт; правило и пометки — guardrails-rule.ts.
+// (файлы и коммиты PR), когда скан коммитов идёт. Всё внешнее идёт через порт; правило и пометки —
+// guardrails-rule.ts.
 
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -258,9 +259,9 @@ export function readGuardrails(
 
 	// Одна копия на прогон: в ней gitleaks, hadolint, markdownlint-cli2 и yamllint. Бинарники ищутся до
 	// копии; она создаётся, когда её нужно найденному бинарнику или непустому набору Markdown.
-	// Копия файлов всегда непуста (files.length > 0), поэтому gitleaks ищется всегда; hadolint — только при Dockerfile среди файлов, markdownlint-cli2 —
-	// только при Markdown (бинарника нет: раннер — скрипт stack), yamllint — только при YAML и конфиге
-	// среди них (иначе uv не ищется).
+	// Копия файлов всегда непуста (files.length > 0), поэтому gitleaks ищется всегда;
+	// hadolint — только при Dockerfile среди файлов, markdownlint-cli2 — только при Markdown (бинарника
+	// нет: раннер — скрипт stack), yamllint — только при YAML и конфиге среди них (иначе uv не ищется).
 	const gitleaks = locateTool('gitleaks', pins, port);
 	const dockerSet = dockerfiles(files);
 	const hadolint = dockerSet.length > 0 ? locateTool('hadolint', pins, port) : undefined;
