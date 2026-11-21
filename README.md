@@ -422,8 +422,7 @@ repository are not checked; a directory outside git is `guardrails-unavailable`.
   bash, dash or ksh (also through `env`). shellcheck runs without `-x`.
 
 - gitleaks: every tracked file of the working tree.
-- hadolint: the tracked Dockerfiles in any directory, named like the Dockerfiles of the toolchain pins (`Dockerfile`,
-  with a suffix or with a prefix).
+- hadolint: the tracked Dockerfiles in any directory, named like the Dockerfiles of the toolchain pins (the bare name, with a suffix or with a prefix).
 - markdownlint-cli2: the tracked `*.md` and `*.mdx` files.
 - yamllint: the tracked `*.yaml` and `*.yml` files.
 
@@ -454,7 +453,7 @@ on the `run:` steps of the workflows, at the pinned version; pyflakes inside act
 
 What the repo has to provide for the new tools:
 
-- yamllint: a yamllint config file among the tracked files (`.yamllint`, `.yamllint.yaml` or `.yamllint.yml`)
+- yamllint: a yamllint config file among the tracked files (`.yamllint`, also with the suffix `.yaml` or `.yml`)
   whenever there are YAML files; without one the tool is `guardrails-unavailable`, because yamllint would
   otherwise look for a config upward from the copy and in the home directory.
 - markdownlint-cli2: a tracked markdownlint-cli2 config with `globs`; without them the tool is
