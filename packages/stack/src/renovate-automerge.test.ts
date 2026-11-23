@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { describe, expect, test } from 'bun:test';
@@ -41,7 +41,11 @@ test('automerge: верхний уровень — вливает Renovate, ст
 });
 
 test('automerge: правила целиком', () => {
-	const aged = { minimumReleaseAge: '3 days', minimumReleaseAgeBehaviour: 'timestamp-optional' };
+	const aged = {
+		minimumReleaseAge: '3 days',
+		minimumReleaseAgeBehaviour: 'timestamp-optional',
+		internalChecksFilter: 'strict',
+	};
 	expect(rules).toStrictEqual([
 		{
 			description: expect.any(String),
@@ -62,6 +66,7 @@ test('automerge: правила целиком', () => {
 		{
 			description: expect.any(String),
 			matchManagers: ['github-actions'],
+			matchDepTypes: ['action', 'workflow'],
 			matchUpdateTypes: ['minor'],
 			matchCurrentVersion: '!/^v?0\\./',
 			automerge: true,
@@ -108,6 +113,19 @@ test('automerge: выдержка — только с timestamp-optional', () =>
 		expect(r.minimumReleaseAgeBehaviour).toBe('timestamp-optional');
 	}
 	expect(checked).toBeGreaterThan(0);
+});
+
+test('CI: шаг «конфиги Renovate валидны» называет каждый renovate/*.json5', () => {
+	const ci = parseYaml(readFileSync(join(ROOT, '.github/workflows/ci.yml'), 'utf8'));
+	const step = (ci.jobs.ci.steps as { name?: string; run?: string }[]).find(
+		(s) => s.name === 'конфиги Renovate валидны',
+	);
+	expect(step?.run).toBeDefined();
+	const files = readdirSync(join(ROOT, 'renovate')).filter((f) => f.endsWith('.json5'));
+	expect(files).toContain('automerge.json5');
+	for (const f of files) {
+		expect(step?.run?.split(/\s+/)).toContain(`renovate/${f}`);
+	}
 });
 
 describe('подключение', () => {

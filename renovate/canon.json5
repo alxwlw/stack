@@ -37,7 +37,7 @@
 			enabled: false,
 		},
 		{
-			description: 'pnpm 12 канона не ставит npm-версию моложе суток (minimumReleaseAge): Renovate не предлагает её раньше, иначе лок не обновится и PR покраснеет',
+			description: 'Где pnpm-workspace.yaml сам задаёт minimumReleaseAge (строгий режим), pnpm 12 не ставит npm-версию моложе этого срока: Renovate не предлагает её раньше, иначе лок не обновится и PR покраснеет; без явного значения встроенные сутки pnpm нестрогие и откатываются на прежнюю версию',
 			matchDatasources: ['npm'],
 			minimumReleaseAge: '1 day',
 		},

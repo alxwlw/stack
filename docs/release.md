@@ -95,7 +95,7 @@ a test in `scripts/release.test.ts` keeps that graph closed.
 ## Move the floating v1 tag
 
 Consumers pin `v1`: the reusable workflows `check.yml` and `sync.yml` (`@v1`), the setup action, and the
-Renovate preset (`#v1`). After a release within major 1 the tag has to move to it.
+Renovate presets (`#v1`: `canon.json5` and `automerge.json5`). After a release within major 1 the tag has to move to it.
 
 Do it only when `publish` is green and `npm view @alxwlw/<package>@X.Y.Z version` answers for **every**
 package under `packages/*`. Consumers resolve `v1` at once, so moving it earlier points them at a release they

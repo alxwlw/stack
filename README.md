@@ -221,8 +221,8 @@ files:
 - `.github/workflows/renovate.yml` (canon, overwritten) runs Renovate every day at 06:00 UTC and on
   demand (`workflow_dispatch`, with a `debug` log level when a run needs explaining). It calls the
   reusable `alxwlw/stack/.github/workflows/renovate.yml@v1` and needs a `RENOVATE_TOKEN` secret
-  that can push branches and open PRs (contents, pull requests, issues, workflows: write). The job
-  runs on `vars.RUNNER_LABEL`, or `ubuntu-latest` when the variable isn't set.
+  that can push branches and open PRs (contents, pull requests, issues, workflows: write; commit statuses and
+  checks: read, which automerge needs). The job runs on `vars.RUNNER_LABEL`, or `ubuntu-latest` when unset.
 - `renovate.json5` (seeded once, yours to edit) extends `config:recommended`, the canon preset
   `github>alxwlw/stack//renovate/canon.json5#v1` and the automerge preset
   `github>alxwlw/stack//renovate/automerge.json5#v1` (see Automerge below). It isn't seeded when the repo already has a
@@ -231,18 +231,16 @@ files:
 The preset turns Renovate off for everything `stack sync` moves: `@alxwlw/*` packages and
 `alxwlw/stack/...` workflow/action refs, the canon's catalogs (`dev`, and `libs` for repos with that
 group), `packageManager`, `engines`, the `.prototools` pins and their copies: the `node` and `oven/bun` images
-of Dockerfiles and the `node-version`, `bun-version` and `proto-version` inputs of workflow steps.
-Without it the bot and the rollout
-would fight: Renovate bumps a pin, the next `stack sync` reverts it. The preset is read from the
-floating `v1` tag, so a release updates it everywhere without a PR: the update arrives once the release moves
-the `v1` tag, and until then `#v1` and `@v1` still point at the previous release.
+of Dockerfiles and the `node-version`, `bun-version` and `proto-version` inputs of workflow steps. Without it the bot and the rollout would fight: Renovate bumps a pin, the next `stack sync` reverts it. The preset
+is read from the floating `v1` tag, so a release updates it everywhere without a PR: the update arrives once the
+release moves the `v1` tag, and until then `#v1` and `@v1` still point at the previous release.
 
 One rule is not a switch-off: npm versions younger than a day are not proposed (`minimumReleaseAge: '1 day'`).
-The canon's pnpm 12 runs in the strict mode with that same age and refuses to install a fresher version, so a
-Renovate PR for it would leave the lock file stale and fail its checks. The rule follows the pnpm pin of the canon
-and is moot below pnpm 12. The automerge preset, which comes later in `extends`, raises the age to 3 days for the
-updates it merges. The preset also turns off Renovate's `renovate/stability-days` commit status
-(`statusCheckNames`), since `RENOVATE_TOKEN` has no right to write statuses and the run would fail with a 403.
+Where `pnpm-workspace.yaml` sets `minimumReleaseAge` itself (strict mode), pnpm refuses a fresher version, so a
+Renovate PR for it would leave the lock file stale and fail its checks; elsewhere pnpm 12's built-in 1-day
+default is non-strict and falls back to an older version. The automerge preset, which comes later in `extends`,
+raises the age to 3 days for the updates it merges. The preset also turns off Renovate's `renovate/stability-days`
+commit status (`statusCheckNames`): `RENOVATE_TOKEN` can't write statuses, and the run would fail with a 403.
 
 For the `node` and `oven/bun` images the preset is wider than `sync`: Renovate also stops moving the ones
 `sync` does not rewrite — an image pinned by digest, a tag built from an `ARG`, an image named in
@@ -314,20 +312,24 @@ extends: [
 ],
 ```
 
-What merges: `patch` updates of any dependency, `minor` updates of `devDependencies` and of GitHub Actions
-(only when the current version is 1 or later), and lock file maintenance where the repo enables it. What does not:
-`major` updates, `minor` updates of runtime dependencies, and any `0.x` version, where a minor may break.
+What merges: `patch` updates of any dependency, `minor` updates of `devDependencies` and of GitHub Actions and
+reusable workflows (only when the current version is 1 or later; not the `with` inputs, container images or
+runners), and lock file maintenance where the repo enables it. What does not: `major` updates, `minor` updates of
+runtime dependencies, and any `0.x` version, where a minor may break.
 
 Renovate merges the pull request itself (not GitHub auto-merge) on its next run, and only when every check of the
-branch is green. A branch without checks is not merged. A group merges whole or not at all: every update in it must
+branch is green; a branch without checks is not merged. A group merges whole or not at all: every update in it must
 qualify (Renovate source, group generation: `upgrades.every((upgrade) => upgrade.automerge)`). Schedule, groups and `ignorePaths` stay with the repo.
 
-Updates wait 3 days after the release before they merge, a guard against freshly published compromised versions.
-A release with no timestamp (images on ghcr.io or quay.io, some private registries) has no wait and is not held back.
-The branch is rebased only on a conflict, not each time the base moves: otherwise, with automerge on, Renovate
-rebases it on every run and a busy `main` outruns the merge (Renovate source, branch reuse: `determineRebaseWhenValue`).
-Renovate merges at most two pull requests per run in a repo: after a merge it restarts the repo job once
-(Renovate source, repository run: "Restarting repository job after automerge result").
+Updates wait 3 days after the release before they merge, a guard against freshly published compromised versions
+(`internalChecksFilter: 'strict'` keeps the wait even if a repo loosens that filter). Lock file maintenance has no such
+wait: Renovate leaves its age to the package manager, so newer transitive versions are held only by the package manager's
+own release age. A release with no timestamp (images on ghcr.io or quay.io, some private registries) has no wait and is
+not held back. Renovate reads each branch's commit statuses and check runs before it merges; without the `commit statuses`
+and `checks` read rights on `RENOVATE_TOKEN` a run fails or the PR never merges. The branch is rebased only on a conflict,
+not each time the base moves: otherwise Renovate rebases it on every run and a busy `main` outruns the merge (Renovate
+source, branch reuse: `determineRebaseWhenValue`). It merges at most two PRs per run in a repo: after a merge it restarts
+the repo job once (Renovate source, repository run: "Restarting repository job after automerge result").
 
 ## Exceptions
 
@@ -737,12 +739,10 @@ Renovate runs on this repo too (`.github/workflows/renovate-self.yml`, every day
 `RENOVATE_TOKEN` secret). Unlike a consumer it does not extend the canon preset — moving the
 canon's pins is its job. One version lives in several places here: the canon
 (`packages/stack/canon/files/prototools`, `canon/catalogs.json`) and this repo's own toolchain
-(`.prototools`, `pnpm-workspace.yaml`, `package.json#packageManager`). Renovate moves each
-dependency in both places at once, because the dogfood tests fail when the root and the canon
-disagree:
-minor and patch bumps land in the `canon pins` PR, major bumps in their own `major-canon-pins` PR.
-A `canon pins` PR that holds only patch bumps is merged by Renovate itself (this repo extends the automerge preset);
-merge the others one at a time by hand. Renovate rebases the other on its next run or on a manual
+(`.prototools`, `pnpm-workspace.yaml`, `package.json#packageManager`). Renovate moves each dependency in both
+places at once, because the dogfood tests fail when the root and the canon disagree: minor and patch bumps land in the `canon pins` PR, major bumps in their own `major-canon-pins` PR.
+A `canon pins` PR in which every update is a patch or a minor `devDependencies` bump is merged by Renovate itself (this repo extends the automerge preset);
+merge any other one at a time by hand. Renovate rebases the remaining ones on its next run or on a manual
 `workflow_dispatch`. Merging changes nothing for consumers until a release: tag it, and the rollout
 below carries the new pins out.
 

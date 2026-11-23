@@ -10,6 +10,7 @@ import { PATHSPEC_VERSION, PYYAML_VERSION, YAMLLINT_VERSION } from './guardrails
 import { canonBundles } from './testkit.ts';
 
 const ROOT = join(import.meta.dir, '..', '..', '..');
+const AUTOMERGE_PRESET = 'github>alxwlw/stack//renovate/automerge.json5#v1';
 
 // Renovate самого стека двигает пины канона. Пресет канона он подключать не должен: тот выключает
 // proto и каталог dev — ровно то, что здесь нужно поднимать.
@@ -46,9 +47,7 @@ function hits(pattern: string, file: string): boolean {
 test('свой renovate.json5: без пресета канона', () => {
 	// Пресет канона — любая ссылка на репо стека в extends, кроме пресета automerge (он подключён, как у потребителей).
 	expect(
-		(ownRenovate.extends ?? []).some(
-			(e) => e.includes('alxwlw/stack') && !e.includes('renovate/automerge.json5'),
-		),
+		(ownRenovate.extends ?? []).some((e) => e.includes('alxwlw/stack') && e !== AUTOMERGE_PRESET),
 	).toBe(false);
 });
 
