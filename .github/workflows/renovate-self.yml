@@ -8,7 +8,7 @@ on:
         type: choice
         options: [info, debug]
         default: info
-# GITHUB_TOKEN не нужен (Renovate идёт под RENOVATE_TOKEN), но renovate.yml просит contents: read, а права
+# GITHUB_TOKEN не нужен (Renovate идёт под токеном GitHub App, запасной путь — RENOVATE_TOKEN), но renovate.yml просит contents: read, а права
 # вызывающего — потолок вызываемого: с меньшими workflow недействителен.
 permissions:
   contents: read
@@ -22,4 +22,6 @@ jobs:
     with:
       log-level: ${{ inputs.log-level || 'info' }}
     secrets:
+      app-id: ${{ secrets.RENOVATE_APP_ID }}
+      app-private-key: ${{ secrets.RENOVATE_APP_PRIVATE_KEY }}
       token: ${{ secrets.RENOVATE_TOKEN }}

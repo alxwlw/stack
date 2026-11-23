@@ -49,19 +49,68 @@ test('reusable check.yml: шаг history — только pull_request, межд
 });
 
 // Reusable workflow, который зовёт канон-файл packages/stack/canon/files/workflow-renovate.yml.
-test('reusable renovate.yml: workflow_call с обязательным token, action на полной версии', () => {
+test('reusable renovate.yml: секреты необязательны, action на полной версии', () => {
 	const wf = parseYaml(
 		readFileSync(join(ROOT, '.github', 'workflows', 'renovate.yml'), 'utf8'),
 	) as {
-		on?: { workflow_call?: { secrets?: { token?: { required?: boolean } } } };
+		on?: { workflow_call?: { secrets?: Record<string, { required?: boolean }> } };
 		jobs?: Record<string, { steps?: { uses?: string; env?: Record<string, string> }[] }>;
 	};
-	expect(wf.on?.workflow_call?.secrets?.token?.required).toBe(true);
+	const secrets = wf.on?.workflow_call?.secrets ?? {};
+	expect(Object.keys(secrets)).toStrictEqual([
+		'token',
+		'app-id',
+		'app-private-key',
+		'registry-token',
+	]);
+	for (const [name, secret] of Object.entries(secrets))
+		expect({ name, required: secret.required }).toEqual({ name, required: false });
 	const steps = Object.values(wf.jobs ?? {}).flatMap((j) => j.steps ?? []);
 	const action = steps.find((s) => s.uses?.startsWith('renovatebot/github-action@'));
 	// У action нет плавающего мажорного тега: @v46 не резолвится.
 	expect(action?.uses).toMatch(/^renovatebot\/github-action@v\d+\.\d+\.\d+$/);
 	expect(action?.env?.RENOVATE_REPOSITORIES).toBe('${{ github.repository }}');
+});
+
+test('reusable renovate.yml: токен GitHub App при непустом app-id, иначе token', () => {
+	const wf = parseYaml(
+		readFileSync(join(ROOT, '.github', 'workflows', 'renovate.yml'), 'utf8'),
+	) as {
+		jobs?: Record<
+			string,
+			{
+				env?: Record<string, string>;
+				steps?: {
+					id?: string;
+					uses?: string;
+					if?: string;
+					run?: string;
+					with?: Record<string, string>;
+				}[];
+			}
+		>;
+	};
+	const job = Object.values(wf.jobs ?? {})[0];
+	const steps = job?.steps ?? [];
+	expect(job?.env?.APP_ID).toBe('${{ secrets.app-id }}');
+	const app = steps.find((s) => s.uses?.startsWith('actions/create-github-app-token@'));
+	expect(app?.uses).toBe('actions/create-github-app-token@v3');
+	expect(app?.id).toBe('app-token');
+	expect(app?.if).toBe("env.APP_ID != ''");
+	expect(app?.with).toEqual({
+		'app-id': '${{ secrets.app-id }}',
+		'private-key': '${{ secrets.app-private-key }}',
+		owner: '${{ github.repository_owner }}',
+		repositories: '${{ github.event.repository.name }}',
+	});
+	const action = steps.find((s) => s.uses?.startsWith('renovatebot/github-action@'));
+	expect(action?.with?.token).toBe('${{ steps.app-token.outputs.token || secrets.token }}');
+	// Проверка «есть хоть один токен» идёт раньше и заканчивается ошибкой.
+	const guard = steps.findIndex((s) => s.run?.includes('exit 1'));
+	expect(guard).toBeGreaterThanOrEqual(0);
+	expect(guard).toBeLessThan(steps.findIndex((s) => s.id === 'app-token'));
+	expect(steps[guard]?.run).toContain('$APP_ID');
+	expect(steps[guard]?.run).toContain('$PAT');
 });
 
 type RegistryWf = {

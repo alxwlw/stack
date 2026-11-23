@@ -12,8 +12,14 @@ on:
         default: ''
     secrets:
       token:
-        description: токен, от имени которого Renovate клонирует репо и открывает PR
-        required: true
+        description: запасной токен (PAT), когда нет GitHub App; у fine-grained PAT нет права Checks, и Renovate с ним не вливает
+        required: false
+      app-id:
+        description: ID GitHub App, от имени которого Renovate клонирует репо и открывает PR; имеет приоритет над token
+        required: false
+      app-private-key:
+        description: приватный ключ той же GitHub App
+        required: false
       registry-token:
         description: токен чтения приватного реестра; нужен вместе с входом registry
         required: false
@@ -23,16 +29,34 @@ jobs:
   renovate:
     runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
     timeout-minutes: 60
+    env:
+      # Секреты в if: недоступны, поэтому шаг токена App смотрит на эту переменную.
+      APP_ID: ${{ secrets.app-id }}
+      PAT: ${{ secrets.token }}
     # cron и ручной запуск на один репо гонялись бы за одни ветки.
     concurrency:
       group: renovate-${{ github.repository }}
       cancel-in-progress: false
     steps:
+      - name: Нужен токен
+        run: |
+          if [ -z "$APP_ID" ] && [ -z "$PAT" ]; then
+            echo '::error::нет ни app-id (RENOVATE_APP_ID), ни token (RENOVATE_TOKEN): Renovate не под чем запускать'
+            exit 1
+          fi
+      - uses: actions/create-github-app-token@v3
+        id: app-token
+        if: env.APP_ID != ''
+        with:
+          app-id: ${{ secrets.app-id }}
+          private-key: ${{ secrets.app-private-key }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
       # Без checkout: action запускает образ renovate/renovate, тот сам клонирует репо по токену
       # и читает его конфиг. Полная версия: плавающего @v46 у action нет.
       - uses: renovatebot/github-action@v46.3.14
         with:
-          token: ${{ secrets.token }}
+          token: ${{ steps.app-token.outputs.token || secrets.token }}
         env:
           RENOVATE_REPOSITORIES: ${{ github.repository }}
           LOG_LEVEL: ${{ inputs.log-level }}
