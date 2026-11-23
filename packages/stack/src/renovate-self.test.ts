@@ -44,8 +44,12 @@ function hits(pattern: string, file: string): boolean {
 }
 
 test('свой renovate.json5: без пресета канона', () => {
-	// Любая ссылка на репо стека в extends (с тегом или без) — это пресет канона.
-	expect((ownRenovate.extends ?? []).some((e) => e.includes('alxwlw/stack'))).toBe(false);
+	// Пресет канона — любая ссылка на репо стека в extends, кроме пресета automerge (он подключён, как у потребителей).
+	expect(
+		(ownRenovate.extends ?? []).some(
+			(e) => e.includes('alxwlw/stack') && !e.includes('renovate/automerge.json5'),
+		),
+	).toBe(false);
 });
 
 test('свой renovate.json5: свои пакеты и ссылки на стек выключены одним правилом', () => {

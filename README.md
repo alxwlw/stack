@@ -218,13 +218,14 @@ repeats the same check for every project.
 Renovate is the canon's only dependency bot; Dependabot is no longer seeded. `stack sync` brings two
 files:
 
-- `.github/workflows/renovate.yml` (canon, overwritten) runs Renovate every Monday at 06:00 UTC and on
+- `.github/workflows/renovate.yml` (canon, overwritten) runs Renovate every day at 06:00 UTC and on
   demand (`workflow_dispatch`, with a `debug` log level when a run needs explaining). It calls the
   reusable `alxwlw/stack/.github/workflows/renovate.yml@v1` and needs a `RENOVATE_TOKEN` secret
   that can push branches and open PRs (contents, pull requests, issues, workflows: write). The job
   runs on `vars.RUNNER_LABEL`, or `ubuntu-latest` when the variable isn't set.
-- `renovate.json5` (seeded once, yours to edit) extends `config:recommended` and the canon preset
-  `github>alxwlw/stack//renovate/canon.json5#v1`. It isn't seeded when the repo already has a
+- `renovate.json5` (seeded once, yours to edit) extends `config:recommended`, the canon preset
+  `github>alxwlw/stack//renovate/canon.json5#v1` and the automerge preset
+  `github>alxwlw/stack//renovate/automerge.json5#v1` (see Automerge below). It isn't seeded when the repo already has a
   Renovate config under any name Renovate looks for (`renovate.json`, `.github/renovate.json5`, …).
 
 The preset turns Renovate off for everything `stack sync` moves: `@alxwlw/*` packages and
@@ -270,6 +271,9 @@ Upgrading an existing consumer: on the first `stack/v<version>` PR after the mov
 on `renovate-preset` if the repo already has its own Renovate config without the preset (add
 `github>alxwlw/stack//renovate/canon.json5#v1` to its `extends`), and on `dependabot-config` if
 `.github/dependabot.yml` (or `.yaml`) exists (move its rules into the Renovate config and delete the file).
+The seeded `renovate.json5` is never overwritten, so a repo that already has it gets the automerge preset only
+when you add `github>alxwlw/stack//renovate/automerge.json5#v1` to its `extends` by hand; the daily schedule
+arrives with the canon workflow.
 
 Upgrading to the release that checks pin copies: the first `stack/v<version>` PR rewrites the Dockerfiles and
 workflows whose copies lag behind `.prototools`. The rewrite can change a major inside an image (node, or the
@@ -722,7 +726,7 @@ Step by step: [docs/release.md](docs/release.md).
 
 ### Keeping the canon current
 
-Renovate runs on this repo too (`.github/workflows/renovate-self.yml`, Mondays 06:00 UTC, needs a
+Renovate runs on this repo too (`.github/workflows/renovate-self.yml`, every day at 06:00 UTC, needs a
 `RENOVATE_TOKEN` secret). Unlike a consumer it does not extend the canon preset — moving the
 canon's pins is its job. One version lives in several places here: the canon
 (`packages/stack/canon/files/prototools`, `canon/catalogs.json`) and this repo's own toolchain
@@ -730,7 +734,8 @@ canon's pins is its job. One version lives in several places here: the canon
 dependency in both places at once, because the dogfood tests fail when the root and the canon
 disagree:
 minor and patch bumps land in the `canon pins` PR, major bumps in their own `major-canon-pins` PR.
-Merge them one at a time; Renovate rebases the other on its next run or on a manual
+A `canon pins` PR that holds only patch bumps is merged by Renovate itself (this repo extends the automerge preset);
+merge the others one at a time by hand. Renovate rebases the other on its next run or on a manual
 `workflow_dispatch`. Merging changes nothing for consumers until a release: tag it, and the rollout
 below carries the new pins out.
 

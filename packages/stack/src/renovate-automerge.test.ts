@@ -1,8 +1,11 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { expect, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import JSON5 from 'json5';
+import { parse as parseYaml } from 'yaml';
+
+import { STACK_RENOVATE_PRESET } from './deps.ts';
 
 // Пресет автослива живёт в корне репо рядом с каноном и подключается как
 // github>alxwlw/stack//renovate/automerge.json5#v1 (строку берут тесты шаблона и своего конфига).
@@ -105,4 +108,30 @@ test('automerge: выдержка — только с timestamp-optional', () =>
 		expect(r.minimumReleaseAgeBehaviour).toBe('timestamp-optional');
 	}
 	expect(checked).toBeGreaterThan(0);
+});
+
+describe('подключение', () => {
+	test('шаблон renovate.json5: config:recommended, пресет канона, затем automerge', () => {
+		const t = JSON5.parse(
+			readFileSync(join(ROOT, 'packages/stack/canon/files/renovate.template.json5'), 'utf8'),
+		);
+		expect(t.extends).toStrictEqual([
+			'config:recommended',
+			STACK_RENOVATE_PRESET,
+			AUTOMERGE_PRESET,
+		]);
+	});
+	test('свой renovate.json5: automerge последним в extends', () => {
+		const own = JSON5.parse(readFileSync(join(ROOT, 'renovate.json5'), 'utf8'));
+		expect(own.extends.at(-1)).toBe(AUTOMERGE_PRESET);
+	});
+	test('renovate каждый день — у канона и у себя одно расписание', () => {
+		for (const f of [
+			'packages/stack/canon/files/workflow-renovate.yml',
+			'.github/workflows/renovate-self.yml',
+		]) {
+			const wf = parseYaml(readFileSync(join(ROOT, f), 'utf8'));
+			expect(wf.on.schedule).toStrictEqual([{ cron: '0 6 * * *' }]);
+		}
+	});
 });

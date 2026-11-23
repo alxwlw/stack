@@ -1,8 +1,8 @@
 // Renovate самого alxwlw/stack: свои зависимости и пины канона. Пресет канона здесь не подключён —
-// он выключает ровно то, что этот репо двигает. Обновления пинов → merge → тег → publish → rollout.
+// он выключает ровно то, что этот репо двигает; пресет automerge подключён, как у потребителей. Обновления пинов → merge → тег → publish → rollout.
 {
 	$schema: 'https://docs.renovatebot.com/renovate-schema.json',
-	extends: ['config:recommended'],
+	extends: ['config:recommended', 'github>alxwlw/stack//renovate/automerge.json5#v1'],
 	// Заменяет, а не дополняет ignorePaths из config:recommended.
 	// fixtures/ — семя для тестов, версии в нём не двигаются.
 	ignorePaths: ['**/node_modules/**', 'fixtures/**'],
