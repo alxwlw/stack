@@ -291,6 +291,33 @@ tools by hand (the commands of [Guardrails](#guardrails)), fix what they report 
 tool itself, and add the keys of [Workflow hygiene](#workflow-hygiene) to your own workflow files. None of the
 findings can be held by an exception.
 
+### Automerge
+
+An optional second preset lets Renovate merge the safe updates itself. Add it after the canon preset:
+
+```json5
+extends: [
+  'config:recommended',
+  'github>alxwlw/stack//renovate/canon.json5#v1',
+  'github>alxwlw/stack//renovate/automerge.json5#v1',
+],
+```
+
+What merges: `patch` updates of any dependency, `minor` updates of `devDependencies` and of GitHub Actions
+(only when the current version is 1 or later), and lock file maintenance where the repo enables it. What does not:
+`major` updates, `minor` updates of runtime dependencies, and any `0.x` version, where a minor may break.
+
+Renovate merges the pull request itself (not GitHub auto-merge) on its next run, and only when every check of the
+branch is green. A branch without checks is not merged. A group merges whole or not at all: every update in it must
+qualify (Renovate's `lib/workers/repository/updates/generate.ts`). Schedule, groups and `ignorePaths` stay with the repo.
+
+Updates wait 3 days after the release before they merge, a guard against freshly published compromised versions.
+A release with no timestamp (images on ghcr.io or quay.io, some private registries) has no wait and is not held back.
+The branch is rebased only on a conflict, not each time the base moves: otherwise, with automerge on, Renovate
+rebases it on every run and a busy `main` outruns the merge (Renovate's `lib/workers/repository/update/branch/reuse.ts`).
+Renovate merges at most two pull requests per run in a repo: after a merge it restarts the repo job once
+(`lib/workers/repository/index.ts`, "Restarting repository job after automerge result").
+
 ## Exceptions
 
 A drifted or missing canon **file**, a gitleaks, oxlint or tsconfig seed that no longer extends the canon, a catalog entry that's missing or off-version, or a Dockerfile or workflow
