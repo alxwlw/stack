@@ -222,7 +222,7 @@ files:
   demand (`workflow_dispatch`, with a `debug` log level when a run needs explaining). It calls the
   reusable `alxwlw/stack/.github/workflows/renovate.yml@v1` under a GitHub App (`RENOVATE_APP_ID`, `RENOVATE_APP_PRIVATE_KEY`;
   Repository: Checks, Commit statuses, Contents, Issues, Pull requests, Workflows read and write; Administration, Dependabot
-  alerts, Metadata read; Organization: Members read). Fallback `RENOVATE_TOKEN`: a fine-grained PAT has no Checks permission, so Renovate sees no check runs and merges nothing.
+  alerts, Metadata read; Organization: Members read). Fallback `RENOVATE_TOKEN`: a fine-grained PAT has no Checks permission, so under it Renovate works but auto-merge is switched off by force. The workflow sets `RENOVATE_IGNORE_PR_AUTHOR`, so PRs of the previous account stay managed after the switch.
 - `renovate.json5` (seeded once, yours to edit) extends `config:recommended`, the canon preset
   `github>alxwlw/stack//renovate/canon.json5#v1` and the automerge preset
   `github>alxwlw/stack//renovate/automerge.json5#v1` (see Automerge below). It isn't seeded when the repo already has a
@@ -326,7 +326,7 @@ Updates wait 3 days after the release before they merge, a guard against freshly
 wait: Renovate leaves its age to the package manager, so newer transitive versions are held only by the package manager's
 own release age. A release with no timestamp (images on ghcr.io or quay.io, some private registries) has no wait and is
 not held back. Renovate reads each branch's check runs before it merges; a fine-grained PAT has no Checks permission, so under
-`RENOVATE_TOKEN` it sees none and the PR never merges: use the GitHub App above. The branch is rebased only on a conflict,
+`RENOVATE_TOKEN` the workflow switches auto-merge off by force: use the GitHub App above. The branch is rebased only on a conflict,
 not each time the base moves: otherwise Renovate rebases it on every run and a busy `main` outruns the merge (Renovate
 source, branch reuse: `determineRebaseWhenValue`). It merges at most two PRs per run in a repo: after a merge it restarts
 the repo job once (Renovate source, repository run: "Restarting repository job after automerge result").

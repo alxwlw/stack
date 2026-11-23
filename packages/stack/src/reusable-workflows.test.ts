@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -86,6 +87,7 @@ test('reusable renovate.yml: токен GitHub App при непустом app-i
 					if?: string;
 					run?: string;
 					with?: Record<string, string>;
+					env?: Record<string, string>;
 				}[];
 			}
 		>;
@@ -105,12 +107,33 @@ test('reusable renovate.yml: токен GitHub App при непустом app-i
 	});
 	const action = steps.find((s) => s.uses?.startsWith('renovatebot/github-action@'));
 	expect(action?.with?.token).toBe('${{ steps.app-token.outputs.token || secrets.token }}');
-	// Проверка «есть хоть один токен» идёт раньше и заканчивается ошибкой.
+	// Шаг-проверку выполняем: ошибка только когда нет ни app-id, ни token.
+	expect(job?.env?.PAT).toBe('${{ secrets.token }}');
 	const guard = steps.findIndex((s) => s.run?.includes('exit 1'));
 	expect(guard).toBeGreaterThanOrEqual(0);
 	expect(guard).toBeLessThan(steps.findIndex((s) => s.id === 'app-token'));
-	expect(steps[guard]?.run).toContain('$APP_ID');
-	expect(steps[guard]?.run).toContain('$PAT');
+	const run = (appId: string, pat: string) => {
+		const r = spawnSync('bash', ['-e', '-c', steps[guard]?.run ?? ''], {
+			env: { PATH: process.env.PATH ?? '', APP_ID: appId, PAT: pat },
+			encoding: 'utf8',
+		});
+		return { rc: r.status, error: r.stdout.includes('::error::') };
+	};
+	expect(run('x', 'y')).toEqual({ rc: 0, error: false });
+	expect(run('x', '')).toEqual({ rc: 0, error: false });
+	expect(run('', 'y')).toEqual({ rc: 0, error: false });
+	expect(run('', '')).toEqual({ rc: 1, error: true });
+	// Без App auto-merge выключен принудительно: RENOVATE_FORCE — последнее packageRule и перекрывает пресет.
+	const off = steps.find((s) => s.run?.includes('RENOVATE_FORCE'));
+	expect(off?.if).toBe("steps.app-token.outputs.token == ''");
+	expect(off?.run).toContain('echo \'RENOVATE_FORCE={"automerge":false}\' >> "$GITHUB_ENV"');
+	expect(off?.run).toContain('::warning::');
+	expect(steps.indexOf(off as never)).toBeGreaterThan(steps.findIndex((s) => s.id === 'app-token'));
+	expect(steps.indexOf(off as never)).toBeLessThan(
+		steps.findIndex((s) => s.uses?.startsWith('renovatebot/github-action@')),
+	);
+	// Токен репо меняется между App и PAT: PR и issues прежней учётной записи остаются под управлением.
+	expect(action?.env?.RENOVATE_IGNORE_PR_AUTHOR).toBe('true');
 });
 
 type RegistryWf = {

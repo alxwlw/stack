@@ -2,7 +2,7 @@
 # Needs a GitHub App: secrets RENOVATE_APP_ID and RENOVATE_APP_PRIVATE_KEY. App permissions: Repository: Checks, Commit
 # statuses, Contents, Issues, Pull requests, Workflows — read and write; Administration, Dependabot alerts, Metadata — read;
 # Organization: Members — read. Fallback without an App: the RENOVATE_TOKEN secret (a PAT). A fine-grained PAT has no
-# Checks permission, so Renovate cannot see check runs with it and auto-merge never fires.
+# Checks permission, so Renovate cannot see check runs with it: under the PAT auto-merge is switched off by force.
 # Optional: STACK_REGISTRY variable + STACK_REGISTRY_TOKEN secret for a private npm registry.
 name: renovate
 on:

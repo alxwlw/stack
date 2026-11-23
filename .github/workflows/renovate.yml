@@ -12,7 +12,7 @@ on:
         default: ''
     secrets:
       token:
-        description: запасной токен (PAT), когда нет GitHub App; у fine-grained PAT нет права Checks, и Renovate с ним не вливает
+        description: запасной токен (PAT), когда нет GitHub App; у fine-grained PAT нет права Checks, поэтому под ним auto-merge выключен принудительно
         required: false
       app-id:
         description: ID GitHub App, от имени которого Renovate клонирует репо и открывает PR; имеет приоритет над token
@@ -52,6 +52,13 @@ jobs:
           private-key: ${{ secrets.app-private-key }}
           owner: ${{ github.repository_owner }}
           repositories: ${{ github.event.repository.name }}
+      # Под PAT Renovate не видит check runs и вливал бы по одному commit status (например Vercel). force — последнее
+      # packageRule на все пакеты, оно перекрывает пресет auto-merge.
+      - name: Без GitHub App auto-merge выключен
+        if: steps.app-token.outputs.token == ''
+        run: |
+          echo 'RENOVATE_FORCE={"automerge":false}' >> "$GITHUB_ENV"
+          echo '::warning::нет GitHub App: Renovate идёт под RENOVATE_TOKEN, auto-merge выключен'
       # Без checkout: action запускает образ renovate/renovate, тот сам клонирует репо по токену
       # и читает его конфиг. Полная версия: плавающего @v46 у action нет.
       - uses: renovatebot/github-action@v46.3.14
@@ -60,5 +67,8 @@ jobs:
         env:
           RENOVATE_REPOSITORIES: ${{ github.repository }}
           LOG_LEVEL: ${{ inputs.log-level }}
+          # Токен репо может меняться между App и PAT: без этого Renovate видит PR и issues только своего автора и теряет
+          # открытые PR и Dependency Dashboard прежней учётной записи.
+          RENOVATE_IGNORE_PR_AUTHOR: 'true'
           # Host rule приватного реестра только при непустом registry; иначе пустой список.
           RENOVATE_HOST_RULES: ${{ inputs.registry != '' && format('[{{"matchHost":"{0}","hostType":"npm","token":"{1}"}}]', inputs.registry, secrets.registry-token) || '[]' }}
