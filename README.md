@@ -237,6 +237,13 @@ would fight: Renovate bumps a pin, the next `stack sync` reverts it. The preset 
 floating `v1` tag, so a release updates it everywhere without a PR: the update arrives once the release moves
 the `v1` tag, and until then `#v1` and `@v1` still point at the previous release.
 
+One rule is not a switch-off: npm versions younger than a day are not proposed (`minimumReleaseAge: '1 day'`).
+The canon's pnpm 12 runs in the strict mode with that same age and refuses to install a fresher version, so a
+Renovate PR for it would leave the lock file stale and fail its checks. The rule follows the pnpm pin of the canon
+and is moot below pnpm 12. The automerge preset, which comes later in `extends`, raises the age to 3 days for the
+updates it merges. The preset also turns off Renovate's `renovate/stability-days` commit status
+(`statusCheckNames`), since `RENOVATE_TOKEN` has no right to write statuses and the run would fail with a 403.
+
 For the `node` and `oven/bun` images the preset is wider than `sync`: Renovate also stops moving the ones
 `sync` does not rewrite — an image pinned by digest, a tag built from an `ARG`, an image named in
 `COPY --from`, and any image in a file `sync` does not read (a Dockerfile in a hidden directory such as

@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { expect, test } from 'bun:test';
 import JSON5 from 'json5';
 
-import { readCanonSource } from './canon.ts';
+import { parsePins, readCanonSource } from './canon.ts';
 
 // Пресет Renovate живёт в корне репо, а не в npm-пакете: потребитель подключает его как
 // github>alxwlw/stack//renovate/canon.json5#v1, Renovate читает файл с GitHub по тегу.
@@ -16,6 +16,8 @@ interface Rule {
 	matchDepNames?: string[];
 	matchDepTypes?: string[];
 	matchManagers?: string[];
+	matchDatasources?: string[];
+	minimumReleaseAge?: string;
 	enabled?: boolean;
 }
 
@@ -23,6 +25,7 @@ const preset = JSON5.parse(readFileSync(join(ROOT, 'renovate', 'canon.json5'), '
 	packageRules?: Rule[];
 	extends?: unknown;
 	ignorePaths?: unknown;
+	statusCheckNames?: unknown;
 };
 const rules = preset.packageRules ?? [];
 const matchKeys = (r: Rule): string[] => Object.keys(r).filter((k) => k.startsWith('match'));
@@ -87,7 +90,33 @@ test('пресет: выключает версии node, bun и proto во вх
 	});
 });
 
-test('пресет: каждое правило только выключает — других решений за потребителя он не принимает', () => {
+// Выдержку npm диктует pnpm канона: с явным minimumReleaseAge он не ставит версию моложе суток, а Renovate
+// без правила предложил бы её сразу, и лок не обновился бы. Это единственное правило не про `enabled: false`.
+const isAgeRule = (r: Rule): boolean => r.minimumReleaseAge !== undefined;
+
+test('пресет: npm — выдержка сутки, как minimumReleaseAge pnpm', () => {
+	expect(rules.filter(isAgeRule)).toHaveLength(1);
+	expect(rules.find(isAgeRule)).toStrictEqual({
+		description: expect.any(String),
+		matchDatasources: ['npm'],
+		minimumReleaseAge: '1 day',
+	});
+});
+
+test('пресет: выдержка опирается на pnpm 12+ канона', () => {
+	const pnpm = parsePins(
+		readFileSync(join(ROOT, 'packages', 'stack', 'canon', 'files', 'prototools'), 'utf8'),
+	).pnpm;
+	expect(pnpm).toBeDefined();
+	expect(Number.parseInt(pnpm ?? '', 10)).toBeGreaterThanOrEqual(12);
+});
+
+// У RENOVATE_TOKEN нет права на commit statuses: статус renovate/stability-days даёт 403 и Renovate бросает прогон.
+test('пресет: статус выдержки выключен', () => {
+	expect(preset.statusCheckNames).toStrictEqual({ minimumReleaseAge: null });
+});
+
+test('пресет: каждое правило, кроме выдержки, только выключает — других решений за потребителя он не принимает', () => {
 	const allowed = new Set([
 		'description',
 		'matchPackageNames',
@@ -97,11 +126,13 @@ test('пресет: каждое правило только выключает 
 		'enabled',
 	]);
 	expect(rules.length).toBeGreaterThan(0);
-	for (const r of rules) {
+	const disabling = rules.filter((r) => !isAgeRule(r));
+	expect(disabling.length).toBe(rules.length - 1);
+	for (const r of disabling) {
 		expect(r.enabled).toBe(false);
 		for (const key of Object.keys(r)) expect(allowed.has(key)).toBe(true);
 	}
-	const counts = rules.map((r) => matchKeys(r).length);
+	const counts = disabling.map((r) => matchKeys(r).length);
 	for (const n of counts) {
 		expect(n).toBeGreaterThanOrEqual(1);
 		expect(n).toBeLessThanOrEqual(2);
