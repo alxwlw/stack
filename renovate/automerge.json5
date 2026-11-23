@@ -3,7 +3,7 @@
 // 'github>alxwlw/stack//renovate/automerge.json5#v1'].
 // Вливает сам Renovate на следующем прогоне, когда все проверки ветки зелёные; ветку без проверок он не вливает.
 // Не GitHub auto-merge: у веток нет обязательных проверок, а платформа вливает и без них.
-// Группа вливается, только если подходит каждое обновление в ней (исходник Renovate, generate.ts:
+// Группа вливается, только если подходит каждое обновление в ней (исходник Renovate, сборка групп:
 // `upgrades.every((upgrade) => upgrade.automerge)`).
 // Расписание, группы, ignorePaths, ignoreTests и extends остаются за потребителем.
 {
@@ -16,7 +16,7 @@
 	statusCheckNames: { minimumReleaseAge: null },
 	packageRules: [
 		{
-			description: 'Patch любой зависимости: выдержка 3 дня защищает от заражённых свежих релизов; timestamp-optional — иначе образы ghcr.io без метки времени не приходили бы вовсе; rebaseWhen conflicted — при auto Renovate с автослиянием пересобирает ветку при каждом отставании от базы (исходник Renovate, reuse.ts, determineRebaseWhenValue) и она не вливается',
+			description: 'Patch любой зависимости: выдержка 3 дня защищает от заражённых свежих релизов; timestamp-optional — иначе образы ghcr.io без метки времени не приходили бы вовсе; rebaseWhen conflicted — при auto Renovate с автослиянием пересобирает ветку при каждом отставании от базы (исходник Renovate, повторное использование ветки, determineRebaseWhenValue) и она не вливается',
 			matchUpdateTypes: ['patch'],
 			automerge: true,
 			minimumReleaseAge: '3 days',

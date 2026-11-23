@@ -309,14 +309,14 @@ What merges: `patch` updates of any dependency, `minor` updates of `devDependenc
 
 Renovate merges the pull request itself (not GitHub auto-merge) on its next run, and only when every check of the
 branch is green. A branch without checks is not merged. A group merges whole or not at all: every update in it must
-qualify (Renovate source: generate.ts, where an update group is built). Schedule, groups and `ignorePaths` stay with the repo.
+qualify (Renovate source, group generation: `upgrades.every((upgrade) => upgrade.automerge)`). Schedule, groups and `ignorePaths` stay with the repo.
 
 Updates wait 3 days after the release before they merge, a guard against freshly published compromised versions.
 A release with no timestamp (images on ghcr.io or quay.io, some private registries) has no wait and is not held back.
 The branch is rebased only on a conflict, not each time the base moves: otherwise, with automerge on, Renovate
-rebases it on every run and a busy `main` outruns the merge (Renovate source: reuse.ts, `determineRebaseWhenValue`).
+rebases it on every run and a busy `main` outruns the merge (Renovate source, branch reuse: `determineRebaseWhenValue`).
 Renovate merges at most two pull requests per run in a repo: after a merge it restarts the repo job once
-(Renovate source: repository index.ts, "Restarting repository job after automerge result").
+(Renovate source, repository run: "Restarting repository job after automerge result").
 
 ## Exceptions
 
