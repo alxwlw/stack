@@ -1,0 +1,155 @@
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+import { describe, expect, test } from 'bun:test';
+import JSON5 from 'json5';
+import { parse as parseYaml } from 'yaml';
+
+import { STACK_RENOVATE_PRESET } from './deps.ts';
+
+// Пресет автослива живёт в корне репо рядом с каноном и подключается как
+// github>alxwlw/stack//renovate/automerge.json5#v1 (строку берут тесты шаблона и своего конфига).
+const ROOT = join(import.meta.dir, '..', '..', '..');
+const AUTOMERGE_PRESET = 'github>alxwlw/stack//renovate/automerge.json5#v1';
+
+type Rule = Record<string, unknown> & {
+	automerge?: boolean;
+	matchUpdateTypes?: string[];
+	minimumReleaseAge?: string;
+	minimumReleaseAgeBehaviour?: string;
+};
+
+const source = readFileSync(join(ROOT, 'renovate', 'automerge.json5'), 'utf8');
+const preset = JSON5.parse(source) as Record<string, unknown> & {
+	packageRules?: Rule[];
+};
+const rules = preset.packageRules ?? [];
+
+test('automerge: верхний уровень — вливает Renovate, статус выдержки выключен, решений потребителя нет', () => {
+	expect(Object.keys(preset).sort()).toStrictEqual([
+		'$schema',
+		'automergeType',
+		'packageRules',
+		'platformAutomerge',
+		'statusCheckNames',
+	]);
+	// шапка файла называет строку подключения, которой пользуются потребители
+	expect(source).toContain(`'${AUTOMERGE_PRESET}'`);
+	expect(preset.platformAutomerge).toBe(false);
+	expect(preset.automergeType).toBe('pr');
+	expect(preset.statusCheckNames).toStrictEqual({ minimumReleaseAge: null });
+});
+
+test('automerge: правила целиком', () => {
+	const aged = {
+		minimumReleaseAge: '3 days',
+		minimumReleaseAgeBehaviour: 'timestamp-optional',
+		internalChecksFilter: 'strict',
+	};
+	expect(rules).toStrictEqual([
+		{
+			description: expect.any(String),
+			matchUpdateTypes: ['patch'],
+			automerge: true,
+			...aged,
+			rebaseWhen: 'conflicted',
+		},
+		{
+			description: expect.any(String),
+			matchDepTypes: ['devDependencies'],
+			matchUpdateTypes: ['minor'],
+			matchCurrentVersion: '!/^v?0\\./',
+			automerge: true,
+			...aged,
+			rebaseWhen: 'conflicted',
+		},
+		{
+			description: expect.any(String),
+			matchManagers: ['github-actions'],
+			matchDepTypes: ['action', 'workflow'],
+			matchUpdateTypes: ['minor'],
+			matchCurrentVersion: '!/^v?0\\./',
+			automerge: true,
+			...aged,
+			rebaseWhen: 'conflicted',
+		},
+		{
+			description: expect.any(String),
+			matchUpdateTypes: ['lockFileMaintenance'],
+			automerge: true,
+			rebaseWhen: 'conflicted',
+		},
+	]);
+});
+
+test('automerge: ни одно правило не вливает major', () => {
+	const merging = rules.filter((r) => r.automerge === true);
+	expect(merging.length).toBeGreaterThan(0);
+	for (const r of merging) {
+		expect(r.matchUpdateTypes?.length ?? 0).toBeGreaterThan(0);
+		expect(r.matchUpdateTypes).not.toContain('major');
+	}
+});
+
+test('automerge: правила не переопределяют способ вливания и проверки', () => {
+	const forbidden = [
+		'platformAutomerge',
+		'automergeType',
+		'ignoreTests',
+		'groupName',
+		'schedule',
+		'enabled',
+	];
+	for (const r of rules) {
+		expect(Object.keys(r).filter((k) => forbidden.includes(k))).toStrictEqual([]);
+	}
+});
+
+test('automerge: выдержка — только с timestamp-optional', () => {
+	let checked = 0;
+	for (const r of rules) {
+		if (r.minimumReleaseAge === undefined) continue;
+		checked++;
+		expect(r.minimumReleaseAgeBehaviour).toBe('timestamp-optional');
+	}
+	expect(checked).toBeGreaterThan(0);
+});
+
+test('CI: шаг «конфиги Renovate валидны» называет каждый renovate/*.json5', () => {
+	const ci = parseYaml(readFileSync(join(ROOT, '.github/workflows/ci.yml'), 'utf8'));
+	const step = (ci.jobs.ci.steps as { name?: string; run?: string }[]).find(
+		(s) => s.name === 'конфиги Renovate валидны',
+	);
+	expect(step?.run).toBeDefined();
+	const files = readdirSync(join(ROOT, 'renovate')).filter((f) => f.endsWith('.json5'));
+	expect(files).toContain('automerge.json5');
+	for (const f of files) {
+		expect(step?.run?.split(/\s+/)).toContain(`renovate/${f}`);
+	}
+});
+
+describe('подключение', () => {
+	test('шаблон renovate.json5: config:recommended, пресет канона, затем automerge', () => {
+		const t = JSON5.parse(
+			readFileSync(join(ROOT, 'packages/stack/canon/files/renovate.template.json5'), 'utf8'),
+		);
+		expect(t.extends).toStrictEqual([
+			'config:recommended',
+			STACK_RENOVATE_PRESET,
+			AUTOMERGE_PRESET,
+		]);
+	});
+	test('свой renovate.json5: automerge последним в extends', () => {
+		const own = JSON5.parse(readFileSync(join(ROOT, 'renovate.json5'), 'utf8'));
+		expect(own.extends.at(-1)).toBe(AUTOMERGE_PRESET);
+	});
+	test('renovate каждый день — у канона и у себя одно расписание', () => {
+		for (const f of [
+			'packages/stack/canon/files/workflow-renovate.yml',
+			'.github/workflows/renovate-self.yml',
+		]) {
+			const wf = parseYaml(readFileSync(join(ROOT, f), 'utf8'));
+			expect(wf.on.schedule).toStrictEqual([{ cron: '0 6 * * *' }]);
+		}
+	});
+});

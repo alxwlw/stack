@@ -1,9 +1,13 @@
 // Канон alxwlw/stack для Renovate: всё, что двигает `stack sync`, бот у потребителя не трогает —
 // иначе его PR разводят репо с каноном, а следующий sync откатывает их обратно.
 // Подключение: extends: ['config:recommended', 'github>alxwlw/stack//renovate/canon.json5#v1'].
-// Только `enabled: false`: группы, расписание, ignorePaths и прочее остаются за потребителем.
+// Только `enabled: false` и выдержка npm, которую диктует pnpm канона: группы, расписание, ignorePaths и прочее
+// остаются за потребителем.
 {
 	$schema: 'https://docs.renovatebot.com/renovate-schema.json',
+	// У RENOVATE_TOKEN нет права на commit statuses: статус renovate/stability-days даёт 403,
+	// и Renovate бросает весь прогон. Выдержка работает и без статуса.
+	statusCheckNames: { minimumReleaseAge: null },
 	packageRules: [
 		{
 			description: 'Пакеты канона и ссылки на workflow/action стека (alxwlw/stack/...@v1) двигает stack sync',
@@ -31,6 +35,11 @@
 			matchDepTypes: ['uses-with'],
 			matchDepNames: ['node', 'bun', 'moonrepo/proto'],
 			enabled: false,
+		},
+		{
+			description: 'Где pnpm-workspace.yaml сам задаёт minimumReleaseAge (строгий режим), pnpm 12 не ставит npm-версию моложе этого срока: Renovate не предлагает её раньше, иначе лок не обновится и PR покраснеет; без явного значения встроенные сутки pnpm нестрогие и откатываются на прежнюю версию',
+			matchDatasources: ['npm'],
+			minimumReleaseAge: '1 day',
 		},
 	],
 }

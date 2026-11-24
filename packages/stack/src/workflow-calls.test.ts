@@ -204,8 +204,18 @@ test('проводка канон-файлов: токен Renovate и базо�
 	const job = (src: string, name: string) =>
 		(parseYaml(canonEntries.find((e) => e.src === src)?.content ?? '') as Workflow).jobs?.[name];
 	expect(job('files/workflow-renovate.yml', 'renovate')?.secrets).toEqual({
+		'app-id': '${{ secrets.RENOVATE_APP_ID }}',
+		'app-private-key': '${{ secrets.RENOVATE_APP_PRIVATE_KEY }}',
 		token: '${{ secrets.RENOVATE_TOKEN }}',
 		'registry-token': '${{ secrets.STACK_REGISTRY_TOKEN }}',
+	});
+	const self = (
+		parseYaml(readFileSync(join(ROOT, WORKFLOWS, 'renovate-self.yml'), 'utf8')) as Workflow
+	).jobs?.renovate;
+	expect(self?.secrets).toEqual({
+		'app-id': '${{ secrets.RENOVATE_APP_ID }}',
+		'app-private-key': '${{ secrets.RENOVATE_APP_PRIVATE_KEY }}',
+		token: '${{ secrets.RENOVATE_TOKEN }}',
 	});
 	for (const [src, name] of [
 		['files/workflow-stack-check.yml', 'check'],

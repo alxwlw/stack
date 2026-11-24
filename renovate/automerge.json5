@@ -1,0 +1,57 @@
+// Автослив alxwlw/stack для Renovate: patch, minor dev-зависимостей и actions от версии 1, lock file maintenance.
+// Подключение после пресета канона: extends: ['config:recommended', 'github>alxwlw/stack//renovate/canon.json5#v1',
+// 'github>alxwlw/stack//renovate/automerge.json5#v1'].
+// Вливает сам Renovate на следующем прогоне, когда все проверки ветки зелёные; ветку без проверок он не вливает.
+// Не GitHub auto-merge: у веток нет обязательных проверок, а платформа вливает и без них.
+// Группа вливается, только если подходит каждое обновление в ней (исходник Renovate, сборка групп:
+// `upgrades.every((upgrade) => upgrade.automerge)`).
+// Расписание, группы, ignorePaths, ignoreTests и extends остаются за потребителем.
+{
+	$schema: 'https://docs.renovatebot.com/renovate-schema.json',
+	// Вливает Renovate, а не платформа; способ задан здесь, правила его не переопределяют.
+	platformAutomerge: false,
+	automergeType: 'pr',
+	// У RENOVATE_TOKEN нет права на commit statuses: статус renovate/stability-days даёт 403,
+	// и Renovate бросает весь прогон. Выдержка работает и без статуса.
+	statusCheckNames: { minimumReleaseAge: null },
+	packageRules: [
+		{
+			description: 'Patch любой зависимости: выдержка 3 дня защищает от заражённых свежих релизов; internalChecksFilter strict — выдержка держит ветку, даже если потребитель ослабил фильтр; timestamp-optional — иначе образы ghcr.io без метки времени не приходили бы вовсе; rebaseWhen conflicted — при auto Renovate с автослиянием пересобирает ветку при каждом отставании от базы (исходник Renovate, повторное использование ветки, determineRebaseWhenValue) и она не вливается',
+			matchUpdateTypes: ['patch'],
+			automerge: true,
+			minimumReleaseAge: '3 days',
+			minimumReleaseAgeBehaviour: 'timestamp-optional',
+			internalChecksFilter: 'strict',
+			rebaseWhen: 'conflicted',
+		},
+		{
+			description: 'Minor devDependencies от версии 1 (в 0.x minor ломает совместимость); выдержка 3 дня, timestamp-optional, internalChecksFilter strict и rebaseWhen conflicted — как у patch',
+			matchDepTypes: ['devDependencies'],
+			matchUpdateTypes: ['minor'],
+			matchCurrentVersion: '!/^v?0\\./',
+			automerge: true,
+			minimumReleaseAge: '3 days',
+			minimumReleaseAgeBehaviour: 'timestamp-optional',
+			internalChecksFilter: 'strict',
+			rebaseWhen: 'conflicted',
+		},
+		{
+			description: 'Minor GitHub Actions и reusable workflows от версии 1 (в 0.x minor ломает совместимость); входы with, образы container и services, раннеры не затрагиваются; выдержка 3 дня, timestamp-optional, internalChecksFilter strict и rebaseWhen conflicted — как у patch',
+			matchManagers: ['github-actions'],
+			matchDepTypes: ['action', 'workflow'],
+			matchUpdateTypes: ['minor'],
+			matchCurrentVersion: '!/^v?0\\./',
+			automerge: true,
+			minimumReleaseAge: '3 days',
+			minimumReleaseAgeBehaviour: 'timestamp-optional',
+			internalChecksFilter: 'strict',
+			rebaseWhen: 'conflicted',
+		},
+		{
+			description: 'Lock file maintenance там, где потребитель его включил; выдержки 3 дня здесь нет: Renovate не применяет minimumReleaseAge к lock file maintenance и отдаёт возраст менеджеру пакетов, так что свежие транзитивные версии удерживает только его собственная выдержка; rebaseWhen conflicted — как у patch',
+			matchUpdateTypes: ['lockFileMaintenance'],
+			automerge: true,
+			rebaseWhen: 'conflicted',
+		},
+	],
+}

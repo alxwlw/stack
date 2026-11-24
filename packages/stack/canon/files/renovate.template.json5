@@ -1,6 +1,11 @@
 // Repo-local Renovate config — YOURS to edit (seeded once by `stack sync`, never overwritten).
 // Keep the canon preset in `extends`: it turns Renovate off for what `stack sync` moves.
+// The automerge preset lets Renovate merge patch updates and minor devDependencies/actions itself; drop it to merge by hand.
 {
 	$schema: 'https://docs.renovatebot.com/renovate-schema.json',
-	extends: ['config:recommended', 'github>alxwlw/stack//renovate/canon.json5#v1'],
+	extends: [
+		'config:recommended',
+		'github>alxwlw/stack//renovate/canon.json5#v1',
+		'github>alxwlw/stack//renovate/automerge.json5#v1',
+	],
 }
