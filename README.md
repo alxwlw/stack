@@ -222,7 +222,7 @@ files:
   demand (`workflow_dispatch`, with a `debug` log level when a run needs explaining). It calls the
   reusable `alxwlw/stack/.github/workflows/renovate.yml@v1` under a GitHub App (`RENOVATE_APP_ID`, `RENOVATE_APP_PRIVATE_KEY`;
   Repository: Checks, Commit statuses, Contents, Issues, Pull requests, Workflows read and write; Administration, Dependabot
-  alerts, Metadata read; Organization: Members read). Fallback `RENOVATE_TOKEN`: a fine-grained PAT has no Checks permission, so under it Renovate works but auto-merge is switched off by force. The workflow sets `RENOVATE_IGNORE_PR_AUTHOR`, so PRs of the previous account stay managed after the switch.
+  alerts, Metadata read; Organization: Members read). Fallback `RENOVATE_TOKEN`: a fine-grained PAT has no Checks permission, so under it Renovate works but auto-merge is switched off by force. The workflow sets `RENOVATE_IGNORE_PR_AUTHOR` and `RENOVATE_GIT_IGNORED_AUTHORS` (Renovate's default commit author), so PRs of the previous account stay managed after the switch and their branches don't read as edited by someone else.
 - `renovate.json5` (seeded once, yours to edit) extends `config:recommended`, the canon preset
   `github>alxwlw/stack//renovate/canon.json5#v1` and the automerge preset
   `github>alxwlw/stack//renovate/automerge.json5#v1` (see Automerge below). It isn't seeded when the repo already has a

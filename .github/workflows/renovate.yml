@@ -70,5 +70,8 @@ jobs:
           # Токен репо может меняться между App и PAT: без этого Renovate видит PR и issues только своего автора и теряет
           # открытые PR и Dependency Dashboard прежней учётной записи.
           RENOVATE_IGNORE_PR_AUTHOR: 'true'
+          # Под PAT Renovate коммитит автором по умолчанию, под App — ботом App: без этого бот считает ветки прежних PR
+          # чужой правкой («Edited/Blocked») и не пересобирает и не вливает их.
+          RENOVATE_GIT_IGNORED_AUTHORS: 'renovate@whitesourcesoftware.com'
           # Host rule приватного реестра только при непустом registry; иначе пустой список.
           RENOVATE_HOST_RULES: ${{ inputs.registry != '' && format('[{{"matchHost":"{0}","hostType":"npm","token":"{1}"}}]', inputs.registry, secrets.registry-token) || '[]' }}
