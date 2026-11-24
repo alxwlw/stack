@@ -248,7 +248,7 @@ importers:
   packages/stack:
     dependencies:
       '@alxwlw/repo-rules':
-        specifier: 1.18.1
+        specifier: 1.18.2
         version: link:../repo-rules
       json5:
         specifier: ^2.2.3
