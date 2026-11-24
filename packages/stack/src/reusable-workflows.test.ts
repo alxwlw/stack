@@ -134,6 +134,8 @@ test('reusable renovate.yml: токен GitHub App при непустом app-i
 	);
 	// Токен репо меняется между App и PAT: PR и issues прежней учётной записи остаются под управлением.
 	expect(action?.env?.RENOVATE_IGNORE_PR_AUTHOR).toBe('true');
+	// Коммиты веток, сделанные под PAT, несут автора по умолчанию; бот App без этого считает их чужой правкой.
+	expect(action?.env?.RENOVATE_GIT_IGNORED_AUTHORS).toBe('renovate@whitesourcesoftware.com');
 });
 
 type RegistryWf = {
