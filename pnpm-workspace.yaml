@@ -6,11 +6,11 @@ linkWorkspacePackages: true
 
 catalogs:
   dev:
-    dependency-cruiser: 18.8.0
-    knip: 6.45.1
+    dependency-cruiser: 18.9.0
+    knip: 6.48.0
     typescript: 7.1.0-beta
-    oxlint: 1.94.0
-    oxlint-tsgolint: 7.0.2007
-    oxfmt: 0.79.0
-    '@types/bun': 1.4.4
+    oxlint: 1.95.0
+    oxlint-tsgolint: 7.0.2008
+    oxfmt: 0.80.0
+    '@types/bun': 1.4.5
     '@types/node': 26.6.6
