@@ -222,7 +222,7 @@ files:
   demand (`workflow_dispatch`, with a `debug` log level when a run needs explaining). It calls the
   reusable `alxwlw/stack/.github/workflows/renovate.yml@v1` under a GitHub App (`RENOVATE_APP_ID`, `RENOVATE_APP_PRIVATE_KEY`;
   Repository: Checks, Commit statuses, Contents, Issues, Pull requests, Workflows read and write; Administration, Dependabot
-  alerts, Metadata read; Organization: Members read). Fallback `RENOVATE_TOKEN`: a fine-grained PAT has no Checks permission, so under it Renovate works but auto-merge is switched off by force. The workflow sets `RENOVATE_IGNORE_PR_AUTHOR` and `RENOVATE_GIT_IGNORED_AUTHORS` (Renovate's default commit author), so PRs of the previous account stay managed after the switch and their branches don't read as edited by someone else.
+  alerts, Metadata read; Organization: Members read). There is no PAT fallback since 1.19.0: without the App secrets the run fails. A fine-grained PAT has no Checks permission, so auto-merge never worked under one, and a PAT in Actions secrets is the owner's account in every workflow that can read them. The reusable workflow still declares the unused `token` secret, so a caller from an older canon that passes `RENOVATE_TOKEN` stays valid until its sync-PR. The workflow sets `RENOVATE_IGNORE_PR_AUTHOR` and `RENOVATE_GIT_IGNORED_AUTHORS` (Renovate's default commit author), so PRs opened under the old PAT stay managed and their branches don't read as edited by someone else.
 - `renovate.json5` (seeded once, yours to edit) extends `config:recommended`, the canon preset
   `github>alxwlw/stack//renovate/canon.json5#v1` and the automerge preset
   `github>alxwlw/stack//renovate/automerge.json5#v1` (see Automerge below). It isn't seeded when the repo already has a
@@ -240,7 +240,8 @@ Where `pnpm-workspace.yaml` sets `minimumReleaseAge` itself (strict mode), pnpm 
 Renovate PR for it would leave the lock file stale and fail its checks; elsewhere pnpm 12's built-in 1-day
 default is non-strict and falls back to an older version. The automerge preset, which comes later in `extends`,
 raises the age to 3 days for the updates it merges. The preset also turns off Renovate's `renovate/stability-days`
-commit status (`statusCheckNames`): the fallback PAT can't write statuses, and the run would fail with a 403.
+commit status (`statusCheckNames`): a PAT without the Commit statuses permission got a 403 on it and the run failed (kept
+for the App runs too).
 
 For the `node` and `oven/bun` images the preset is wider than `sync`: Renovate also stops moving the ones
 `sync` does not rewrite — an image pinned by digest, a tag built from an `ARG`, an image named in
@@ -325,8 +326,8 @@ Updates wait 3 days after the release before they merge, a guard against freshly
 (`internalChecksFilter: 'strict'` keeps the wait even if a repo loosens that filter). Lock file maintenance has no such
 wait: Renovate leaves its age to the package manager, so newer transitive versions are held only by the package manager's
 own release age. A release with no timestamp (images on ghcr.io or quay.io, some private registries) has no wait and is
-not held back. Renovate reads each branch's check runs before it merges; a fine-grained PAT has no Checks permission, so under
-`RENOVATE_TOKEN` the workflow switches auto-merge off by force: use the GitHub App above. The branch is rebased only on a conflict,
+not held back. Renovate reads each branch's check runs before it merges, which is why it runs only under the GitHub App
+above (a fine-grained PAT has no Checks permission). The branch is rebased only on a conflict,
 not each time the base moves: otherwise Renovate rebases it on every run and a busy `main` outruns the merge (Renovate
 source, branch reuse: `determineRebaseWhenValue`). It merges at most two PRs per run in a repo: after a merge it restarts
 the repo job once (Renovate source, repository run: "Restarting repository job after automerge result").
@@ -735,8 +736,8 @@ Step by step: [docs/release.md](docs/release.md).
 
 ### Keeping the canon current
 
-Renovate runs on this repo too (`.github/workflows/renovate-self.yml`, every day at 06:00 UTC, needs the same App secrets
-or the `RENOVATE_TOKEN` fallback). Unlike a consumer it does not extend the canon preset — moving the
+Renovate runs on this repo too (`.github/workflows/renovate-self.yml`, every day at 06:00 UTC, needs the same App
+secrets). Unlike a consumer it does not extend the canon preset — moving the
 canon's pins is its job. One version lives in several places here: the canon
 (`packages/stack/canon/files/prototools`, `canon/catalogs.json`) and this repo's own toolchain
 (`.prototools`, `pnpm-workspace.yaml`, `package.json#packageManager`). Renovate moves each dependency in both

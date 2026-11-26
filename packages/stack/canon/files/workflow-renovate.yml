@@ -1,8 +1,7 @@
 # Canon file — sync-managed: edits happen in alxwlw/stack, not here.
 # Needs a GitHub App: secrets RENOVATE_APP_ID and RENOVATE_APP_PRIVATE_KEY. App permissions: Repository: Checks, Commit
 # statuses, Contents, Issues, Pull requests, Workflows — read and write; Administration, Dependabot alerts, Metadata — read;
-# Organization: Members — read. Fallback without an App: the RENOVATE_TOKEN secret (a PAT). A fine-grained PAT has no
-# Checks permission, so Renovate cannot see check runs with it: under the PAT auto-merge is switched off by force.
+# Organization: Members — read. There is no PAT fallback: without the App the run fails.
 # Optional: STACK_REGISTRY variable + STACK_REGISTRY_TOKEN secret for a private npm registry.
 name: renovate
 on:
@@ -14,7 +13,7 @@ on:
         type: choice
         options: [info, debug]
         default: info
-# Сам файл токен не берёт (Renovate работает под токеном GitHub App или запасным RENOVATE_TOKEN), но renovate.yml@v1 просит contents: read,
+# Сам файл токен не берёт (Renovate работает под токеном GitHub App), но renovate.yml@v1 просит contents: read,
 # а права вызывающего — потолок вызываемого: с {} workflow недействителен целиком.
 permissions:
   contents: read
@@ -32,5 +31,4 @@ jobs:
     secrets:
       app-id: ${{ secrets.RENOVATE_APP_ID }}
       app-private-key: ${{ secrets.RENOVATE_APP_PRIVATE_KEY }}
-      token: ${{ secrets.RENOVATE_TOKEN }}
       registry-token: ${{ secrets.STACK_REGISTRY_TOKEN }}

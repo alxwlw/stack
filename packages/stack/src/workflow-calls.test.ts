@@ -203,10 +203,10 @@ test('reusable workflow стека зовёт свой action по alxwlw/stack/
 test('проводка канон-файлов: токен Renovate и базовая ветка sync', () => {
 	const job = (src: string, name: string) =>
 		(parseYaml(canonEntries.find((e) => e.src === src)?.content ?? '') as Workflow).jobs?.[name];
+	// Без token: Renovate идёт только под GitHub App, PAT владельца в вызов не передаётся.
 	expect(job('files/workflow-renovate.yml', 'renovate')?.secrets).toEqual({
 		'app-id': '${{ secrets.RENOVATE_APP_ID }}',
 		'app-private-key': '${{ secrets.RENOVATE_APP_PRIVATE_KEY }}',
-		token: '${{ secrets.RENOVATE_TOKEN }}',
 		'registry-token': '${{ secrets.STACK_REGISTRY_TOKEN }}',
 	});
 	const self = (
@@ -215,7 +215,6 @@ test('проводка канон-файлов: токен Renovate и базо�
 	expect(self?.secrets).toEqual({
 		'app-id': '${{ secrets.RENOVATE_APP_ID }}',
 		'app-private-key': '${{ secrets.RENOVATE_APP_PRIVATE_KEY }}',
-		token: '${{ secrets.RENOVATE_TOKEN }}',
 	});
 	for (const [src, name] of [
 		['files/workflow-stack-check.yml', 'check'],
