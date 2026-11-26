@@ -14,7 +14,7 @@ import {
 	repoRulesPart,
 	type RepoRulesRun,
 } from './repo-rules.ts';
-import { git, gitRepo, isolateGitConfig, repoDir } from './testkit.ts';
+import { fakeRepoRulesReader, git, gitRepo, isolateGitConfig, repoDir } from './testkit.ts';
 
 const V = { rule: 'max-lines', path: 'src/a.ts', line: 801, message: '812 lines' };
 const S = { rule: 'suppression-reason', path: 'src/b.ts', baseline: 2, actual: 1 };
@@ -132,20 +132,6 @@ test.each<[string, RepoRulesRun, string]>([
 	expect(repoRulesPart(run)).toStrictEqual({ unavailable: message });
 });
 
-// Порт, который записывает каждый вызов и отвечает по очереди.
-function fakeReader(...runs: RepoRulesRun[]) {
-	const calls: { argv: string[]; env: NodeJS.ProcessEnv }[] = [];
-	return {
-		calls,
-		read: (argv: string[], env: NodeJS.ProcessEnv) => {
-			calls.push({ argv, env });
-			const run = runs[calls.length - 1];
-			if (!run) throw new Error('лишний вызов порта');
-			return run;
-		},
-	};
-}
-
 const EMPTY = { violations: [], stale: [], notes: [] };
 
 const CHECK = ['-C', '/r', 'check', '--json'];
@@ -166,7 +152,7 @@ test.each<[string, PrBase, string[][], RepoRulesOutcome['diff']]>([
 	],
 	['база недоступна', { unavailable: NO_REF }, [CHECK], { unavailable: NO_REF }],
 ])('readRepoRules: %s', (_name, pr, argv, diff) => {
-	const r = fakeReader(ok(0, EMPTY), ok(0, EMPTY));
+	const r = fakeRepoRulesReader(ok(0, EMPTY), ok(0, EMPTY));
 	const env = { X: '1' };
 	expect(readRepoRules('/r', r.read, env, pr)).toStrictEqual({ check: EMPTY, diff });
 	expect(r.calls.map((c) => c.argv)).toStrictEqual(argv);
@@ -174,7 +160,7 @@ test.each<[string, PrBase, string[][], RepoRulesOutcome['diff']]>([
 });
 
 test('readRepoRules: сбой diff не трогает отчёт check', () => {
-	const r = fakeReader(ok(1, { ...EMPTY, violations: [V] }), {
+	const r = fakeRepoRulesReader(ok(1, { ...EMPTY, violations: [V] }), {
 		code: 2,
 		out: '',
 		err: 'repo-rules: boom',
@@ -186,7 +172,7 @@ test('readRepoRules: сбой diff не трогает отчёт check', () => 
 });
 
 test('readRepoRules: сбой check не отменяет diff', () => {
-	const r = fakeReader({ code: 2, out: '', err: 'repo-rules: boom' }, ok(0, EMPTY));
+	const r = fakeRepoRulesReader({ code: 2, out: '', err: 'repo-rules: boom' }, ok(0, EMPTY));
 	expect(readRepoRules('/r', r.read, {}, { base: 'origin/main' })).toStrictEqual({
 		check: { unavailable: 'boom' },
 		diff: EMPTY,
