@@ -4,7 +4,7 @@ import type { Finding } from './findings.ts';
 import { type PeerEntry, type PeerIssue, PEERS_BASELINE, type PeersRun } from './peers.ts';
 import { checkPeers, peersGroup, readPeers } from './peers-rule.ts';
 import { LOCKFILE, type Read, type Repo, repoFromSnapshot } from './repo.ts';
-import { fakePeersReader, groupContext, ONE_BAD } from './testkit.ts';
+import { fakePeersReader, groupContext } from './testkit.ts';
 
 // Repo из снимка: pnpm-lock.yaml есть, если не сказано иное; baseline — записи или сырой текст.
 function repoWith(
@@ -35,6 +35,26 @@ const NO_LOCK: Finding = {
 	target: 'pnpm peers check',
 	message: 'no pnpm-lock.yaml',
 };
+
+// Ответ `pnpm peers check --lockfile-only --json` с одной записью bad, в форме настоящего pnpm.
+const ONE_BAD = JSON.stringify({
+	'.': {
+		bad: {
+			peer: [
+				{
+					parents: [{ name: 'decl', version: '1.0.0' }],
+					optional: false,
+					wantedRange: '^2.0.0',
+					foundVersion: '1.0.0',
+					resolvedFrom: [],
+				},
+			],
+		},
+		missing: {},
+		conflicts: [],
+		intersections: {},
+	},
+});
 
 const CLEAN_RUN: PeersRun = { status: 0, signal: null, stdout: '{}', stderr: '' };
 

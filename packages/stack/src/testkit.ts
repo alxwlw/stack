@@ -229,26 +229,6 @@ export const repoRulesRun = (code: number, report: unknown): RepoRulesRun => ({
 	err: '',
 });
 
-// Ответ `pnpm peers check --lockfile-only --json` с одной записью bad, в форме настоящего pnpm.
-export const ONE_BAD = JSON.stringify({
-	'.': {
-		bad: {
-			peer: [
-				{
-					parents: [{ name: 'decl', version: '1.0.0' }],
-					optional: false,
-					wantedRange: '^2.0.0',
-					foundVersion: '1.0.0',
-					resolvedFrom: [],
-				},
-			],
-		},
-		missing: {},
-		conflicts: [],
-		intersections: {},
-	},
-});
-
 // Порт pnpm: записывает каталог каждого вызова и отдаёт заданный запуск.
 export function fakePeersReader(run: PeersRun): { read: PeersReader; calls: string[] } {
 	const calls: string[] = [];

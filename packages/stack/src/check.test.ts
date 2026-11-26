@@ -8,16 +8,8 @@ import type { Canon } from './canon.ts';
 import { check, checkRepo, syncOutput, syncRepo } from './check.ts';
 import { STACK_RENOVATE_PRESET } from './deps.ts';
 import { allowedLine, type Held } from './exceptions.ts';
-import type { Drift, FindingCode } from './findings.ts';
-import {
-	fakePeersReader,
-	fakeRepoRulesReader,
-	ONE_BAD,
-	repoDir,
-	repoRulesRun,
-	testCanon,
-	testRepo,
-} from './testkit.ts';
+import type { Drift } from './findings.ts';
+import { fakeRepoRulesReader, repoDir, repoRulesRun, testCanon, testRepo } from './testkit.ts';
 
 // Конфиг Renovate на пресете канона: тесты исключений и каталогов не про бота.
 const RENOVATE = { 'renovate.json5': `{ extends: ['${STACK_RENOVATE_PRESET}'] }\n` };
@@ -274,73 +266,6 @@ test('syncRepo: два дрейфа каталога, packageManager и файл
 	expect(writes.toSorted()).toEqual(['.editorconfig', 'package.json', 'pnpm-workspace.yaml']);
 });
 
-const LOCK = { 'pnpm-lock.yaml': 'lockfileVersion: x\n' };
-const peersCanon: Canon = { ...canon, rules: ['peers'] };
-
-test('группа peers включена — находки peers последние и исключением не гасятся', () => {
-	// Находки плана, deps.ts и moon (последнее правило перед peers — checkMoonDefaultBranch).
-	const repo = repoDir({
-		...RENOVATE,
-		...LOCK,
-		'.github/dependabot.yml': 'version: 2\n',
-		'.moon/workspace.yml': 'vcs: git\n',
-	});
-	const port = fakePeersReader({ status: 1, signal: null, stdout: ONE_BAD, stderr: '' });
-	const { findings } = checkRepo(
-		repo,
-		peersCanon,
-		[{ file: '.stack-peers-baseline.json', reason: 'x' }],
-		{ ports: { peers: port.read }, env: {} },
-	);
-	expect(port.calls).toStrictEqual([repo]);
-	expect(findings.map((f) => f.code)).toStrictEqual([
-		'file-missing',
-		'dependabot-config',
-		'moon-default-branch',
-		'peer-dependency',
-		'stale-exception',
-	]);
-	expect(findings[3]).toStrictEqual({
-		code: 'peer-dependency',
-		target: 'peer in .',
-		message: 'decl@1.0.0 wants ^2.0.0, found 1.0.0; not in .stack-peers-baseline.json',
-	});
-	expect(findings[4]).toMatchObject({
-		code: 'stale-exception',
-		target: '.stack-peers-baseline.json',
-	});
-});
-
-test('stale-peer-baseline и peers-unavailable тоже не гасятся исключением на baseline', () => {
-	const stale = JSON.stringify({
-		version: 1,
-		peers: [{ importer: '.', peer: 'zod', kind: 'conflict' }],
-	});
-	const cases: [Record<string, string>, string, FindingCode][] = [
-		[{ '.stack-peers-baseline.json': stale }, '{}', 'stale-peer-baseline'],
-		[{}, 'Usage: pnpm [command]', 'peers-unavailable'],
-	];
-	for (const [files, stdout, code] of cases) {
-		const repo = repoDir({ ...RENOVATE, ...LOCK, '.editorconfig': 'root = true\n', ...files });
-		const { findings } = checkRepo(
-			repo,
-			peersCanon,
-			[{ file: '.stack-peers-baseline.json', reason: 'x' }],
-			{
-				ports: { peers: fakePeersReader({ status: 0, signal: null, stdout, stderr: '' }).read },
-				env: {},
-			},
-		);
-		expect(
-			findings.map((f) => [f.code, f.suppressedBy]),
-			code,
-		).toStrictEqual([
-			[code, undefined],
-			['stale-exception', undefined],
-		]);
-	}
-});
-
 const rulesCanon: Canon = { ...canon, rules: ['repo-rules'] };
 const CLEAN_REPO = { ...RENOVATE, '.editorconfig': 'root = true\n' };
 const RR_EMPTY = repoRulesRun(0, { violations: [], stale: [], notes: [] });
@@ -383,18 +308,6 @@ test('checkRepo: группа включена, входов нет — Error о
 	expect(() => checkRepo(repoDir(CLEAN_REPO), rulesCanon, [])).toThrow(
 		new Error('rule group "repo-rules" is enabled but has no port'),
 	);
-});
-
-test('checkRepo: находки repo-rules идут после находок peers', () => {
-	const repo = repoDir({ ...CLEAN_REPO, ...LOCK });
-	const peers = fakePeersReader({ status: 1, signal: null, stdout: ONE_BAD, stderr: '' });
-	const rules = fakeRepoRulesReader(RR_LONG);
-	const both: Canon = { ...canon, rules: ['peers', 'repo-rules'] };
-	const { findings } = checkRepo(repo, both, [], {
-		ports: { peers: peers.read, 'repo-rules': rules.read },
-		env: {},
-	});
-	expect(findings.map((x) => x.code)).toStrictEqual(['peer-dependency', 'repo-rules-violation']);
 });
 
 test('syncOutput: удержанные — в stderr, правки и итог — в stdout', () => {

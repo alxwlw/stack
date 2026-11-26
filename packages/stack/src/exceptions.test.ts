@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test';
 
 import { addressOf, allowedLine, type Exception, exceptionProblem, resolve } from './exceptions.ts';
-import type { Finding } from './findings.ts';
+import type { Finding, FindingCode } from './findings.ts';
 
 const drift: Finding = {
 	code: 'file-drift',
@@ -184,6 +184,33 @@ test('адрес находки строит таблица: предмет в �
 	expect(addressOf(inlineReact)).toEqual({ name: 'react' });
 	expect(addressOf(pm)).toEqual({ file: '.prototools' });
 	expect(addressOf(engines)).toBeUndefined();
+});
+
+type GroupCode = Extract<
+	FindingCode,
+	| 'peer-dependency'
+	| 'stale-peer-baseline'
+	| 'peers-unavailable'
+	| 'repo-rules-violation'
+	| 'stale-repo-rules-baseline'
+	| 'repo-rules-unavailable'
+	| 'guardrails-violation'
+	| 'guardrails-unavailable'
+	| 'workflow-hygiene'
+>;
+
+test.each<GroupCode>([
+	'peer-dependency',
+	'stale-peer-baseline',
+	'peers-unavailable',
+	'repo-rules-violation',
+	'stale-repo-rules-baseline',
+	'repo-rules-unavailable',
+	'guardrails-violation',
+	'guardrails-unavailable',
+	'workflow-hygiene',
+])('находку группы правил %s не адресует никакое исключение', (code) => {
+	expect(addressOf({ code, target: 'x', message: 'm' } as Finding)).toBeUndefined();
 });
 
 test('stale-exception не гасится ничем: сама находка остаётся, исключение тоже протухает', () => {

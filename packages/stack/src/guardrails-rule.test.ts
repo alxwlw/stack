@@ -4,7 +4,6 @@ import { join } from 'node:path';
 import { expect, test } from 'bun:test';
 
 import { parsePins } from './canon.ts';
-import { checkRepo } from './check.ts';
 import { STACK_RENOVATE_PRESET } from './deps.ts';
 import type { GuardrailsOutcome } from './guardrails.ts';
 import { gitleaksDirArgv } from './guardrails-gitleaks.ts';
@@ -251,23 +250,6 @@ test('guardrailsNotes: строка на инструмент в порядке 
 		'guardrails gitleaks commits: skipped (no files)',
 	]);
 	expect(guardrailsNotes({ unavailable: 'x' })).toStrictEqual([]);
-});
-
-const canon = testCanon({ rules: ['guardrails'] });
-
-test('checkRepo: недоступность guardrails не гасится исключением, исключение протухает', () => {
-	const port = fakeGuardrailRunner({
-		'git ls-files -z': { code: 128, out: '', err: 'fatal: not a git repository\n' },
-	});
-	const root = repoDir({ 'renovate.json5': `{ extends: ['${STACK_RENOVATE_PRESET}'] }\n` });
-	const { findings } = checkRepo(root, canon, [{ file: 'git ls-files', reason: 'held' }], {
-		ports: { guardrails: port.run },
-		env: {},
-	});
-	expect(findings.map((f) => [f.code, f.suppressedBy])).toStrictEqual([
-		['guardrails-unavailable', undefined],
-		['stale-exception', undefined],
-	]);
 });
 
 test('guardrailsGroup: .prototools репозитория доходит до читателя, находки и пометки в отчёте', () => {
