@@ -3,16 +3,15 @@ import { join } from 'node:path';
 
 import { expect, test } from 'bun:test';
 
-import { type Canon, parsePins } from './canon.ts';
-import { check, checkRepo } from './check.ts';
+import { parsePins } from './canon.ts';
+import { checkRepo } from './check.ts';
 import { STACK_RENOVATE_PRESET } from './deps.ts';
-import type { Finding } from './findings.ts';
 import type { GuardrailsOutcome } from './guardrails.ts';
 import { gitleaksDirArgv } from './guardrails-gitleaks.ts';
-import type { GuardrailRun, GuardrailRunner, GuardrailViolation } from './guardrails-port.ts';
-import { checkGuardrails, guardrailsNotes } from './guardrails-rule.ts';
-import type { RepoRulesOutcome, RepoRulesReader } from './repo-rules.ts';
-import { repoDir, ROOT, testCanon, testRepo } from './testkit.ts';
+import type { GuardrailViolation } from './guardrails-port.ts';
+import { checkGuardrails, guardrailsGroup, guardrailsNotes } from './guardrails-rule.ts';
+import { loadRepo } from './repo.ts';
+import { fakeGuardrailRunner, groupContext, repoDir, ROOT, testCanon } from './testkit.ts';
 
 const viol = (
 	tool: GuardrailViolation['tool'],
@@ -183,12 +182,6 @@ test('checkGuardrails: недоступность всей группы, час�
 	).toStrictEqual([]);
 });
 
-test('checkGuardrails: исхода нет — Error', () => {
-	expect(() => checkGuardrails(undefined)).toThrow(
-		new Error('checkGuardrails: no guardrails outcome'),
-	);
-});
-
 test('guardrailsNotes: строка на инструмент в порядке GUARDRAIL_TOOLS', () => {
 	expect(
 		guardrailsNotes({
@@ -258,111 +251,26 @@ test('guardrailsNotes: строка на инструмент в порядке 
 		'guardrails gitleaks commits: skipped (no files)',
 	]);
 	expect(guardrailsNotes({ unavailable: 'x' })).toStrictEqual([]);
-	expect(guardrailsNotes(undefined)).toStrictEqual([]);
 });
 
 const canon = testCanon({ rules: ['guardrails'] });
-const SCRIPT_VIOLATION: GuardrailsOutcome = {
-	tools: {
-		actionlint: NO_FILES,
-		shellcheck: {
-			version: '0.11.0',
-			files: 1,
-			violations: [viol('shellcheck', 'scripts/a.sh', 4, 'SC2086')],
-		},
-		gitleaks: NO_FILES,
-		hadolint: NO_FILES,
-		'markdownlint-cli2': NO_FILES,
-		yamllint: NO_FILES,
-	},
-	commits: { skipped: 'no files' },
-};
 
-test('check: исключение на файл не гасит находку guardrails, а само протухает', () => {
-	const got = check(
-		testRepo(canon),
-		canon,
-		[{ file: 'scripts/a.sh', reason: 'held' }],
-		undefined,
-		undefined,
-		SCRIPT_VIOLATION,
-	);
-	expect(got).toStrictEqual([
-		{
-			code: 'guardrails-violation',
-			target: 'scripts/a.sh:4',
-			message: 'shellcheck SC2086: m scripts/a.sh:4',
-		},
-		{
-			code: 'stale-exception',
-			target: 'scripts/a.sh',
-			message: 'exception no longer covers anything: held',
-		},
-	] satisfies Finding[]);
-});
-
-test('check: недоступность тоже не гасится исключением', () => {
-	const got = check(
-		testRepo(canon),
-		canon,
-		[{ file: 'git ls-files', reason: 'held' }],
-		undefined,
-		undefined,
-		{ unavailable: 'boom' },
-	);
-	expect(got.map((f) => [f.code, f.suppressedBy])).toStrictEqual([
+test('checkRepo: недоступность guardrails не гасится исключением, исключение протухает', () => {
+	const port = fakeGuardrailRunner({
+		'git ls-files -z': { code: 128, out: '', err: 'fatal: not a git repository\n' },
+	});
+	const root = repoDir({ 'renovate.json5': `{ extends: ['${STACK_RENOVATE_PRESET}'] }\n` });
+	const { findings } = checkRepo(root, canon, [{ file: 'git ls-files', reason: 'held' }], {
+		ports: { guardrails: port.run },
+		env: {},
+	});
+	expect(findings.map((f) => [f.code, f.suppressedBy])).toStrictEqual([
 		['guardrails-unavailable', undefined],
 		['stale-exception', undefined],
 	]);
 });
 
-test('check: группа включена, исхода нет — Error', () => {
-	expect(() => check(testRepo(canon), canon, [])).toThrow(
-		new Error('checkGuardrails: no guardrails outcome'),
-	);
-});
-
-test('check: группа выключена — исход игнорируется', () => {
-	const off = testCanon();
-	expect(check(testRepo(off), off, [], undefined, undefined, SCRIPT_VIOLATION)).toStrictEqual([]);
-});
-
-test('check: находки guardrails — после repo-rules', () => {
-	const both: Canon = testCanon({ rules: ['repo-rules', 'guardrails'] });
-	const rr: RepoRulesOutcome = {
-		check: {
-			violations: [{ rule: 'long-file', path: 'big.ts', line: 0, message: 'too long' }],
-			stale: [],
-			notes: [],
-		},
-		diff: { skipped: 'x' },
-	};
-	expect(
-		check(testRepo(both), both, [], undefined, rr, SCRIPT_VIOLATION).map((f) => f.code),
-	).toStrictEqual(['repo-rules-violation', 'guardrails-violation']);
-});
-
-const throwingPort: GuardrailRunner = () => {
-	throw new Error('порт guardrails не должен вызываться');
-};
-
-test('checkRepo: группа выключена — порт не зовётся, результат как без порта', () => {
-	const off = testCanon();
-	const repo = repoDir({});
-	const without = checkRepo(repo, off, []);
-	expect(checkRepo(repo, off, [], { ports: { guardrails: throwingPort }, env: {} })).toStrictEqual(
-		without,
-	);
-	expect(without.notes).toStrictEqual([]);
-});
-
-test('checkRepo: группа включена, порта нет — Error', () => {
-	expect(() => checkRepo(repoDir({}), canon, [])).toThrow(
-		new Error('checkRepo: guardrails group needs a GuardrailsPort'),
-	);
-});
-
-test('checkRepo: .prototools репозитория доходит до читателя, находки и пометки в результате', () => {
+test('guardrailsGroup: .prototools репозитория доходит до читателя, находки и пометки в отчёте', () => {
 	// Канон ведёт .prototools, поэтому загрузчик его читает; пины берутся из файла репозитория.
 	const gitleaksPin = parsePins(readFileSync(join(ROOT, '.prototools'), 'utf8')).gitleaks;
 	const prototools = `shellcheck = "0.11.0"\ngitleaks = "${gitleaksPin}"\n`;
@@ -375,8 +283,7 @@ test('checkRepo: .prototools репозитория доходит до чита
 		'.prototools': prototools,
 		'a.sh': 'echo $x\n',
 	});
-	const calls: [string, string[]][] = [];
-	const results: Record<string, GuardrailRun> = {
+	const runner = fakeGuardrailRunner({
 		'git ls-files -z': { code: 0, out: '.prototools\0a.sh\0', err: '' },
 		'/x/sc --version': { code: 0, out: 'version: 0.11.0\n', err: '' },
 		'/x/gl version': { code: 0, out: `${gitleaksPin}\n`, err: '' },
@@ -400,17 +307,14 @@ test('checkRepo: .prototools репозитория доходит до чита
 				],
 			}),
 		},
-	};
-	const run: GuardrailRunner = (cmd, argv) => {
-		calls.push([cmd, argv]);
-		const hit = results[[cmd, ...argv].join(' ')];
-		if (hit === undefined) throw new Error(`unexpected call: ${cmd} ${argv.join(' ')}`);
-		return hit;
-	};
-	const report = checkRepo(root, owned, [], {
-		ports: { guardrails: run },
-		env: { SHELLCHECK_BIN: '/x/sc', GITLEAKS_BIN: '/x/gl' },
 	});
+	const report = guardrailsGroup(
+		groupContext(loadRepo(root, owned), {
+			repoRoot: root,
+			env: { SHELLCHECK_BIN: '/x/sc', GITLEAKS_BIN: '/x/gl' },
+		}),
+		runner.run,
+	);
 	expect(report.findings).toStrictEqual([
 		{ code: 'guardrails-violation', target: 'a.sh:1', message: 'shellcheck SC2086: quote' },
 	]);
@@ -423,61 +327,5 @@ test('checkRepo: .prototools репозитория доходит до чита
 		'guardrails yamllint: skipped (no files)',
 		'guardrails gitleaks commits: skipped (no --base outside GitHub Actions)',
 	]);
-	expect(calls).toHaveLength(5);
-});
-
-test('checkRepo: обе группы — находки и пометки repo-rules идут раньше guardrails', () => {
-	const both = testCanon({ rules: ['repo-rules', 'guardrails'] });
-	const root = repoDir({ 'renovate.json5': `{ extends: ['${STACK_RENOVATE_PRESET}'] }\n` });
-	const repoRules: RepoRulesReader = () => ({
-		code: 1,
-		err: '',
-		out: JSON.stringify({
-			violations: [{ rule: 'max-lines', path: 'big.ts', line: 801, message: '812 lines' }],
-			stale: [],
-			notes: [],
-		}),
-	});
-	const guardrails: GuardrailRunner = () => ({
-		code: 128,
-		out: '',
-		err: 'fatal: not a git repository\n',
-	});
-	const ports = { 'repo-rules': repoRules, guardrails };
-	expect(checkRepo(root, both, [], { ports, env: { GITHUB_ACTIONS: '' } })).toStrictEqual({
-		findings: [
-			{ code: 'repo-rules-violation', target: 'big.ts:801', message: 'max-lines: 812 lines' },
-			{
-				code: 'guardrails-unavailable',
-				target: 'git ls-files',
-				message: 'fatal: not a git repository',
-			},
-		],
-		notes: ['repo-rules diff: skipped (no --base outside GitHub Actions)'],
-	});
-});
-
-test('checkRepo: notes guardrails после repo-rules', () => {
-	const both = testCanon({ rules: ['repo-rules', 'guardrails'] });
-	const root = repoDir({
-		'renovate.json5': `{ extends: ['${STACK_RENOVATE_PRESET}'] }\n`,
-		'README.txt': '# acme\n',
-	});
-	const repoRules: RepoRulesReader = () => ({
-		code: 0,
-		err: '',
-		out: JSON.stringify({ violations: [], stale: [], notes: [] }),
-	});
-	const guardrails: GuardrailRunner = () => ({ code: 0, out: 'README.txt\0', err: '' });
-	const ports = { 'repo-rules': repoRules, guardrails };
-	expect(checkRepo(root, both, [], { ports, env: {} }).notes).toStrictEqual([
-		'repo-rules diff: skipped (no --base outside GitHub Actions)',
-		'guardrails actionlint: skipped (no files)',
-		'guardrails shellcheck: skipped (no files)',
-		'guardrails gitleaks: unavailable',
-		'guardrails hadolint: skipped (no files)',
-		'guardrails markdownlint-cli2: skipped (no files)',
-		'guardrails yamllint: skipped (no files)',
-		'guardrails gitleaks commits: skipped (gitleaks unavailable)',
-	]);
+	expect(runner.calls).toHaveLength(5);
 });

@@ -1,8 +1,14 @@
 // Правило группы guardrails: находки и пометки из исхода читателя. Чистые функции над значениями.
 
 import type { Finding } from './findings.ts';
-import type { GuardrailsOutcome } from './guardrails.ts';
-import { GUARDRAIL_TOOLS, type GuardrailViolation } from './guardrails-port.ts';
+import { type GuardrailsOutcome, readGuardrails } from './guardrails.ts';
+import {
+	GUARDRAIL_TOOLS,
+	type GuardrailRunner,
+	type GuardrailViolation,
+} from './guardrails-port.ts';
+import type { RuleGroupModule } from './rule-group.ts';
+import { checkWorkflowHygiene } from './workflow-hygiene.ts';
 
 function byPathThenLine(a: GuardrailViolation, b: GuardrailViolation): number {
 	if (a.path !== b.path) return a.path < b.path ? -1 : 1;
@@ -10,8 +16,7 @@ function byPathThenLine(a: GuardrailViolation, b: GuardrailViolation): number {
 }
 
 // Порядок: инструмент (GUARDRAIL_TOOLS), путь, строка; находки коммитов PR (commits) идут после всех инструментов. Строка <= 0 — цель без номера.
-export function checkGuardrails(outcome: GuardrailsOutcome | undefined): Finding[] {
-	if (outcome === undefined) throw new Error('checkGuardrails: no guardrails outcome');
+export function checkGuardrails(outcome: GuardrailsOutcome): Finding[] {
 	if ('unavailable' in outcome) {
 		return [
 			{ code: 'guardrails-unavailable', target: 'git ls-files', message: outcome.unavailable },
@@ -53,8 +58,8 @@ export function checkGuardrails(outcome: GuardrailsOutcome | undefined): Finding
 }
 
 // Строка на инструмент в порядке GUARDRAIL_TOOLS, последней — строка коммитов PR (commits); выход пометки не меняют.
-export function guardrailsNotes(outcome: GuardrailsOutcome | undefined): string[] {
-	if (outcome === undefined || 'unavailable' in outcome) return [];
+export function guardrailsNotes(outcome: GuardrailsOutcome): string[] {
+	if ('unavailable' in outcome) return [];
 	const lines = GUARDRAIL_TOOLS.map((tool) => {
 		const part = outcome.tools[tool];
 		if ('skipped' in part) return `guardrails ${tool}: skipped (no files)`;
@@ -71,3 +76,17 @@ export function guardrailsNotes(outcome: GuardrailsOutcome | undefined): string[
 	}
 	return lines;
 }
+
+/** Находки: инструменты, коммиты PR, затем гигиена workflow по ctx.repo.files. */
+export const guardrailsGroup: RuleGroupModule<GuardrailRunner> = (ctx, run) => {
+	const outcome = readGuardrails(
+		ctx.repoRoot,
+		ctx.repo.files.get('.prototools'),
+		{ run, env: ctx.env },
+		ctx.prBase,
+	);
+	return {
+		findings: [...checkGuardrails(outcome), ...checkWorkflowHygiene(ctx.repo.files)],
+		notes: guardrailsNotes(outcome),
+	};
+};

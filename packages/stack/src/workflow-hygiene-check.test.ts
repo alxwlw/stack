@@ -1,10 +1,9 @@
 import { expect, test } from 'bun:test';
 
 import { check, checkRepo } from './check.ts';
-import type { Exception } from './exceptions.ts';
-import type { GuardrailsOutcome } from './guardrails.ts';
 import type { GuardrailRunner } from './guardrails-port.ts';
-import { repoDir, testCanon, testRepo } from './testkit.ts';
+import { guardrailsGroup } from './guardrails-rule.ts';
+import { groupContext, repoDir, testCanon, testRepo } from './testkit.ts';
 
 const BUILD = '.github/workflows/build.yml';
 const BARE_WORKFLOW = `on: push
@@ -27,75 +26,39 @@ jobs:
 `;
 const MESSAGE =
 	'missing timeout-minutes (build); permissions (top level, or in build); concurrency (top level, or in build)';
-const NO_FILES = { skipped: 'no files' } as const;
-const CLEAN: GuardrailsOutcome = {
-	tools: {
-		actionlint: NO_FILES,
-		shellcheck: NO_FILES,
-		gitleaks: NO_FILES,
-		hadolint: NO_FILES,
-		'markdownlint-cli2': NO_FILES,
-		yamllint: NO_FILES,
-	},
-	commits: NO_FILES,
-};
-const VIOLATION: GuardrailsOutcome = {
-	...CLEAN,
-	tools: {
-		...CLEAN.tools,
-		shellcheck: {
-			version: '0.11.0',
-			files: 1,
-			violations: [
-				{ tool: 'shellcheck', rule: 'SC2086', path: 'scripts/a.sh', line: 4, message: 'm' },
-			],
-		},
-	},
-};
 const on = testCanon({ rules: ['guardrails'] });
-const throwingPort: GuardrailRunner = () => {
-	throw new Error('порт guardrails не должен вызываться');
-};
+const FAILED: GuardrailRunner = () => ({
+	code: 128,
+	out: '',
+	err: 'fatal: not a git repository\n',
+});
+const NO_FILES: GuardrailRunner = () => ({ code: 0, out: '', err: '' });
 
 test('группа выключена — гигиены нет', () => {
 	const off = testCanon();
 	const got = check(testRepo(off, { [BUILD]: BARE_WORKFLOW }), off, []);
 	expect(got.filter((f) => f.code === 'workflow-hygiene')).toStrictEqual([]);
-	const repo = repoDir({ [BUILD]: BARE_WORKFLOW });
-	expect(checkRepo(repo, off, [], { ports: { guardrails: throwingPort }, env: {} })).toStrictEqual(
-		checkRepo(repo, off, []),
-	);
 });
 
-test('группа включена — находка за находками инструментов и до stale-exception', () => {
-	const held: Exception = { file: 'gone.yml', reason: 'r' };
-	const got = check(
-		testRepo(on, { [BUILD]: BARE_WORKFLOW }),
-		on,
-		[held],
-		undefined,
-		undefined,
-		VIOLATION,
-	);
-	expect(got.map((f) => [f.code, f.target])).toStrictEqual([
-		['guardrails-violation', 'scripts/a.sh:4'],
-		['workflow-hygiene', BUILD],
-		['stale-exception', 'gone.yml'],
+test('гигиена идёт после находок читателя и не зависит от его исхода', () => {
+	const repo = testRepo(on, { [BUILD]: BARE_WORKFLOW });
+	expect(guardrailsGroup(groupContext(repo), FAILED).findings).toStrictEqual([
+		{
+			code: 'guardrails-unavailable',
+			target: 'git ls-files',
+			message: 'fatal: not a git repository',
+		},
+		{ code: 'workflow-hygiene', target: BUILD, message: MESSAGE },
 	]);
-	expect(got[1]?.message).toBe(MESSAGE);
 });
 
-test('исключение на файл не удерживает гигиену', () => {
-	const exception: Exception = { file: BUILD, reason: 'r' };
-	const got = check(
-		testRepo(on, { [BUILD]: BARE_WORKFLOW }),
-		on,
-		[exception],
-		undefined,
-		undefined,
-		CLEAN,
-	);
-	expect(got).toStrictEqual([
+test('исключение на файл не удерживает гигиену и протухает', () => {
+	const root = repoDir({ [BUILD]: BARE_WORKFLOW });
+	const { findings } = checkRepo(root, on, [{ file: BUILD, reason: 'r' }], {
+		ports: { guardrails: NO_FILES },
+		env: {},
+	});
+	expect(findings.filter((f) => f.code !== 'renovate-preset')).toStrictEqual([
 		{ code: 'workflow-hygiene', target: BUILD, message: MESSAGE },
 		{
 			code: 'stale-exception',
@@ -106,6 +69,6 @@ test('исключение на файл не удерживает гигиен�
 });
 
 test('гигиенический workflow — находок нет', () => {
-	const got = check(testRepo(on, { [BUILD]: CLEAN_WORKFLOW }), on, [], undefined, undefined, CLEAN);
-	expect(got.filter((f) => f.code === 'workflow-hygiene')).toStrictEqual([]);
+	const repo = testRepo(on, { [BUILD]: CLEAN_WORKFLOW });
+	expect(guardrailsGroup(groupContext(repo), NO_FILES).findings).toStrictEqual([]);
 });

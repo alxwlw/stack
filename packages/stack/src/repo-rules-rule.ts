@@ -2,7 +2,13 @@
 // значениями; сами вызовы и разбор — repo-rules.ts.
 
 import type { Finding } from './findings.ts';
-import type { RepoRulesOutcome, RepoRulesPart } from './repo-rules.ts';
+import {
+	readRepoRules,
+	type RepoRulesOutcome,
+	type RepoRulesPart,
+	type RepoRulesReader,
+} from './repo-rules.ts';
+import type { RuleGroupModule } from './rule-group.ts';
 
 const TRAILER_HINT =
 	'repo-rules diff: intended? add a commit trailer "Tests-Removed: <reason>" in the range';
@@ -26,8 +32,7 @@ function partFindings(part: RepoRulesPart | { skipped: string }, target: string)
 	];
 }
 
-export function checkRepoRules(outcome: RepoRulesOutcome | undefined): Finding[] {
-	if (outcome === undefined) throw new Error('checkRepoRules: no repo-rules outcome');
+export function checkRepoRules(outcome: RepoRulesOutcome): Finding[] {
 	return [
 		...partFindings(outcome.check, 'repo-rules check'),
 		...partFindings(outcome.diff, 'repo-rules diff'),
@@ -35,8 +40,7 @@ export function checkRepoRules(outcome: RepoRulesOutcome | undefined): Finding[]
 }
 
 // Пометка — часть проверки, которая пропущена или о чём стоит знать; выход она не меняет.
-export function repoRulesNotes(outcome: RepoRulesOutcome | undefined): string[] {
-	if (outcome === undefined) return [];
+export function repoRulesNotes(outcome: RepoRulesOutcome): string[] {
 	const notes: string[] = [];
 	if (!('unavailable' in outcome.check)) {
 		for (const n of outcome.check.notes) notes.push(`repo-rules check: ${n}`);
@@ -49,3 +53,9 @@ export function repoRulesNotes(outcome: RepoRulesOutcome | undefined): string[] 
 	}
 	return notes;
 }
+
+// Группа repo-rules: два вызова через порт (check и diff от базы PR); читателю идёт окружение прогона.
+export const repoRulesGroup: RuleGroupModule<RepoRulesReader> = (ctx, read) => {
+	const outcome = readRepoRules(ctx.repoRoot, read, ctx.env, ctx.prBase);
+	return { findings: checkRepoRules(outcome), notes: repoRulesNotes(outcome) };
+};
