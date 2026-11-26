@@ -428,13 +428,15 @@ const HINT =
 // Порт repo-rules: записывает argv каждого вызова и отвечает по очереди.
 function fakeRules(...runs: RepoRulesRun[]) {
 	const calls: string[][] = [];
-	const read: RepoRulesReader = (argv) => {
+	const envs: NodeJS.ProcessEnv[] = [];
+	const read: RepoRulesReader = (argv, env) => {
 		calls.push(argv);
+		envs.push(env);
 		const run = runs[calls.length - 1];
 		if (!run) throw new Error('лишний вызов порта repo-rules');
 		return run;
 	};
-	return { read, calls };
+	return { read, calls, envs };
 }
 
 const throwingRules: RepoRulesReader = () => {
@@ -489,6 +491,8 @@ test('repo-rules: --base доходит до diff, нарушение diff — �
 		notes: [HINT],
 	});
 	expect(f.calls[1]).toStrictEqual(['-C', repo, 'diff', '--json', '--base', 'origin/main']);
+	expect(f.envs).toStrictEqual([LOCAL, LOCAL]);
+	expect(f.envs.every((e) => e === LOCAL)).toBe(true);
 });
 
 test('repo-rules: сбой вызова — repo-rules-unavailable, а не пустой список', () => {
