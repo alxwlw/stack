@@ -1,5 +1,6 @@
-// Правило группы peers над Repo: исход `pnpm peers check` против baseline. Отдельный модуль, потому
-// что repo.ts берёт разбор baseline из peers.ts, и правило в peers.ts замкнуло бы цикл импортов.
+// Группа peers над Repo: правило — исход `pnpm peers check` против baseline (checkPeers); чтение
+// readPeers и сама группа peersGroup — через порт pnpm. Отдельный модуль, потому что repo.ts берёт
+// разбор baseline из peers.ts, и правило в peers.ts замкнуло бы цикл импортов.
 
 import type { Finding } from './findings.ts';
 import {

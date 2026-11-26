@@ -471,7 +471,7 @@ describe('настоящий gitleaks: коммиты PR', () => {
 	);
 
 	test(
-		'PR-окружение: origin/main есть — то же нарушение; GITHUB_BASE_REF=gone — недоступно',
+		'база { base: origin/main } — то же нарушение; { base: origin/gone } — недоступно',
 		() => {
 			const { dir, a } = feature();
 			const found = scan(dir, MAIN);
@@ -487,7 +487,7 @@ describe('настоящий gitleaks: коммиты PR', () => {
 	);
 
 	test(
-		'push в Actions и вне Actions — skipped с причиной',
+		'база { skipped } — пропуск с той же причиной, NO_BASE — пропуск «no --base outside GitHub Actions»',
 		() => {
 			const { dir } = feature();
 			expect(scan(dir, { skipped: 'not a pull request' }).commits).toStrictEqual({

@@ -1,4 +1,6 @@
-// Правило группы guardrails: находки и пометки из исхода читателя. Чистые функции над значениями.
+// Правило группы guardrails: находки и пометки из исхода читателя (чистые функции над значениями) и
+// сама группа guardrailsGroup — через порт readGuardrails гоняет `git ls-files`, инструменты, копию
+// во временном каталоге и `git merge-base` для коммитов PR; к находкам добавляет гигиену workflow.
 
 import type { Finding } from './findings.ts';
 import { type GuardrailsOutcome, readGuardrails } from './guardrails.ts';

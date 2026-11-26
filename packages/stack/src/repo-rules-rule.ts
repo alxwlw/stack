@@ -1,5 +1,6 @@
-// Правило группы repo-rules: находки и пометки из исхода двух вызовов repo-rules. Чистые функции над
-// значениями; сами вызовы и разбор — repo-rules.ts.
+// Правило группы repo-rules: находки и пометки из исхода двух вызовов repo-rules (чистые функции над
+// значениями) и сама группа repoRulesGroup — через порт она зовёт repo-rules до двух раз (check и
+// diff от базы PR) в readRepoRules; разбор вывода — repo-rules.ts.
 
 import type { Finding } from './findings.ts';
 import {

@@ -71,3 +71,12 @@ test('базу PR вычисляет одно место вне тестов —
 		.filter((f) => readFileSync(join(import.meta.dir, f), 'utf8').includes('prBase('));
 	expect(callers).toStrictEqual(['check.ts']);
 });
+
+test('окружение PR читает одно место вне тестов — pr-base.ts', () => {
+	const readers = [...new Bun.Glob('*.ts').scanSync(import.meta.dir)]
+		.filter((f) => !f.endsWith('.test.ts') && f !== 'testkit.ts' && f !== 'pr-base.ts')
+		.filter((f) =>
+			/GITHUB_BASE_REF|GITHUB_EVENT_NAME/.test(readFileSync(join(import.meta.dir, f), 'utf8')),
+		);
+	expect(readers).toStrictEqual([]);
+});

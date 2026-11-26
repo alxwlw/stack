@@ -1,8 +1,6 @@
-import type { Unavailable } from './guardrails-port.ts';
-
 // База PR для групп правил: явный --base, иначе окружение GitHub Actions. Пропуск — не ошибка
 // (код выхода не меняется), недоступная база PR-задачи — ошибка, а не «нет дрейфа».
-export type PrBase = { base: string } | { skipped: string } | Unavailable;
+export type PrBase = { base: string } | { skipped: string } | { unavailable: string };
 
 export function prBase(base: string | undefined, env: NodeJS.ProcessEnv): PrBase {
 	if (base !== undefined && base !== '') return { base };
