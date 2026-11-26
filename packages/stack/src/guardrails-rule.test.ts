@@ -9,9 +9,9 @@ import { STACK_RENOVATE_PRESET } from './deps.ts';
 import type { Finding } from './findings.ts';
 import type { GuardrailsOutcome } from './guardrails.ts';
 import { gitleaksDirArgv } from './guardrails-gitleaks.ts';
-import type { GuardrailRun, GuardrailsPort, GuardrailViolation } from './guardrails-port.ts';
+import type { GuardrailRun, GuardrailRunner, GuardrailViolation } from './guardrails-port.ts';
 import { checkGuardrails, guardrailsNotes } from './guardrails-rule.ts';
-import type { RepoRulesOutcome, RepoRulesPort } from './repo-rules.ts';
+import type { RepoRulesOutcome, RepoRulesReader } from './repo-rules.ts';
 import { repoDir, ROOT, testCanon, testRepo } from './testkit.ts';
 
 const viol = (
@@ -342,18 +342,17 @@ test('check: находки guardrails — после repo-rules', () => {
 	).toStrictEqual(['repo-rules-violation', 'guardrails-violation']);
 });
 
-const throwingPort: GuardrailsPort = {
-	env: {},
-	run: () => {
-		throw new Error('порт guardrails не должен вызываться');
-	},
+const throwingPort: GuardrailRunner = () => {
+	throw new Error('порт guardrails не должен вызываться');
 };
 
 test('checkRepo: группа выключена — порт не зовётся, результат как без порта', () => {
 	const off = testCanon();
 	const repo = repoDir({});
 	const without = checkRepo(repo, off, []);
-	expect(checkRepo(repo, off, [], { guardrails: throwingPort })).toStrictEqual(without);
+	expect(checkRepo(repo, off, [], { ports: { guardrails: throwingPort }, env: {} })).toStrictEqual(
+		without,
+	);
 	expect(without.notes).toStrictEqual([]);
 });
 
@@ -402,16 +401,16 @@ test('checkRepo: .prototools репозитория доходит до чита
 			}),
 		},
 	};
-	const port: GuardrailsPort = {
-		env: { SHELLCHECK_BIN: '/x/sc', GITLEAKS_BIN: '/x/gl' },
-		run: (cmd, argv) => {
-			calls.push([cmd, argv]);
-			const hit = results[[cmd, ...argv].join(' ')];
-			if (hit === undefined) throw new Error(`unexpected call: ${cmd} ${argv.join(' ')}`);
-			return hit;
-		},
+	const run: GuardrailRunner = (cmd, argv) => {
+		calls.push([cmd, argv]);
+		const hit = results[[cmd, ...argv].join(' ')];
+		if (hit === undefined) throw new Error(`unexpected call: ${cmd} ${argv.join(' ')}`);
+		return hit;
 	};
-	const report = checkRepo(root, owned, [], { guardrails: port });
+	const report = checkRepo(root, owned, [], {
+		ports: { guardrails: run },
+		env: { SHELLCHECK_BIN: '/x/sc', GITLEAKS_BIN: '/x/gl' },
+	});
 	expect(report.findings).toStrictEqual([
 		{ code: 'guardrails-violation', target: 'a.sh:1', message: 'shellcheck SC2086: quote' },
 	]);
@@ -430,24 +429,22 @@ test('checkRepo: .prototools репозитория доходит до чита
 test('checkRepo: обе группы — находки и пометки repo-rules идут раньше guardrails', () => {
 	const both = testCanon({ rules: ['repo-rules', 'guardrails'] });
 	const root = repoDir({ 'renovate.json5': `{ extends: ['${STACK_RENOVATE_PRESET}'] }\n` });
-	const repoRules: RepoRulesPort = {
-		env: { GITHUB_ACTIONS: '' },
-		base: undefined,
-		read: () => ({
-			code: 1,
-			err: '',
-			out: JSON.stringify({
-				violations: [{ rule: 'max-lines', path: 'big.ts', line: 801, message: '812 lines' }],
-				stale: [],
-				notes: [],
-			}),
+	const repoRules: RepoRulesReader = () => ({
+		code: 1,
+		err: '',
+		out: JSON.stringify({
+			violations: [{ rule: 'max-lines', path: 'big.ts', line: 801, message: '812 lines' }],
+			stale: [],
+			notes: [],
 		}),
-	};
-	const guardrails: GuardrailsPort = {
-		env: {},
-		run: () => ({ code: 128, out: '', err: 'fatal: not a git repository\n' }),
-	};
-	expect(checkRepo(root, both, [], { repoRules, guardrails })).toStrictEqual({
+	});
+	const guardrails: GuardrailRunner = () => ({
+		code: 128,
+		out: '',
+		err: 'fatal: not a git repository\n',
+	});
+	const ports = { 'repo-rules': repoRules, guardrails };
+	expect(checkRepo(root, both, [], { ports, env: { GITHUB_ACTIONS: '' } })).toStrictEqual({
 		findings: [
 			{ code: 'repo-rules-violation', target: 'big.ts:801', message: 'max-lines: 812 lines' },
 			{
@@ -466,20 +463,14 @@ test('checkRepo: notes guardrails после repo-rules', () => {
 		'renovate.json5': `{ extends: ['${STACK_RENOVATE_PRESET}'] }\n`,
 		'README.txt': '# acme\n',
 	});
-	const repoRules: RepoRulesPort = {
-		env: { GITHUB_ACTIONS: '' },
-		base: undefined,
-		read: () => ({
-			code: 0,
-			err: '',
-			out: JSON.stringify({ violations: [], stale: [], notes: [] }),
-		}),
-	};
-	const guardrails: GuardrailsPort = {
-		env: {},
-		run: () => ({ code: 0, out: 'README.txt\0', err: '' }),
-	};
-	expect(checkRepo(root, both, [], { repoRules, guardrails }).notes).toStrictEqual([
+	const repoRules: RepoRulesReader = () => ({
+		code: 0,
+		err: '',
+		out: JSON.stringify({ violations: [], stale: [], notes: [] }),
+	});
+	const guardrails: GuardrailRunner = () => ({ code: 0, out: 'README.txt\0', err: '' });
+	const ports = { 'repo-rules': repoRules, guardrails };
+	expect(checkRepo(root, both, [], { ports, env: {} }).notes).toStrictEqual([
 		'repo-rules diff: skipped (no --base outside GitHub Actions)',
 		'guardrails actionlint: skipped (no files)',
 		'guardrails shellcheck: skipped (no files)',

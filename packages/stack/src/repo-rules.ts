@@ -1,6 +1,8 @@
 // Порт группы repo-rules: один вызов `main` из @alxwlw/repo-rules с захваченным выводом, какие вызовы
 // делать и как читать их исход. Правило группы — repo-rules-rule.ts; здесь только значения и разбор.
 
+import type { PrBase } from './pr-base.ts';
+
 /** Один вызов `main` repo-rules: код выхода и захваченные строки, склеенные через `\n`. */
 export interface RepoRulesRun {
 	code: number;
@@ -9,12 +11,6 @@ export interface RepoRulesRun {
 }
 /** Порт: вызов repo-rules в процессе. Сбой repo-rules — не исключение, а код 2 в ответе. */
 export type RepoRulesReader = (argv: string[], env: NodeJS.ProcessEnv) => RepoRulesRun;
-/** Порт вместе с входами вызова: окружение и значение `--base`. */
-export interface RepoRulesPort {
-	read: RepoRulesReader;
-	env: NodeJS.ProcessEnv;
-	base: string | undefined;
-}
 
 export interface RepoRulesViolation {
 	rule: string;
@@ -36,24 +32,11 @@ export interface RepoRulesReport {
 export type RepoRulesPart = RepoRulesReport | { unavailable: string };
 export interface RepoRulesOutcome {
 	check: RepoRulesPart;
+	// skipped — причина из PrBase, без слова «skipped»
 	diff: RepoRulesPart | { skipped: string };
 }
 
-export const DIFF_SKIPPED_NO_BASE = 'skipped (no --base outside GitHub Actions)';
-
 const ERROR_PREFIX = 'repo-rules: ';
-
-// Тот же предикат, что у repo-rules (diff.mjs): без --base diff зовётся только в GitHub Actions.
-export function repoRulesCalls(
-	repoRoot: string,
-	base: string | undefined,
-	env: NodeJS.ProcessEnv,
-): { check: string[]; diff: string[] | undefined } {
-	const check = ['-C', repoRoot, 'check', '--json'];
-	const diff = ['-C', repoRoot, 'diff', '--json'];
-	if (base !== undefined && base !== '') return { check, diff: [...diff, '--base', base] };
-	return { check, diff: env.GITHUB_ACTIONS === 'true' ? diff : undefined };
-}
 
 /** Аргументы режима repo-rules «убрать исправленное из baseline»: его зовёт sync-pr. */
 export function repoRulesDropFixedCall(repoRoot: string): string[] {
@@ -136,9 +119,16 @@ export function repoRulesPart(run: RepoRulesRun): RepoRulesPart {
 	return { violations, stale, notes };
 }
 
-export function readRepoRules(repoRoot: string, port: RepoRulesPort): RepoRulesOutcome {
-	const calls = repoRulesCalls(repoRoot, port.base, port.env);
-	const check = repoRulesPart(port.read(calls.check, port.env));
-	if (calls.diff === undefined) return { check, diff: { skipped: DIFF_SKIPPED_NO_BASE } };
-	return { check, diff: repoRulesPart(port.read(calls.diff, port.env)) };
+export function readRepoRules(
+	repoRoot: string,
+	read: RepoRulesReader,
+	env: NodeJS.ProcessEnv,
+	pr: PrBase,
+): RepoRulesOutcome {
+	const check = repoRulesPart(read(['-C', repoRoot, 'check', '--json'], env));
+	if (!('base' in pr)) return { check, diff: pr };
+	return {
+		check,
+		diff: repoRulesPart(read(['-C', repoRoot, 'diff', '--json', '--base', pr.base], env)),
+	};
 }

@@ -5,7 +5,10 @@ import { actionlintArgv } from './guardrails-actionlint.ts';
 import { markdownlintCommand, type MarkdownlintReport } from './guardrails-markdownlint.ts';
 import { type GuardrailRun, type GuardrailsPort } from './guardrails-port.ts';
 import { shellcheckArgv } from './guardrails-shellcheck.ts';
+import { prBase } from './pr-base.ts';
 import { repoDir } from './testkit.ts';
+
+const NO_PR = prBase(undefined, {});
 
 type Call = [string, string[]];
 
@@ -65,7 +68,7 @@ test('только README.md без пина gitleaks — копия нужна 
 		{ [GIT]: tracked('README.md'), [[cmd, ...argv].join(' ')]: ok(JSON.stringify(report)) },
 		ENV,
 	);
-	const out = readGuardrails(root, PROTOTOOLS, f.port);
+	const out = readGuardrails(root, PROTOTOOLS, f.port, NO_PR);
 	expect(out).toStrictEqual({
 		tools: {
 			actionlint: NO_FILES,
@@ -87,7 +90,7 @@ test('git вне репозитория — вся группа недоступ
 	const root = repoDir({});
 	const fatal = 'fatal: not a git repository (or any of the parent directories): .git';
 	const f = fakePort({ [GIT]: { code: 128, out: '', err: `${fatal}\n` } }, ENV);
-	expect(readGuardrails(root, PROTOTOOLS, f.port)).toStrictEqual({ unavailable: fatal });
+	expect(readGuardrails(root, PROTOTOOLS, f.port, NO_PR)).toStrictEqual({ unavailable: fatal });
 	expect(f.calls).toStrictEqual([['git', ['ls-files', '-z']]]);
 });
 
@@ -101,7 +104,7 @@ test('только скрипт — shellcheck запущен, actionlint skippe
 		},
 		ENV,
 	);
-	const out = readGuardrails(root, PROTOTOOLS, f.port);
+	const out = readGuardrails(root, PROTOTOOLS, f.port, NO_PR);
 	expect(out).toStrictEqual({
 		tools: {
 			actionlint: NO_FILES,
@@ -138,7 +141,7 @@ test('файл из git, которого нет на диске, инструм
 		},
 		ENV,
 	);
-	const out = readGuardrails(root, PROTOTOOLS, f.port);
+	const out = readGuardrails(root, PROTOTOOLS, f.port, NO_PR);
 	expect(out).toStrictEqual({
 		tools: {
 			actionlint: { version: '1.7.12', files: 1, violations: [] },
@@ -172,7 +175,7 @@ test('только workflow без пина shellcheck — shellcheck недос
 		},
 		ENV,
 	);
-	const out = readGuardrails(root, 'actionlint = "1.7.12"\n', f.port);
+	const out = readGuardrails(root, 'actionlint = "1.7.12"\n', f.port, NO_PR);
 	expect(out).toStrictEqual({
 		tools: {
 			actionlint: { version: '1.7.12', files: 1, violations: [] },
@@ -205,7 +208,7 @@ test('скрипты и workflow, нет пина actionlint — actionlint не
 		},
 		ENV,
 	);
-	const out = readGuardrails(root, 'shellcheck = "0.11.0"\n', f.port);
+	const out = readGuardrails(root, 'shellcheck = "0.11.0"\n', f.port, NO_PR);
 	expect(out).toStrictEqual({
 		tools: {
 			actionlint: { unavailable: '.prototools has no actionlint pin' },
@@ -245,7 +248,7 @@ test('actionlint: два workflow — files 2, находки разобраны
 		},
 		ENV,
 	);
-	const out = readGuardrails(root, PROTOTOOLS, f.port);
+	const out = readGuardrails(root, PROTOTOOLS, f.port, NO_PR);
 	expect(out).toStrictEqual({
 		tools: {
 			actionlint: {
@@ -268,7 +271,7 @@ test('actionlint: два workflow — files 2, находки разобраны
 test('нет .prototools — нужные инструменты недоступны, ненужный skipped, вызов только git', () => {
 	const root = repoDir({ 'a.sh': 'echo\n' });
 	const f = fakePort({ [GIT]: tracked('a.sh') }, ENV);
-	const out = readGuardrails(root, undefined, f.port);
+	const out = readGuardrails(root, undefined, f.port, NO_PR);
 	expect(out).toStrictEqual({
 		tools: {
 			actionlint: NO_FILES,
@@ -286,7 +289,7 @@ test('нет .prototools — нужные инструменты недосту�
 test('нет .prototools при workflow — недоступны оба', () => {
 	const root = repoDir({ '.github/workflows/ci.yml': 'on: push\n' });
 	const f = fakePort({ [GIT]: tracked('.github/workflows/ci.yml') }, ENV);
-	expect(readGuardrails(root, undefined, f.port)).toStrictEqual({
+	expect(readGuardrails(root, undefined, f.port, NO_PR)).toStrictEqual({
 		tools: {
 			actionlint: { unavailable: '.prototools is missing' },
 			shellcheck: { unavailable: '.prototools is missing' },
@@ -314,7 +317,7 @@ test('shellcheck вернул код 2 — часть недоступна с п
 		},
 		ENV,
 	);
-	expect(readGuardrails(root, PROTOTOOLS, f.port)).toStrictEqual({
+	expect(readGuardrails(root, PROTOTOOLS, f.port, NO_PR)).toStrictEqual({
 		tools: {
 			actionlint: NO_FILES,
 			shellcheck: { unavailable: 'a.sh: openBinaryFile: does not exist' },
@@ -340,7 +343,7 @@ test('скрипт без расширения с шебангом считае�
 		},
 		ENV,
 	);
-	const out = readGuardrails(root, PROTOTOOLS, f.port);
+	const out = readGuardrails(root, PROTOTOOLS, f.port, NO_PR);
 	expect(out).toStrictEqual({
 		tools: {
 			actionlint: NO_FILES,
@@ -364,7 +367,7 @@ test('отслеживаемый скрипт, которого нет на ди
 		},
 		ENV,
 	);
-	const out = readGuardrails(root, PROTOTOOLS, f.port);
+	const out = readGuardrails(root, PROTOTOOLS, f.port, NO_PR);
 	expect(out).toStrictEqual({
 		tools: {
 			actionlint: NO_FILES,

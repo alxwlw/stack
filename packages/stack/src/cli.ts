@@ -162,9 +162,13 @@ try {
 	} else if (command === 'check') {
 		const cfg = readStackConfig(repoRoot);
 		const { findings, notes } = checkRepo(repoRoot, loadCanon(cfg), cfg.exceptions, {
-			peers: pnpmPeers,
-			repoRules: { read: inProcessRepoRules, env: process.env, base: values.base },
-			guardrails: { run: spawnRunner(repoRoot), env: process.env, base: values.base },
+			ports: {
+				peers: pnpmPeers,
+				'repo-rules': inProcessRepoRules,
+				guardrails: spawnRunner(repoRoot),
+			},
+			env: process.env,
+			base: values.base,
 		});
 		for (const n of notes) console.warn(n);
 		const blocking = findings.filter((f) => !isHeld(f));

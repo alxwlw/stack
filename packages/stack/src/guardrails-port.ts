@@ -21,8 +21,6 @@ export type GuardrailRunner = (
 export interface GuardrailsPort {
 	run: GuardrailRunner;
 	env: NodeJS.ProcessEnv;
-	// --base команды check: база PR для скана коммитов gitleaks; без неё — окружение Actions.
-	base?: string;
 }
 
 // То, что ставит proto и что экспортирует setup action (пути *_BIN).

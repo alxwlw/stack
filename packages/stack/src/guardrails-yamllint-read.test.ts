@@ -10,7 +10,10 @@ import { gitleaksDirArgv } from './guardrails-gitleaks.ts';
 import { type GuardrailRun, type GuardrailsPort } from './guardrails-port.ts';
 import { guardrailsNotes } from './guardrails-rule.ts';
 import { YAMLLINT_VERSION, yamllintArgv } from './guardrails-yamllint.ts';
+import { prBase } from './pr-base.ts';
 import { repoDir, ROOT, withPrivateTmpdir } from './testkit.ts';
+
+const NO_PR = prBase(undefined, {});
 
 const ROOT_PINS = parsePins(readFileSync(join(ROOT, '.prototools'), 'utf8'));
 const GL_PIN = ROOT_PINS.gitleaks ?? '';
@@ -89,7 +92,7 @@ describe('читатель: yamllint с портом-таблицей', () => {
 			BINS,
 		);
 		withPrivateTmpdir(() => {
-			const out = readGuardrails(root, PROTOTOOLS, f.port);
+			const out = readGuardrails(root, PROTOTOOLS, f.port, NO_PR);
 			if ('unavailable' in out) throw new Error(out.unavailable);
 			// В наборе два YAML-файла; конфиги без суффикса .yaml/.yml и прочие файлы в набор не входят.
 			expect(out.tools.yamllint).toStrictEqual({
@@ -126,7 +129,7 @@ describe('читатель: yamllint с портом-таблицей', () => {
 			},
 			BINS,
 		);
-		expect(part(readGuardrails(root, PROTOTOOLS, f.port))).toStrictEqual({
+		expect(part(readGuardrails(root, PROTOTOOLS, f.port, NO_PR))).toStrictEqual({
 			version: YAMLLINT_VERSION,
 			files: 1,
 			violations: [
@@ -151,7 +154,7 @@ describe('читатель: yamllint с портом-таблицей', () => {
 			},
 			{ GITLEAKS_BIN: '/x/gl' },
 		);
-		expect(part(readGuardrails(root, PROTOTOOLS, f.port))).toStrictEqual(NO_FILES);
+		expect(part(readGuardrails(root, PROTOTOOLS, f.port, NO_PR))).toStrictEqual(NO_FILES);
 		expect(f.calls).toStrictEqual([GIT, GL_VERSION, GL_DIR]);
 		expect(f.calls.some((c) => c.includes('uv'))).toBe(false);
 	});
@@ -166,7 +169,7 @@ describe('читатель: yamllint с портом-таблицей', () => {
 			},
 			{ GITLEAKS_BIN: '/x/gl' },
 		);
-		expect(part(readGuardrails(root, PROTOTOOLS, f.port))).toStrictEqual({
+		expect(part(readGuardrails(root, PROTOTOOLS, f.port, NO_PR))).toStrictEqual({
 			unavailable: NO_CONFIG,
 		});
 		expect(f.calls).toStrictEqual([GIT, GL_VERSION, GL_DIR]);
@@ -182,7 +185,7 @@ describe('читатель: yamllint с портом-таблицей', () => {
 			},
 			BINS,
 		);
-		const out = readGuardrails(root, `gitleaks = "${GL_PIN}"\n`, f.port);
+		const out = readGuardrails(root, `gitleaks = "${GL_PIN}"\n`, f.port, NO_PR);
 		expect(part(out)).toStrictEqual({ unavailable: '.prototools has no uv pin' });
 		if ('unavailable' in out) throw new Error(out.unavailable);
 		expect(out.tools.gitleaks).toStrictEqual({ version: GL_PIN, files: 2, violations: [] });
@@ -204,7 +207,7 @@ describe('читатель: yamllint с портом-таблицей', () => {
 			},
 			BINS,
 		);
-		const out = readGuardrails(root, `uv = "${UV_PIN}"\n`, f.port);
+		const out = readGuardrails(root, `uv = "${UV_PIN}"\n`, f.port, NO_PR);
 		expect(part(out)).toStrictEqual({ version: YAMLLINT_VERSION, files: 1, violations: [] });
 		if ('unavailable' in out) throw new Error(out.unavailable);
 		expect(out.tools.gitleaks).toStrictEqual({ unavailable: '.prototools has no gitleaks pin' });
@@ -232,11 +235,11 @@ describe('читатель: yamllint с портом-таблицей', () => {
 			},
 			BINS,
 		);
-		expect(part(readGuardrails(root, PROTOTOOLS, failed.port))).toStrictEqual({
+		expect(part(readGuardrails(root, PROTOTOOLS, failed.port, NO_PR))).toStrictEqual({
 			unavailable: 'error: No solution found when resolving tool dependencies:',
 		});
 		const other = fakePort({ ...base, [UV_VERSION]: ok('uv 0.0.1 (x)\n') }, BINS);
-		expect(part(readGuardrails(root, PROTOTOOLS, other.port))).toStrictEqual({
+		expect(part(readGuardrails(root, PROTOTOOLS, other.port, NO_PR))).toStrictEqual({
 			unavailable: `uv 0.0.1 at /x/uv, .prototools pins ${UV_PIN} (from UV_BIN)`,
 		});
 		expect(other.calls).toStrictEqual([GIT, GL_VERSION, UV_VERSION, GL_DIR]);
@@ -260,7 +263,7 @@ describe('читатель: yamllint с портом-таблицей', () => {
 			BINS,
 		);
 		withPrivateTmpdir((tmp) => {
-			const p = part(readGuardrails(root, PROTOTOOLS, f.port));
+			const p = part(readGuardrails(root, PROTOTOOLS, f.port, NO_PR));
 			if (!('unavailable' in p)) throw new Error('expected unavailable');
 			expect(p.unavailable).toBe(
 				"FileNotFoundError: [Errno 2] No such file or directory: '.yamllint-ignores'",
@@ -279,7 +282,7 @@ describe('читатель: yamllint с портом-таблицей', () => {
 		const saved = process.env.TMPDIR;
 		process.env.TMPDIR = '/nonexistent';
 		try {
-			const p = part(readGuardrails(root, PROTOTOOLS, f.port));
+			const p = part(readGuardrails(root, PROTOTOOLS, f.port, NO_PR));
 			expect('unavailable' in p && p.unavailable.startsWith('copy: ')).toBe(true);
 		} finally {
 			if (saved === undefined) Reflect.deleteProperty(process.env, 'TMPDIR');

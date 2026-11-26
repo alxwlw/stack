@@ -11,16 +11,17 @@ import { allowedLine, type Exception, type Held, isHeld, resolve } from './excep
 import { planFiles } from './files.ts';
 import type { Drift, Finding } from './findings.ts';
 import { type GuardrailsOutcome, readGuardrails } from './guardrails.ts';
-import type { GuardrailsPort } from './guardrails-port.ts';
+import type { GuardrailRunner } from './guardrails-port.ts';
 import { checkGuardrails, guardrailsNotes } from './guardrails-rule.ts';
 import { checkMoonToolchains, checkMoonV1Toolchain } from './moon-toolchains.ts';
 import { checkMoonDefaultBranch, planMoonDefaultBranch } from './moon-workspace.ts';
 import { planPackageManager } from './package-manager.ts';
 import { type PeersOutcome, peersOutcome, type PeersReader } from './peers.ts';
 import { checkPeers } from './peers-rule.ts';
+import { prBase } from './pr-base.ts';
 import { planReleaseAgeExcludes } from './release-age.ts';
 import { loadRepo, LOCKFILE, type Repo } from './repo.ts';
-import { readRepoRules, type RepoRulesOutcome, type RepoRulesPort } from './repo-rules.ts';
+import { readRepoRules, type RepoRulesOutcome, type RepoRulesReader } from './repo-rules.ts';
 import { checkRepoRules, repoRulesNotes } from './repo-rules-rule.ts';
 import { checkSeedExtends } from './seed-extends.ts';
 import { planToolchainPins } from './toolchain-pins-rule.ts';
@@ -87,8 +88,14 @@ export function planRepo(
 /** Порты `checkRepo`: каждый нужен только своей группе. */
 export interface CheckPorts {
 	peers?: PeersReader;
-	repoRules?: RepoRulesPort;
-	guardrails?: GuardrailsPort;
+	'repo-rules'?: RepoRulesReader;
+	guardrails?: GuardrailRunner;
+}
+/** Входы прогона для групп правил: порты, окружение и значение --base. */
+export interface CheckInputs {
+	ports: CheckPorts;
+	env: NodeJS.ProcessEnv;
+	base?: string;
 }
 /** Итог check: находки (блокируют, если не удержаны) и пометки (выход не меняют). */
 export interface CheckReport {
@@ -103,9 +110,12 @@ export function checkRepo(
 	repoRoot: string,
 	canon: Canon,
 	exceptions: Exception[],
-	ports: CheckPorts = {},
+	inputs: CheckInputs = { ports: {}, env: {} },
 ): CheckReport {
+	const { ports } = inputs;
 	const repo = loadRepo(repoRoot, canon);
+	// База PR — одно значение на прогон: обе группы читают её готовой.
+	const pr = prBase(inputs.base, inputs.env);
 	let peers: PeersOutcome | undefined;
 	if (canon.rules.includes('peers') && repo.paths.has(LOCKFILE)) {
 		if (ports.peers === undefined) throw new Error('checkRepo: peers group needs a PeersReader');
@@ -113,17 +123,22 @@ export function checkRepo(
 	}
 	let repoRules: RepoRulesOutcome | undefined;
 	if (canon.rules.includes('repo-rules')) {
-		if (ports.repoRules === undefined) {
+		if (ports['repo-rules'] === undefined) {
 			throw new Error('checkRepo: repo-rules group needs a RepoRulesPort');
 		}
-		repoRules = readRepoRules(repoRoot, ports.repoRules);
+		repoRules = readRepoRules(repoRoot, ports['repo-rules'], inputs.env, pr);
 	}
 	let guardrails: GuardrailsOutcome | undefined;
 	if (canon.rules.includes('guardrails')) {
 		if (ports.guardrails === undefined) {
 			throw new Error('checkRepo: guardrails group needs a GuardrailsPort');
 		}
-		guardrails = readGuardrails(repoRoot, repo.files.get('.prototools'), ports.guardrails);
+		guardrails = readGuardrails(
+			repoRoot,
+			repo.files.get('.prototools'),
+			{ run: ports.guardrails, env: inputs.env },
+			pr,
+		);
 	}
 	return {
 		findings: check(repo, canon, exceptions, peers, repoRules, guardrails),

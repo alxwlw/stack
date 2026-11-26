@@ -3,7 +3,7 @@ import { expect, test } from 'bun:test';
 import { check, checkRepo } from './check.ts';
 import type { Exception } from './exceptions.ts';
 import type { GuardrailsOutcome } from './guardrails.ts';
-import type { GuardrailsPort } from './guardrails-port.ts';
+import type { GuardrailRunner } from './guardrails-port.ts';
 import { repoDir, testCanon, testRepo } from './testkit.ts';
 
 const BUILD = '.github/workflows/build.yml';
@@ -53,11 +53,8 @@ const VIOLATION: GuardrailsOutcome = {
 	},
 };
 const on = testCanon({ rules: ['guardrails'] });
-const throwingPort: GuardrailsPort = {
-	env: {},
-	run: () => {
-		throw new Error('порт guardrails не должен вызываться');
-	},
+const throwingPort: GuardrailRunner = () => {
+	throw new Error('порт guardrails не должен вызываться');
 };
 
 test('группа выключена — гигиены нет', () => {
@@ -65,7 +62,7 @@ test('группа выключена — гигиены нет', () => {
 	const got = check(testRepo(off, { [BUILD]: BARE_WORKFLOW }), off, []);
 	expect(got.filter((f) => f.code === 'workflow-hygiene')).toStrictEqual([]);
 	const repo = repoDir({ [BUILD]: BARE_WORKFLOW });
-	expect(checkRepo(repo, off, [], { guardrails: throwingPort })).toStrictEqual(
+	expect(checkRepo(repo, off, [], { ports: { guardrails: throwingPort }, env: {} })).toStrictEqual(
 		checkRepo(repo, off, []),
 	);
 });

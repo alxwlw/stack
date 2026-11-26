@@ -56,9 +56,21 @@ test('checkRepoRules: группа включена, исхода нет — Err
 	);
 });
 
-test('repoRulesNotes: пропуск diff — одна строка', () => {
-	expect(repoRulesNotes({ check: EMPTY, diff: { skipped: 'skipped (x)' } })).toStrictEqual([
-		'repo-rules diff: skipped (x)',
+test('repoRulesNotes: причина пропуска diff — в скобках после skipped', () => {
+	const clean = { violations: [], stale: [], notes: [] };
+	expect(repoRulesNotes({ check: clean, diff: { skipped: 'not a pull request' } })).toStrictEqual([
+		'repo-rules diff: skipped (not a pull request)',
+	]);
+	expect(
+		repoRulesNotes({ check: clean, diff: { skipped: 'no --base outside GitHub Actions' } }),
+	).toStrictEqual(['repo-rules diff: skipped (no --base outside GitHub Actions)']);
+});
+
+test('checkRepoRules: недоступная база PR — находка у diff с причиной базы', () => {
+	const clean = { violations: [], stale: [], notes: [] };
+	const reason = 'GITHUB_BASE_REF is empty in a pull_request job';
+	expect(checkRepoRules({ check: clean, diff: { unavailable: reason } })).toStrictEqual([
+		{ code: 'repo-rules-unavailable', target: 'repo-rules diff', message: reason },
 	]);
 });
 

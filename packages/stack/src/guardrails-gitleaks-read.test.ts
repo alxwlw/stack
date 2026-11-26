@@ -8,6 +8,7 @@ import { parsePins } from './canon.ts';
 import { readGuardrails } from './guardrails.ts';
 import { gitleaksDirArgv, gitleaksGitArgv } from './guardrails-gitleaks.ts';
 import { type GuardrailRun, type GuardrailsPort, spawnRunner } from './guardrails-port.ts';
+import { prBase } from './pr-base.ts';
 import {
 	canonFile,
 	git,
@@ -19,6 +20,8 @@ import {
 	ROOT,
 	withPrivateTmpdir,
 } from './testkit.ts';
+
+const NO_PR = prBase(undefined, {});
 
 // 64 hex собираются во время выполнения, поэтому eth-правило канона не видит их в исходнике; в имени
 // нет слов key, secret, token, которые ищет generic-api-key из правил по умолчанию.
@@ -97,7 +100,7 @@ describe('читатель с портом-таблицей', () => {
 				return ok('[]');
 			},
 		});
-		const out = readGuardrails(root, PROTOTOOLS, f.port);
+		const out = readGuardrails(root, PROTOTOOLS, f.port, NO_PR);
 		expect(out).toStrictEqual({
 			tools: {
 				actionlint: NO_FILES,
@@ -127,7 +130,7 @@ describe('читатель с портом-таблицей', () => {
 			[VERSION]: ok(`${PIN}\n`),
 			[DIR]: { code: 3, out: finding(), err: '' },
 		});
-		expect(readGuardrails(root, PROTOTOOLS, f.port)).toStrictEqual({
+		expect(readGuardrails(root, PROTOTOOLS, f.port, NO_PR)).toStrictEqual({
 			tools: {
 				actionlint: NO_FILES,
 				shellcheck: NO_FILES,
@@ -153,7 +156,7 @@ describe('читатель с портом-таблицей', () => {
 			[VERSION]: ok(`${PIN}\n`),
 			[DIR]: { code: 3, out: finding({ Description: '' }), err: '' },
 		});
-		const out = readGuardrails(root, PROTOTOOLS, f.port);
+		const out = readGuardrails(root, PROTOTOOLS, f.port, NO_PR);
 		expect('tools' in out && out.tools.gitleaks).toStrictEqual({
 			version: PIN,
 			files: 1,
@@ -172,7 +175,7 @@ describe('читатель с портом-таблицей', () => {
 		withPrivateTmpdir(() => {
 			const before = copies();
 			const f = fakePort({ [GIT]: tracked('README.txt') });
-			const out = readGuardrails(root, withoutGitleaks, f.port);
+			const out = readGuardrails(root, withoutGitleaks, f.port, NO_PR);
 			expect('tools' in out && out.tools.gitleaks).toStrictEqual({
 				unavailable: '.prototools has no gitleaks pin',
 			});
@@ -192,7 +195,7 @@ describe('читатель с портом-таблицей', () => {
 				return { code: 1, out: '', err: '12:00AM FTL unable to load gitleaks config\n' };
 			},
 		});
-		const out = readGuardrails(root, PROTOTOOLS, f.port);
+		const out = readGuardrails(root, PROTOTOOLS, f.port, NO_PR);
 		expect('tools' in out && out.tools.gitleaks).toStrictEqual({
 			unavailable: 'FTL unable to load gitleaks config',
 		});
@@ -207,7 +210,7 @@ describe('читатель с портом-таблицей', () => {
 			[VERSION]: ok(`${PIN}\n`),
 			[DIR]: (c) => ({ code: 1, out: '', err: `boom ${c}/x in ${c}\n` }),
 		});
-		const out = readGuardrails(root, PROTOTOOLS, f.port);
+		const out = readGuardrails(root, PROTOTOOLS, f.port, NO_PR);
 		expect('tools' in out && out.tools.gitleaks).toStrictEqual({ unavailable: 'boom x in .' });
 	});
 
@@ -226,7 +229,7 @@ describe('читатель с портом-таблицей', () => {
 				err: `boom ${c}/x in ${c}\n`,
 			}),
 		});
-		const out = readGuardrails(root, PROTOTOOLS, { ...f.port, base: 'origin/main' });
+		const out = readGuardrails(root, PROTOTOOLS, f.port, { base: 'origin/main' });
 		expect('tools' in out && out.commits).toStrictEqual({ unavailable: 'boom x in .' });
 	});
 
@@ -241,7 +244,7 @@ describe('читатель с портом-таблицей', () => {
 				throw new Error('boom');
 			},
 		});
-		expect(() => readGuardrails(root, PROTOTOOLS, f.port)).toThrow('boom');
+		expect(() => readGuardrails(root, PROTOTOOLS, f.port, NO_PR)).toThrow('boom');
 		expect(cwd).toBeDefined();
 		expect(existsSync(cwd ?? root)).toBe(false);
 	});
@@ -252,7 +255,7 @@ describe('читатель с портом-таблицей', () => {
 		const saved = process.env.TMPDIR;
 		process.env.TMPDIR = '/nonexistent';
 		try {
-			const out = readGuardrails(root, PROTOTOOLS, f.port);
+			const out = readGuardrails(root, PROTOTOOLS, f.port, NO_PR);
 			const part = 'tools' in out ? out.tools.gitleaks : undefined;
 			expect(part !== undefined && 'unavailable' in part && part.unavailable).toStartWith('copy: ');
 		} finally {
@@ -269,7 +272,7 @@ describe('читатель с портом-таблицей', () => {
 		const root = repo({});
 		const f = fakePort({ [GIT]: ok('') });
 		// .prototools нет: недоступность была бы, если бы пины читались.
-		expect(readGuardrails(root, undefined, f.port)).toStrictEqual({
+		expect(readGuardrails(root, undefined, f.port, NO_PR)).toStrictEqual({
 			tools: {
 				actionlint: NO_FILES,
 				shellcheck: NO_FILES,
@@ -314,10 +317,12 @@ describe('настоящий gitleaks через читатель', () => {
 	}
 
 	function scan(dir: string) {
-		const out = readGuardrails(dir, prototools, {
-			run: spawnRunner(dir),
-			env: { ...process.env, GITHUB_ACTIONS: undefined, GITLEAKS_BIN: bin },
-		});
+		const out = readGuardrails(
+			dir,
+			prototools,
+			{ run: spawnRunner(dir), env: { ...process.env, GITLEAKS_BIN: bin } },
+			NO_PR,
+		);
 		if ('unavailable' in out) throw new Error(out.unavailable);
 		return { out, part: out.tools.gitleaks };
 	}

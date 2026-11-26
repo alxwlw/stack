@@ -6,10 +6,11 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 
 import { parsePins } from './canon.ts';
 import { readGuardrails } from './guardrails.ts';
-import { mergeBase, mergeBaseArgv, type PrBase, prBase } from './guardrails-commits.ts';
+import { mergeBase, mergeBaseArgv } from './guardrails-commits.ts';
 import { gitleaksDirArgv, gitleaksGitArgv } from './guardrails-gitleaks.ts';
 import { type GuardrailRun, type GuardrailsPort, spawnRunner } from './guardrails-port.ts';
 import { checkGuardrails, guardrailsNotes } from './guardrails-rule.ts';
+import type { PrBase } from './pr-base.ts';
 import {
 	canonFile,
 	git,
@@ -34,65 +35,8 @@ const ROOT_PINS = parsePins(readFileSync(join(ROOT, '.prototools'), 'utf8'));
 const PIN = ROOT_PINS.gitleaks ?? '';
 const PROTOTOOLS = `gitleaks = "${PIN}"\n`;
 const NO_FILES = { skipped: 'no files' } as const;
-const PR_ENV = {
-	GITHUB_ACTIONS: 'true',
-	GITHUB_EVENT_NAME: 'pull_request',
-	GITHUB_BASE_REF: 'main',
-};
-
-describe('prBase', () => {
-	const rows: [string, string | undefined, NodeJS.ProcessEnv, PrBase][] = [
-		['явный --base', 'origin/dev', {}, { base: 'origin/dev' }],
-		[
-			'явный --base при push в Actions',
-			'main',
-			{ GITHUB_ACTIONS: 'true', GITHUB_EVENT_NAME: 'push' },
-			{ base: 'main' },
-		],
-		[
-			'push в Actions',
-			undefined,
-			{ GITHUB_ACTIONS: 'true', GITHUB_EVENT_NAME: 'push' },
-			{ skipped: 'not a pull request' },
-		],
-		[
-			'Actions без события',
-			undefined,
-			{ GITHUB_ACTIONS: 'true' },
-			{ skipped: 'not a pull request' },
-		],
-		['pull_request', undefined, PR_ENV, { base: 'origin/main' }],
-		['пустой --base в PR-окружении', '', PR_ENV, { base: 'origin/main' }],
-		[
-			'pull_request_target',
-			undefined,
-			{ ...PR_ENV, GITHUB_EVENT_NAME: 'pull_request_target', GITHUB_BASE_REF: 'dev' },
-			{ base: 'origin/dev' },
-		],
-		[
-			'PR без GITHUB_BASE_REF',
-			undefined,
-			{ ...PR_ENV, GITHUB_BASE_REF: '' },
-			{ unavailable: 'GITHUB_BASE_REF is empty in a pull_request job' },
-		],
-		[
-			'PR без переменной базы',
-			undefined,
-			{ GITHUB_ACTIONS: 'true', GITHUB_EVENT_NAME: 'pull_request' },
-			{ unavailable: 'GITHUB_BASE_REF is empty in a pull_request job' },
-		],
-		['вне Actions без --base', undefined, {}, { skipped: 'no --base outside GitHub Actions' }],
-		[
-			'GITHUB_ACTIONS не true',
-			undefined,
-			{ GITHUB_ACTIONS: '1', GITHUB_EVENT_NAME: 'pull_request' },
-			{ skipped: 'no --base outside GitHub Actions' },
-		],
-	];
-	test.each(rows)('%s', (_name, base, env, expected) => {
-		expect(prBase(base, env)).toStrictEqual(expected);
-	});
-});
+const MAIN: PrBase = { base: 'origin/main' };
+const NO_BASE: PrBase = { skipped: 'no --base outside GitHub Actions' };
 
 describe('mergeBase', () => {
 	const run = (over: Partial<GuardrailRun>): GuardrailRun => ({
@@ -222,11 +166,10 @@ describe('читатель с портом-таблицей', () => {
 	};
 
 	// Порт-фальшивка: вызовы вне таблицы бросают; записаны команда, аргументы и cwd.
-	function fakePort(table: Record<string, Row>, env: NodeJS.ProcessEnv = {}, base?: string) {
+	function fakePort(table: Record<string, Row>) {
 		const calls: [string, string[], string | undefined][] = [];
 		const port: GuardrailsPort = {
-			env: { GITLEAKS_BIN: '/x/gl', ...env },
-			base,
+			env: { GITLEAKS_BIN: '/x/gl' },
 			run: (cmd, argv, cwd) => {
 				calls.push([cmd, argv, cwd]);
 				const hit = table[[cmd, ...argv].join(' ')];
@@ -261,17 +204,14 @@ describe('читатель с портом-таблицей', () => {
 		const root = repo(Object.fromEntries(paths.map((p) => [p, 'x\n'])));
 		const range = `${SHA}..HEAD`;
 		const GIT_RUN = `/x/gl ${gitleaksGitArgv(root, range, withConfig).join(' ')}`;
-		const f = fakePort(
-			{
-				[GIT]: tracked(...paths),
-				[VERSION]: ok(`${PIN}\n`),
-				[DIR]: ok('[]'),
-				[MB]: ok(`${SHA}\n`),
-				[GIT_RUN]: { code: 3, out: leak, err: '' },
-			},
-			PR_ENV,
-		);
-		const out = readGuardrails(root, PROTOTOOLS, f.port);
+		const f = fakePort({
+			[GIT]: tracked(...paths),
+			[VERSION]: ok(`${PIN}\n`),
+			[DIR]: ok('[]'),
+			[MB]: ok(`${SHA}\n`),
+			[GIT_RUN]: { code: 3, out: leak, err: '' },
+		});
+		const out = readGuardrails(root, PROTOTOOLS, f.port, MAIN);
 		expect('tools' in out && out.commits).toStrictEqual({
 			range: `${SHA.slice(0, 12)}..HEAD`,
 			violations: [
@@ -305,26 +245,22 @@ describe('читатель с портом-таблицей', () => {
 		const root = repo({ 'README.txt': 'x\n' });
 		const seen: string[] = [];
 		const GIT_RUN = `/x/gl ${gitleaksGitArgv(root, `${SHA}..HEAD`, false).join(' ')}`;
-		const f = fakePort(
-			{
-				[GIT]: tracked('README.txt'),
-				[VERSION]: ok(`${PIN}\n`),
-				[DIR]: (cwd) => {
-					seen.push(cwd ?? '');
-					return ok('[]');
-				},
-				'git merge-base origin/dev HEAD': ok(`${SHA}\n`),
-				[GIT_RUN]: (cwd) => {
-					seen.push(cwd ?? '');
-					// Копия ещё жива, пока идёт второй запуск.
-					expect(existsSync(join(cwd ?? root, 'README.txt'))).toBe(true);
-					return ok('[]');
-				},
+		const f = fakePort({
+			[GIT]: tracked('README.txt'),
+			[VERSION]: ok(`${PIN}\n`),
+			[DIR]: (cwd) => {
+				seen.push(cwd ?? '');
+				return ok('[]');
 			},
-			{ GITHUB_ACTIONS: 'true', GITHUB_EVENT_NAME: 'push' },
-			'origin/dev',
-		);
-		const out = readGuardrails(root, PROTOTOOLS, f.port);
+			'git merge-base origin/dev HEAD': ok(`${SHA}\n`),
+			[GIT_RUN]: (cwd) => {
+				seen.push(cwd ?? '');
+				// Копия ещё жива, пока идёт второй запуск.
+				expect(existsSync(join(cwd ?? root, 'README.txt'))).toBe(true);
+				return ok('[]');
+			},
+		});
+		const out = readGuardrails(root, PROTOTOOLS, f.port, { base: 'origin/dev' });
 		expect('tools' in out && out.commits).toStrictEqual({
 			range: `${SHA.slice(0, 12)}..HEAD`,
 			violations: [],
@@ -336,15 +272,12 @@ describe('читатель с портом-таблицей', () => {
 
 	test('часть gitleaks недоступна — commits skipped, merge-base не зовётся', () => {
 		const root = repo({ 'README.txt': 'x\n' });
-		const f = fakePort(
-			{
-				[GIT]: tracked('README.txt'),
-				[VERSION]: ok(`${PIN}\n`),
-				[DIR]: { code: 1, out: '', err: '12:00AM FTL unable to load gitleaks config\n' },
-			},
-			PR_ENV,
-		);
-		const out = readGuardrails(root, PROTOTOOLS, f.port);
+		const f = fakePort({
+			[GIT]: tracked('README.txt'),
+			[VERSION]: ok(`${PIN}\n`),
+			[DIR]: { code: 1, out: '', err: '12:00AM FTL unable to load gitleaks config\n' },
+		});
+		const out = readGuardrails(root, PROTOTOOLS, f.port, MAIN);
 		expect(out).toStrictEqual({
 			tools: {
 				actionlint: NO_FILES,
@@ -361,19 +294,19 @@ describe('читатель с портом-таблицей', () => {
 
 	test('нет бинарника gitleaks — commits skipped, merge-base не зовётся', () => {
 		const root = repo({ 'README.txt': 'x\n' });
-		const f = fakePort({ [GIT]: tracked('README.txt') }, PR_ENV);
-		const out = readGuardrails(root, '', f.port);
+		const f = fakePort({ [GIT]: tracked('README.txt') });
+		const out = readGuardrails(root, '', f.port, MAIN);
 		expect('tools' in out && out.commits).toStrictEqual({ skipped: 'gitleaks unavailable' });
 		expect(f.calls.map(([cmd]) => cmd)).toStrictEqual(['git']);
 	});
 
 	test('сбой копии (TMPDIR) — commits skipped, merge-base не зовётся', () => {
 		const root = repo({ 'README.txt': 'x\n' });
-		const f = fakePort({ [GIT]: tracked('README.txt'), [VERSION]: ok(`${PIN}\n`) }, PR_ENV);
+		const f = fakePort({ [GIT]: tracked('README.txt'), [VERSION]: ok(`${PIN}\n`) });
 		const saved = process.env.TMPDIR;
 		process.env.TMPDIR = '/nonexistent';
 		try {
-			const out = readGuardrails(root, PROTOTOOLS, f.port);
+			const out = readGuardrails(root, PROTOTOOLS, f.port, MAIN);
 			expect('tools' in out && out.commits).toStrictEqual({ skipped: 'gitleaks unavailable' });
 		} finally {
 			if (saved === undefined) Reflect.deleteProperty(process.env, 'TMPDIR');
@@ -387,16 +320,13 @@ describe('читатель с портом-таблицей', () => {
 
 	test('merge-base упал — commits недоступны с причиной, gitleaks git не зовётся', () => {
 		const root = repo({ 'README.txt': 'x\n' });
-		const f = fakePort(
-			{
-				[GIT]: tracked('README.txt'),
-				[VERSION]: ok(`${PIN}\n`),
-				[DIR]: ok('[]'),
-				[MB]: { code: 128, out: '', err: 'fatal: Not a valid object name origin/main\n' },
-			},
-			PR_ENV,
-		);
-		const out = readGuardrails(root, PROTOTOOLS, f.port);
+		const f = fakePort({
+			[GIT]: tracked('README.txt'),
+			[VERSION]: ok(`${PIN}\n`),
+			[DIR]: ok('[]'),
+			[MB]: { code: 128, out: '', err: 'fatal: Not a valid object name origin/main\n' },
+		});
+		const out = readGuardrails(root, PROTOTOOLS, f.port, MAIN);
 		expect('tools' in out && out.commits).toStrictEqual({
 			unavailable: 'git merge-base origin/main HEAD: fatal: Not a valid object name origin/main',
 		});
@@ -406,17 +336,14 @@ describe('читатель с портом-таблицей', () => {
 	test('gitleaks git: ERR в stderr — commits недоступны, часть файлов цела', () => {
 		const root = repo({ 'README.txt': 'x\n' });
 		const GIT_RUN = `/x/gl ${gitleaksGitArgv(root, `${SHA}..HEAD`, false).join(' ')}`;
-		const f = fakePort(
-			{
-				[GIT]: tracked('README.txt'),
-				[VERSION]: ok(`${PIN}\n`),
-				[DIR]: ok('[]'),
-				[MB]: ok(`${SHA}\n`),
-				[GIT_RUN]: { code: 0, out: '[]', err: '12:00AM ERR [git] fatal: boom\n' },
-			},
-			PR_ENV,
-		);
-		const out = readGuardrails(root, PROTOTOOLS, f.port);
+		const f = fakePort({
+			[GIT]: tracked('README.txt'),
+			[VERSION]: ok(`${PIN}\n`),
+			[DIR]: ok('[]'),
+			[MB]: ok(`${SHA}\n`),
+			[GIT_RUN]: { code: 0, out: '[]', err: '12:00AM ERR [git] fatal: boom\n' },
+		});
+		const out = readGuardrails(root, PROTOTOOLS, f.port, MAIN);
 		expect('tools' in out && out.commits).toStrictEqual({ unavailable: 'ERR [git] fatal: boom' });
 		expect('tools' in out && out.tools.gitleaks).toStrictEqual({
 			version: PIN,
@@ -427,8 +354,8 @@ describe('читатель с портом-таблицей', () => {
 
 	test('нет файлов — commits skipped no files, пины не читаются', () => {
 		const root = repo({});
-		const f = fakePort({ [GIT]: ok('') }, PR_ENV);
-		expect(readGuardrails(root, undefined, f.port)).toStrictEqual({
+		const f = fakePort({ [GIT]: ok('') });
+		expect(readGuardrails(root, undefined, f.port, MAIN)).toStrictEqual({
 			tools: {
 				actionlint: NO_FILES,
 				shellcheck: NO_FILES,
@@ -446,27 +373,28 @@ describe('читатель с портом-таблицей', () => {
 		const root = repo({ 'README.txt': 'x\n' });
 		const table = { [GIT]: tracked('README.txt'), [VERSION]: ok(`${PIN}\n`), [DIR]: ok('[]') };
 		const outside = fakePort(table);
-		const a = readGuardrails(root, PROTOTOOLS, outside.port);
+		const a = readGuardrails(root, PROTOTOOLS, outside.port, NO_BASE);
 		expect('tools' in a && a.commits).toStrictEqual({
 			skipped: 'no --base outside GitHub Actions',
 		});
 		expect(outside.calls).toHaveLength(3);
-		const push = fakePort(table, { GITHUB_ACTIONS: 'true', GITHUB_EVENT_NAME: 'push' });
-		const b = readGuardrails(root, PROTOTOOLS, push.port);
+		const push = fakePort(table);
+		const b = readGuardrails(root, PROTOTOOLS, push.port, { skipped: 'not a pull request' });
 		expect('tools' in b && b.commits).toStrictEqual({ skipped: 'not a pull request' });
 		expect(push.calls).toHaveLength(3);
 	});
 
-	test('PR без GITHUB_BASE_REF — commits недоступны', () => {
+	test('база PR недоступна — commits недоступен с той же причиной, merge-base не зовётся', () => {
 		const root = repo({ 'README.txt': 'x\n' });
-		const f = fakePort(
-			{ [GIT]: tracked('README.txt'), [VERSION]: ok(`${PIN}\n`), [DIR]: ok('[]') },
-			{ ...PR_ENV, GITHUB_BASE_REF: '' },
-		);
-		const out = readGuardrails(root, PROTOTOOLS, f.port);
-		expect('tools' in out && out.commits).toStrictEqual({
-			unavailable: 'GITHUB_BASE_REF is empty in a pull_request job',
+		const reason = 'GITHUB_BASE_REF is empty in a pull_request job';
+		const { port, calls } = fakePort({
+			[GIT]: tracked('README.txt'),
+			[VERSION]: ok(`${PIN}\n`),
+			[DIR]: ok('[]'),
 		});
+		const outcome = readGuardrails(root, PROTOTOOLS, port, { unavailable: reason });
+		expect('tools' in outcome && outcome.commits).toStrictEqual({ unavailable: reason });
+		expect(calls.map(([cmd, argv]) => [cmd, argv[0]])).not.toContainEqual(['git', 'merge-base']);
 	});
 });
 
@@ -507,19 +435,13 @@ describe('настоящий gitleaks: коммиты PR', () => {
 		return { dir, a };
 	}
 
-	function scan(dir: string, env: NodeJS.ProcessEnv, base?: string) {
-		const out = readGuardrails(dir, prototools, {
-			run: spawnRunner(dir),
-			env: {
-				...process.env,
-				GITHUB_ACTIONS: undefined,
-				GITHUB_EVENT_NAME: undefined,
-				GITHUB_BASE_REF: undefined,
-				...env,
-				GITLEAKS_BIN: bin,
-			},
-			base,
-		});
+	function scan(dir: string, pr: PrBase) {
+		const out = readGuardrails(
+			dir,
+			prototools,
+			{ run: spawnRunner(dir), env: { ...process.env, GITLEAKS_BIN: bin } },
+			pr,
+		);
 		if ('unavailable' in out) throw new Error(out.unavailable);
 		return out;
 	}
@@ -528,7 +450,7 @@ describe('настоящий gitleaks: коммиты PR', () => {
 		'--base: секрет добавлен в A и удалён в B — одно нарушение с коммитом A, файлы чисты, значения нет',
 		() => {
 			const { dir, a } = feature();
-			const out = scan(dir, {}, 'main');
+			const out = scan(dir, { base: 'main' });
 			expect(out.commits).toStrictEqual({
 				range: `${git(dir, 'rev-parse', 'main').trim().slice(0, 12)}..HEAD`,
 				violations: [
@@ -552,11 +474,11 @@ describe('настоящий gitleaks: коммиты PR', () => {
 		'PR-окружение: origin/main есть — то же нарушение; GITHUB_BASE_REF=gone — недоступно',
 		() => {
 			const { dir, a } = feature();
-			const found = scan(dir, PR_ENV);
+			const found = scan(dir, MAIN);
 			expect(
 				'violations' in found.commits && found.commits.violations.map((v) => v.message),
 			).toStrictEqual([`${DESCRIPTION} (commit ${a.slice(0, 12)})`]);
-			const gone = scan(dir, { ...PR_ENV, GITHUB_BASE_REF: 'gone' });
+			const gone = scan(dir, { base: 'origin/gone' });
 			expect('unavailable' in gone.commits && gone.commits.unavailable).toStartWith(
 				'git merge-base origin/gone HEAD: ',
 			);
@@ -568,12 +490,10 @@ describe('настоящий gitleaks: коммиты PR', () => {
 		'push в Actions и вне Actions — skipped с причиной',
 		() => {
 			const { dir } = feature();
-			expect(
-				scan(dir, { GITHUB_ACTIONS: 'true', GITHUB_EVENT_NAME: 'push' }).commits,
-			).toStrictEqual({
+			expect(scan(dir, { skipped: 'not a pull request' }).commits).toStrictEqual({
 				skipped: 'not a pull request',
 			});
-			expect(scan(dir, {}).commits).toStrictEqual({
+			expect(scan(dir, NO_BASE).commits).toStrictEqual({
 				skipped: 'no --base outside GitHub Actions',
 			});
 		},
@@ -588,7 +508,7 @@ describe('настоящий gitleaks: коммиты PR', () => {
 			process.env.GIT_TRACE = '1';
 			try {
 				// Переменная должна дойти до дочернего процесса: окружение снимает spawnRunner при создании.
-				const out = scan(dir, {}, 'main');
+				const out = scan(dir, { base: 'main' });
 				expect('unavailable' in out.commits && out.commits.unavailable).toStartWith('ERR ');
 			} finally {
 				if (saved === undefined) Reflect.deleteProperty(process.env, 'GIT_TRACE');
@@ -615,7 +535,7 @@ describe('настоящий gitleaks: коммиты PR', () => {
 			process.env.GIT_CONFIG_GLOBAL = join(cfgDir, 'gitconfig');
 			try {
 				// Переменная читается spawnRunner при создании порта, поэтому порт строится после неё.
-				const out = scan(dir, {}, 'main');
+				const out = scan(dir, { base: 'main' });
 				expect(
 					'violations' in out.commits && out.commits.violations.map((v) => v.message),
 				).toStrictEqual([`${DESCRIPTION} (commit ${a.slice(0, 12)})`]);
@@ -632,7 +552,7 @@ describe('настоящий gitleaks: коммиты PR', () => {
 		() => {
 			const { dir } = feature();
 			const head = git(dir, 'rev-parse', 'HEAD').trim();
-			expect(scan(dir, {}, 'HEAD').commits).toStrictEqual({
+			expect(scan(dir, { base: 'HEAD' }).commits).toStrictEqual({
 				range: `${head.slice(0, 12)}..HEAD`,
 				violations: [],
 			});

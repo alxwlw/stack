@@ -9,7 +9,7 @@ import { join, resolve } from 'node:path';
 
 import { actionlintArgv, parseActionlint } from './guardrails-actionlint.ts';
 import { locateTool, repoPins } from './guardrails-bin.ts';
-import { type CommitsPart, mergeBase, mergeBaseArgv, prBase } from './guardrails-commits.ts';
+import { type CommitsPart, mergeBase, mergeBaseArgv } from './guardrails-commits.ts';
 import {
 	dockerfiles,
 	markdownFiles,
@@ -44,6 +44,7 @@ import {
 	yamllintArgv,
 	yamllintConfig,
 } from './guardrails-yamllint.ts';
+import type { PrBase } from './pr-base.ts';
 
 export type ToolPart =
 	| { skipped: 'no files' }
@@ -132,6 +133,7 @@ function readGitleaks(
 	gitleaks: { bin: string; version: string },
 	dir: string,
 	port: GuardrailsPort,
+	pr: PrBase,
 ): { part: ToolPart; commits: CommitsPart } {
 	const parsed = parseGitleaks(port.run(gitleaks.bin, gitleaksDirArgv(), dir));
 	if (!Array.isArray(parsed)) return { part: parsed, commits: { skipped: 'gitleaks unavailable' } };
@@ -141,7 +143,7 @@ function readGitleaks(
 			files: files.length,
 			violations: parsed.map((leak) => toViolation(leak)),
 		},
-		commits: readCommits(root, files, gitleaks.bin, dir, port),
+		commits: readCommits(root, files, gitleaks.bin, dir, port, pr),
 	};
 }
 
@@ -203,8 +205,8 @@ function readCommits(
 	bin: string,
 	dir: string,
 	port: GuardrailsPort,
+	pr: PrBase,
 ): CommitsPart {
-	const pr = prBase(port.base, port.env);
 	if (!('base' in pr)) return pr;
 	const mb = mergeBase(port.run('git', mergeBaseArgv(pr.base), root), pr.base);
 	if (typeof mb !== 'string') return mb;
@@ -223,6 +225,7 @@ export function readGuardrails(
 	repoRoot: string,
 	prototools: string | undefined,
 	port: GuardrailsPort,
+	pr: PrBase,
 ): GuardrailsOutcome {
 	// Скан коммитов идёт с cwd = копия и зовёт `git -C <корень>`: относительный корень там не найти.
 	const root = resolve(repoRoot);
@@ -317,7 +320,7 @@ export function readGuardrails(
 	) {
 		const copied = withTrackedCopy(root, files, (dir) => {
 			if (gitleaksReady !== undefined) {
-				({ part: gitleaksPart, commits } = readGitleaks(root, files, gitleaksReady, dir, port));
+				({ part: gitleaksPart, commits } = readGitleaks(root, files, gitleaksReady, dir, port, pr));
 			}
 			if (hadolintReady !== undefined) {
 				hadolintPart = readHadolint(dockerSet, hadolintReady, dir, port);

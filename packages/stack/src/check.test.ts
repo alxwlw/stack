@@ -10,7 +10,7 @@ import { STACK_RENOVATE_PRESET } from './deps.ts';
 import { allowedLine, type Held } from './exceptions.ts';
 import type { Drift, Finding, FindingCode } from './findings.ts';
 import type { PeersReader, PeersRun } from './peers.ts';
-import type { RepoRulesPort, RepoRulesRun } from './repo-rules.ts';
+import type { RepoRulesReader, RepoRulesRun } from './repo-rules.ts';
 import { repoDir, testCanon, testRepo } from './testkit.ts';
 
 // Конфиг Renovate на пресете канона: тесты исключений и каталогов не про бота.
@@ -309,7 +309,7 @@ const peersCanon: Canon = { ...canon, rules: ['peers'] };
 
 test('группа peers выключена — порт не зовётся', () => {
 	const repo = repoDir({ ...RENOVATE, ...LOCK, '.editorconfig': 'root = true\n' });
-	expect(checkRepo(repo, canon, [], { peers: throwingPeers })).toStrictEqual({
+	expect(checkRepo(repo, canon, [], { ports: { peers: throwingPeers }, env: {} })).toStrictEqual({
 		findings: [],
 		notes: [],
 	});
@@ -317,7 +317,9 @@ test('группа peers выключена — порт не зовётся', (
 
 test('группа peers включена без pnpm-lock.yaml — порт не зовётся, peers-unavailable', () => {
 	const repo = repoDir({ ...RENOVATE, '.editorconfig': 'root = true\n' });
-	expect(checkRepo(repo, peersCanon, [], { peers: throwingPeers }).findings).toStrictEqual([
+	expect(
+		checkRepo(repo, peersCanon, [], { ports: { peers: throwingPeers }, env: {} }).findings,
+	).toStrictEqual([
 		{ code: 'peers-unavailable', target: 'pnpm peers check', message: 'no pnpm-lock.yaml' },
 	]);
 });
@@ -342,7 +344,7 @@ test('группа peers включена — находки peers послед�
 		repo,
 		peersCanon,
 		[{ file: '.stack-peers-baseline.json', reason: 'x' }],
-		{ peers: port.read },
+		{ ports: { peers: port.read }, env: {} },
 	);
 	expect(port.calls).toStrictEqual([repo]);
 	expect(findings.map((f) => f.code)).toStrictEqual([
@@ -378,7 +380,10 @@ test('stale-peer-baseline и peers-unavailable тоже не гасятся ис
 			repo,
 			peersCanon,
 			[{ file: '.stack-peers-baseline.json', reason: 'x' }],
-			{ peers: fakePeers({ status: 0, signal: null, stdout, stderr: '' }).read },
+			{
+				ports: { peers: fakePeers({ status: 0, signal: null, stdout, stderr: '' }).read },
+				env: {},
+			},
 		);
 		expect(
 			findings.map((f) => [f.code, f.suppressedBy]),
@@ -421,32 +426,32 @@ const HINT =
 	'repo-rules diff: intended? add a commit trailer "Tests-Removed: <reason>" in the range';
 
 // Порт repo-rules: записывает argv каждого вызова и отвечает по очереди.
-function fakeRules(env: NodeJS.ProcessEnv, base: string | undefined, ...runs: RepoRulesRun[]) {
+function fakeRules(...runs: RepoRulesRun[]) {
 	const calls: string[][] = [];
-	const port: RepoRulesPort = {
-		env,
-		base,
-		read: (argv) => {
-			calls.push(argv);
-			const run = runs[calls.length - 1];
-			if (!run) throw new Error('лишний вызов порта repo-rules');
-			return run;
-		},
+	const read: RepoRulesReader = (argv) => {
+		calls.push(argv);
+		const run = runs[calls.length - 1];
+		if (!run) throw new Error('лишний вызов порта repo-rules');
+		return run;
 	};
-	return { port, calls };
+	return { read, calls };
 }
 
-const throwingRules: RepoRulesPort = {
-	env: { GITHUB_ACTIONS: 'true' },
-	base: 'origin/main',
-	read: () => {
-		throw new Error('порт repo-rules не должен вызываться');
-	},
+const throwingRules: RepoRulesReader = () => {
+	throw new Error('порт repo-rules не должен вызываться');
+};
+const LOCAL = { GITHUB_ACTIONS: '' };
+const PR_JOB = {
+	GITHUB_ACTIONS: 'true',
+	GITHUB_EVENT_NAME: 'pull_request',
+	GITHUB_BASE_REF: 'main',
 };
 
 test('группа repo-rules выключена — порт не зовётся, пометок нет', () => {
 	const repo = repoDir(CLEAN_REPO);
-	expect(checkRepo(repo, canon, [], { repoRules: throwingRules })).toStrictEqual({
+	expect(
+		checkRepo(repo, canon, [], { ports: { 'repo-rules': throwingRules }, env: PR_JOB }),
+	).toStrictEqual({
 		findings: [],
 		notes: [],
 	});
@@ -460,8 +465,10 @@ test('группа repo-rules включена, порта нет — Error', ()
 
 test('repo-rules вне GitHub Actions без --base: находки check, diff пропущен с пометкой', () => {
 	const repo = repoDir(CLEAN_REPO);
-	const f = fakeRules({ GITHUB_ACTIONS: '' }, undefined, RR_LONG);
-	expect(checkRepo(repo, rulesCanon, [], { repoRules: f.port })).toStrictEqual({
+	const f = fakeRules(RR_LONG);
+	expect(
+		checkRepo(repo, rulesCanon, [], { ports: { 'repo-rules': f.read }, env: LOCAL }),
+	).toStrictEqual({
 		findings: [LONG],
 		notes: [SKIP_NOTE],
 	});
@@ -470,8 +477,14 @@ test('repo-rules вне GitHub Actions без --base: находки check, diff
 
 test('repo-rules: --base доходит до diff, нарушение diff — находка и подсказка пометкой', () => {
 	const repo = repoDir(CLEAN_REPO);
-	const f = fakeRules({ GITHUB_ACTIONS: '' }, 'origin/main', RR_EMPTY, RR_REMOVED);
-	expect(checkRepo(repo, rulesCanon, [], { repoRules: f.port })).toStrictEqual({
+	const f = fakeRules(RR_EMPTY, RR_REMOVED);
+	expect(
+		checkRepo(repo, rulesCanon, [], {
+			ports: { 'repo-rules': f.read },
+			env: LOCAL,
+			base: 'origin/main',
+		}),
+	).toStrictEqual({
 		findings: [REMOVED],
 		notes: [HINT],
 	});
@@ -479,13 +492,16 @@ test('repo-rules: --base доходит до diff, нарушение diff — �
 });
 
 test('repo-rules: сбой вызова — repo-rules-unavailable, а не пустой список', () => {
-	const f = fakeRules({ GITHUB_ACTIONS: '' }, undefined, {
+	const f = fakeRules({
 		code: 2,
 		out: '',
 		err: 'repo-rules: baseline: not JSON (x)',
 	});
 	expect(
-		checkRepo(repoDir(CLEAN_REPO), rulesCanon, [], { repoRules: f.port }).findings,
+		checkRepo(repoDir(CLEAN_REPO), rulesCanon, [], {
+			ports: { 'repo-rules': f.read },
+			env: LOCAL,
+		}).findings,
 	).toStrictEqual([
 		{
 			code: 'repo-rules-unavailable',
@@ -496,13 +512,14 @@ test('repo-rules: сбой вызова — repo-rules-unavailable, а не пу
 });
 
 test('repo-rules: исключение на файл нарушения не удерживает находку и становится stale-exception', () => {
-	const f = fakeRules({ GITHUB_ACTIONS: 'true' }, undefined, RR_LONG, RR_REMOVED);
+	const f = fakeRules(RR_LONG, RR_REMOVED);
 	const exceptions = [
 		{ file: 'src/a.ts', reason: 'legacy' },
 		{ file: 'a.test.ts', reason: 'moved' },
 	];
 	const { findings } = checkRepo(repoDir(CLEAN_REPO), rulesCanon, exceptions, {
-		repoRules: f.port,
+		ports: { 'repo-rules': f.read },
+		env: PR_JOB,
 	});
 	expect(findings).toStrictEqual([
 		LONG,
@@ -523,9 +540,12 @@ test('repo-rules: исключение на файл нарушения не у�
 test('обе группы: находки repo-rules идут после находок peers', () => {
 	const repo = repoDir({ ...CLEAN_REPO, ...LOCK });
 	const peers = fakePeers({ status: 1, signal: null, stdout: ONE_BAD, stderr: '' });
-	const f = fakeRules({ GITHUB_ACTIONS: '' }, undefined, RR_LONG);
+	const f = fakeRules(RR_LONG);
 	const both: Canon = { ...canon, rules: ['peers', 'repo-rules'] };
-	const { findings } = checkRepo(repo, both, [], { peers: peers.read, repoRules: f.port });
+	const { findings } = checkRepo(repo, both, [], {
+		ports: { peers: peers.read, 'repo-rules': f.read },
+		env: LOCAL,
+	});
 	expect(findings.map((x) => x.code)).toStrictEqual(['peer-dependency', 'repo-rules-violation']);
 });
 

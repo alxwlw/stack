@@ -42,7 +42,7 @@ export function repoRulesNotes(outcome: RepoRulesOutcome | undefined): string[] 
 		for (const n of outcome.check.notes) notes.push(`repo-rules check: ${n}`);
 	}
 	const diff = outcome.diff;
-	if ('skipped' in diff) notes.push(`repo-rules diff: ${diff.skipped}`);
+	if ('skipped' in diff) notes.push(`repo-rules diff: skipped (${diff.skipped})`);
 	else if (!('unavailable' in diff)) {
 		for (const n of diff.notes) notes.push(`repo-rules diff: ${n}`);
 		if (diff.violations.length > 0) notes.push(TRAILER_HINT);
