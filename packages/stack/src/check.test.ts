@@ -461,7 +461,7 @@ test('группа repo-rules выключена — порт не зовётс�
 
 test('группа repo-rules включена, порта нет — Error', () => {
 	expect(() => checkRepo(repoDir(CLEAN_REPO), rulesCanon, [])).toThrow(
-		new Error('checkRepo: repo-rules group needs a RepoRulesPort'),
+		new Error('checkRepo: repo-rules group needs a RepoRulesReader'),
 	);
 });
 

@@ -124,7 +124,7 @@ export function checkRepo(
 	let repoRules: RepoRulesOutcome | undefined;
 	if (canon.rules.includes('repo-rules')) {
 		if (ports['repo-rules'] === undefined) {
-			throw new Error('checkRepo: repo-rules group needs a RepoRulesPort');
+			throw new Error('checkRepo: repo-rules group needs a RepoRulesReader');
 		}
 		repoRules = readRepoRules(repoRoot, ports['repo-rules'], inputs.env, pr);
 	}
