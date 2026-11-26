@@ -302,14 +302,14 @@ describe('настоящий gitleaks через читатель', () => {
 	});
 
 	const prototools = readFileSync(join(ROOT, '.prototools'), 'utf8');
-	const CLEAN = 'export const a = 1;\n';
+	const CLEAN_SOURCE = 'export const a = 1;\n';
 
 	// Репозиторий с каноном gitleaks и закоммиченным чистым файлом исходников.
 	function fixture(extra: Record<string, string> = {}): string {
 		const { dir } = gitRepo({
 			'.gitleaks.toml': canonFile('.gitleaks.toml'),
 			'.gitleaks.canon.toml': canonFile('.gitleaks.canon.toml'),
-			'src/a.ts': CLEAN,
+			'src/a.ts': CLEAN_SOURCE,
 			...extra,
 		});
 		dirs.push(dir);
@@ -370,7 +370,7 @@ describe('настоящий gitleaks через читатель', () => {
 		'закоммиченный чистый файл дописан секретом на диске без коммита — находка',
 		() => {
 			const dir = fixture();
-			writeFileSync(join(dir, 'src/a.ts'), `${CLEAN}${LINE}`);
+			writeFileSync(join(dir, 'src/a.ts'), `${CLEAN_SOURCE}${LINE}`);
 			expect(paths(scan(dir).part)).toStrictEqual(['src/a.ts']);
 		},
 		TIMEOUT,
