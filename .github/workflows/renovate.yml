@@ -11,17 +11,19 @@ on:
         type: string
         default: ''
     secrets:
-      token:
-        description: запасной токен (PAT), когда нет GitHub App; у fine-grained PAT нет права Checks, поэтому под ним auto-merge выключен принудительно
-        required: false
       app-id:
-        description: ID GitHub App, от имени которого Renovate клонирует репо и открывает PR; имеет приоритет над token
+        description: ID GitHub App, от имени которого Renovate клонирует репо и открывает PR; без него прогон падает
         required: false
       app-private-key:
         description: приватный ключ той же GitHub App
         required: false
       registry-token:
         description: токен чтения приватного реестра; нужен вместе с входом registry
+        required: false
+      # Не используется с 1.19.0: Renovate идёт только под GitHub App. Объявлен, пока вызывающие файлы прежних версий
+      # канона передают token: необъявленный секрет делает workflow вызывающего недействительным.
+      token:
+        description: не используется (прежний запасной PAT); Renovate идёт только под GitHub App
         required: false
 permissions:
   contents: read
@@ -30,48 +32,42 @@ jobs:
     runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
     timeout-minutes: 60
     env:
-      # Секреты в if: недоступны, поэтому шаг токена App смотрит на эту переменную.
+      # Секреты в if: недоступны, поэтому проверка смотрит на эти переменные.
       APP_ID: ${{ secrets.app-id }}
-      PAT: ${{ secrets.token }}
+      APP_KEY: ${{ secrets.app-private-key }}
     # cron и ручной запуск на один репо гонялись бы за одни ветки.
     concurrency:
       group: renovate-${{ github.repository }}
       cancel-in-progress: false
     steps:
-      - name: Нужен токен
+      # Запасного PAT нет: у fine-grained PAT нет права Checks, под ним auto-merge не работает, а сам PAT — учётная
+      # запись владельца в секретах, которые видят чужие workflow.
+      - name: Нужна GitHub App
         run: |
-          if [ -z "$APP_ID" ] && [ -z "$PAT" ]; then
-            echo '::error::нет ни app-id (RENOVATE_APP_ID), ни token (RENOVATE_TOKEN): Renovate не под чем запускать'
+          if [ -z "$APP_ID" ] || [ -z "$APP_KEY" ]; then
+            echo '::error::нет app-id или app-private-key (RENOVATE_APP_ID, RENOVATE_APP_PRIVATE_KEY): Renovate идёт только под GitHub App'
             exit 1
           fi
       - uses: actions/create-github-app-token@v3
         id: app-token
-        if: env.APP_ID != ''
         with:
           app-id: ${{ secrets.app-id }}
           private-key: ${{ secrets.app-private-key }}
           owner: ${{ github.repository_owner }}
           repositories: ${{ github.event.repository.name }}
-      # Под PAT Renovate не видит check runs и вливал бы по одному commit status (например Vercel). force — последнее
-      # packageRule на все пакеты, оно перекрывает пресет auto-merge.
-      - name: Без GitHub App auto-merge выключен
-        if: steps.app-token.outputs.token == ''
-        run: |
-          echo 'RENOVATE_FORCE={"automerge":false}' >> "$GITHUB_ENV"
-          echo '::warning::нет GitHub App: Renovate идёт под RENOVATE_TOKEN, auto-merge выключен'
       # Без checkout: action запускает образ renovate/renovate, тот сам клонирует репо по токену
       # и читает его конфиг. Полная версия: плавающего @v46 у action нет.
       - uses: renovatebot/github-action@v46.3.14
         with:
-          token: ${{ steps.app-token.outputs.token || secrets.token }}
+          token: ${{ steps.app-token.outputs.token }}
         env:
           RENOVATE_REPOSITORIES: ${{ github.repository }}
           LOG_LEVEL: ${{ inputs.log-level }}
-          # Токен репо может меняться между App и PAT: без этого Renovate видит PR и issues только своего автора и теряет
-          # открытые PR и Dependency Dashboard прежней учётной записи.
+          # Прежние PR и Dependency Dashboard открыты под PAT владельца: без этого Renovate видит PR и issues только своего
+          # автора и теряет их.
           RENOVATE_IGNORE_PR_AUTHOR: 'true'
-          # Под PAT Renovate коммитит автором по умолчанию, под App — ботом App: без этого бот считает ветки прежних PR
-          # чужой правкой («Edited/Blocked») и не пересобирает и не вливает их.
+          # Под прежним PAT Renovate коммитил автором по умолчанию: без этого бот App считает ветки тех PR чужой правкой
+          # («Edited/Blocked») и не пересобирает и не вливает их.
           RENOVATE_GIT_IGNORED_AUTHORS: 'renovate@whitesourcesoftware.com'
           # Host rule приватного реестра только при непустом registry; иначе пустой список.
           RENOVATE_HOST_RULES: ${{ inputs.registry != '' && format('[{{"matchHost":"{0}","hostType":"npm","token":"{1}"}}]', inputs.registry, secrets.registry-token) || '[]' }}

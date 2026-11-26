@@ -58,11 +58,12 @@ test('reusable renovate.yml: секреты необязательны, action �
 		jobs?: Record<string, { steps?: { uses?: string; env?: Record<string, string> }[] }>;
 	};
 	const secrets = wf.on?.workflow_call?.secrets ?? {};
+	// token остаётся объявленным, но не используется: вызывающие файлы прежних версий канона его передают.
 	expect(Object.keys(secrets)).toStrictEqual([
-		'token',
 		'app-id',
 		'app-private-key',
 		'registry-token',
+		'token',
 	]);
 	for (const [name, secret] of Object.entries(secrets))
 		expect({ name, required: secret.required }).toEqual({ name, required: false });
@@ -73,7 +74,7 @@ test('reusable renovate.yml: секреты необязательны, action �
 	expect(action?.env?.RENOVATE_REPOSITORIES).toBe('${{ github.repository }}');
 });
 
-test('reusable renovate.yml: токен GitHub App при непустом app-id, иначе token', () => {
+test('reusable renovate.yml: только токен GitHub App, без запасного PAT', () => {
 	const wf = parseYaml(
 		readFileSync(join(ROOT, '.github', 'workflows', 'renovate.yml'), 'utf8'),
 	) as {
@@ -95,10 +96,11 @@ test('reusable renovate.yml: токен GitHub App при непустом app-i
 	const job = Object.values(wf.jobs ?? {})[0];
 	const steps = job?.steps ?? [];
 	expect(job?.env?.APP_ID).toBe('${{ secrets.app-id }}');
+	expect(job?.env?.APP_KEY).toBe('${{ secrets.app-private-key }}');
 	const app = steps.find((s) => s.uses?.startsWith('actions/create-github-app-token@'));
 	expect(app?.uses).toBe('actions/create-github-app-token@v3');
 	expect(app?.id).toBe('app-token');
-	expect(app?.if).toBe("env.APP_ID != ''");
+	expect(app?.if).toBeUndefined();
 	expect(app?.with).toEqual({
 		'app-id': '${{ secrets.app-id }}',
 		'private-key': '${{ secrets.app-private-key }}',
@@ -106,35 +108,30 @@ test('reusable renovate.yml: токен GitHub App при непустом app-i
 		repositories: '${{ github.event.repository.name }}',
 	});
 	const action = steps.find((s) => s.uses?.startsWith('renovatebot/github-action@'));
-	expect(action?.with?.token).toBe('${{ steps.app-token.outputs.token || secrets.token }}');
-	// Шаг-проверку выполняем: ошибка только когда нет ни app-id, ни token.
-	expect(job?.env?.PAT).toBe('${{ secrets.token }}');
+	expect(action?.with?.token).toBe('${{ steps.app-token.outputs.token }}');
+	// Запасного PAT нет нигде в файле: ни secrets.token в выражениях, ни принудительного выключения auto-merge.
+	const text = readFileSync(join(ROOT, '.github', 'workflows', 'renovate.yml'), 'utf8');
+	expect(text).not.toContain('secrets.token');
+	expect(text).not.toContain('RENOVATE_FORCE');
+	expect(job?.env?.PAT).toBeUndefined();
+	// Шаг-проверку выполняем: ошибка, когда нет app-id или ключа.
 	const guard = steps.findIndex((s) => s.run?.includes('exit 1'));
 	expect(guard).toBeGreaterThanOrEqual(0);
 	expect(guard).toBeLessThan(steps.findIndex((s) => s.id === 'app-token'));
-	const run = (appId: string, pat: string) => {
+	const run = (appId: string, appKey: string) => {
 		const r = spawnSync('bash', ['-e', '-c', steps[guard]?.run ?? ''], {
-			env: { PATH: process.env.PATH ?? '', APP_ID: appId, PAT: pat },
+			env: { PATH: process.env.PATH ?? '', APP_ID: appId, APP_KEY: appKey },
 			encoding: 'utf8',
 		});
 		return { rc: r.status, error: r.stdout.includes('::error::') };
 	};
-	expect(run('x', 'y')).toEqual({ rc: 0, error: false });
-	expect(run('x', '')).toEqual({ rc: 0, error: false });
-	expect(run('', 'y')).toEqual({ rc: 0, error: false });
+	expect(run('x', 'k')).toEqual({ rc: 0, error: false });
+	expect(run('x', '')).toEqual({ rc: 1, error: true });
+	expect(run('', 'k')).toEqual({ rc: 1, error: true });
 	expect(run('', '')).toEqual({ rc: 1, error: true });
-	// Без App auto-merge выключен принудительно: RENOVATE_FORCE — последнее packageRule и перекрывает пресет.
-	const off = steps.find((s) => s.run?.includes('RENOVATE_FORCE'));
-	expect(off?.if).toBe("steps.app-token.outputs.token == ''");
-	expect(off?.run).toContain('echo \'RENOVATE_FORCE={"automerge":false}\' >> "$GITHUB_ENV"');
-	expect(off?.run).toContain('::warning::');
-	expect(steps.indexOf(off as never)).toBeGreaterThan(steps.findIndex((s) => s.id === 'app-token'));
-	expect(steps.indexOf(off as never)).toBeLessThan(
-		steps.findIndex((s) => s.uses?.startsWith('renovatebot/github-action@')),
-	);
-	// Токен репо меняется между App и PAT: PR и issues прежней учётной записи остаются под управлением.
+	// Прежние PR и Dependency Dashboard открыты под PAT: они остаются под управлением бота App.
 	expect(action?.env?.RENOVATE_IGNORE_PR_AUTHOR).toBe('true');
-	// Коммиты веток, сделанные под PAT, несут автора по умолчанию; бот App без этого считает их чужой правкой.
+	// Коммиты веток, сделанные под прежним PAT, несут автора по умолчанию; бот App без этого считает их чужой правкой.
 	expect(action?.env?.RENOVATE_GIT_IGNORED_AUTHORS).toBe('renovate@whitesourcesoftware.com');
 });
 

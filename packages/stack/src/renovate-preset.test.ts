@@ -111,7 +111,7 @@ test('пресет: выдержка опирается на pnpm 12+ канон
 	expect(Number.parseInt(pnpm ?? '', 10)).toBeGreaterThanOrEqual(12);
 });
 
-// У RENOVATE_TOKEN нет права на commit statuses: статус renovate/stability-days даёт 403 и Renovate бросает прогон.
+// Статус renovate/stability-days выключен с PAT-эры: у PAT не было права на commit statuses, 403 бросал прогон.
 test('пресет: статус выдержки выключен', () => {
 	expect(preset.statusCheckNames).toStrictEqual({ minimumReleaseAge: null });
 });

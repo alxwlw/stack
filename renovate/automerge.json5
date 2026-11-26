@@ -11,8 +11,8 @@
 	// Вливает Renovate, а не платформа; способ задан здесь, правила его не переопределяют.
 	platformAutomerge: false,
 	automergeType: 'pr',
-	// У RENOVATE_TOKEN нет права на commit statuses: статус renovate/stability-days даёт 403,
-	// и Renovate бросает весь прогон. Выдержка работает и без статуса.
+	// Статус renovate/stability-days выключен с тех пор, когда Renovate шёл под PAT без права на commit statuses
+	// (403, и Renovate бросал весь прогон). Выдержка работает и без статуса.
 	statusCheckNames: { minimumReleaseAge: null },
 	packageRules: [
 		{
