@@ -1,4 +1,4 @@
-import { readdirSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
@@ -7,6 +7,7 @@ import { COMMANDS, PASS_THROUGH } from './command.ts';
 import { ownVersion } from './own-packages.ts';
 import {
 	BARE,
+	fakeCommandPorts,
 	gitRepo,
 	isolateGitConfig,
 	NODE_PKG,
@@ -16,6 +17,7 @@ import {
 	runStack,
 	UNMET_PEER_LOCK,
 } from './testkit.ts';
+import { testSource } from './testkit-sources.ts';
 
 // Функция команды на подставных портах: argv, флаги, проводка портов, печать и коды выхода — без процесса.
 describe('runCommand', () => {
@@ -267,5 +269,20 @@ describe('runCommand', () => {
 			throw boom;
 		};
 		await expect(runStack(['check'], dir, { ports: { peers } })).rejects.toBe(boom);
+	});
+
+	test('команда работает на каноне из контекста, а не читает свой', async () => {
+		const dir = repoDir({ '.stack.jsonc': '{ "profile": "node" }' });
+		const base = testSource();
+		const source = testSource({
+			entries: [
+				...base.entries,
+				{ src: 'files/x', dest: 'x.txt', appliesTo: ['node'], content: 'X\n' },
+			],
+		});
+		const { ports } = fakeCommandPorts();
+		expect(await COMMANDS.sync.run({ repoRoot: dir, flags: {}, env: {}, ports, source })).toBe(0);
+		expect(readFileSync(join(dir, 'x.txt'), 'utf8')).toBe('X\n');
+		expect(existsSync(join(dir, '.editorconfig'))).toBe(false); // файл настоящего канона не пришёл
 	});
 });

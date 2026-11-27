@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { type Canon, loadCanon } from './canon.ts';
+import { type Canon, canonFor, type CanonSource } from './canon.ts';
 import { syncRepo } from './check.ts';
 import { readStackConfig, StackConfigError } from './config.ts';
 import { type Print, printLines, syncOutput } from './output.ts';
@@ -269,6 +269,7 @@ export type RunProcess = (
 export interface SyncPrOptions extends PublishOptions {
 	install: boolean;
 	wait: WaitOptions;
+	source: CanonSource;
 }
 
 export interface SyncPrPorts {
@@ -309,7 +310,7 @@ export async function syncPr(opts: SyncPrOptions, ports: SyncPrPorts): Promise<0
 		let canon: Canon;
 		try {
 			const cfg = readStackConfig(repoRoot);
-			canon = loadCanon(cfg);
+			canon = canonFor(opts.source, cfg);
 			printLines(print, syncOutput(syncRepo(repoRoot, canon, cfg.exceptions)));
 		} catch (error) {
 			if (error instanceof StackConfigError) {

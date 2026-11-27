@@ -30,6 +30,7 @@ import {
 	runSyncPr,
 	SERVED,
 } from './testkit.ts';
+import { testSource } from './testkit-sources.ts';
 
 let restore: () => void;
 beforeAll(() => {
@@ -628,4 +629,13 @@ describe('syncPr', () => {
 		expect(r.journal).not.toContain('peers');
 		expect(r.journal.at(-1)).toBe(HOOK);
 	});
+});
+
+test('syncPr ждёт в реестре свои пакеты канона из опций', async () => {
+	const { dir } = gitRepo({ '.stack.jsonc': '{ "profile": "node" }', 'package.json': NODE_PKG });
+	const source = testSource({ catalogs: { dev: { '@alxwlw/probe': '7.7.7' } } });
+	const { journal } = await runSyncPr(dir, { source });
+	expect(journal.filter((l) => l.startsWith('served '))).toStrictEqual([
+		'served @alxwlw/probe@7.7.7',
+	]);
 });

@@ -13,7 +13,7 @@ import { dirname, join } from 'node:path';
 
 import { parse as parseYaml, stringify } from 'yaml';
 
-import { type Canon, canonDir, canonFor, loadCanon, readCanonSource } from './canon.ts';
+import { type Canon, canonDir, canonFor, type CanonSource, readCanonSource } from './canon.ts';
 import { type CommandPorts, type ExitCode, runCommand } from './command.ts';
 import type { Profile } from './config.ts';
 import { STACK_RENOVATE_PRESET } from './deps.ts';
@@ -130,10 +130,16 @@ snapshots:
 
 // Содержимое канон-файла по его dest, как его видит loadCanon: все группы включены. Тесты, сверяющие
 // канон с корнем репозитория или с самим собой, берут файл здесь, а не по пути в canon/files.
+// Настоящий канон, прочитанный один раз на загрузку модуля.
+export const OWNER_SOURCE: CanonSource = readCanonSource();
+
 export function canonFile(dest: string, profile: Profile = 'node'): string {
-	const source = readCanonSource();
-	const g = source.groups;
-	const canon = canonFor(source, { profile, with: [...g.files, ...g.catalogs], exceptions: [] });
+	const g = OWNER_SOURCE.groups;
+	const canon = canonFor(OWNER_SOURCE, {
+		profile,
+		with: [...g.files, ...g.catalogs],
+		exceptions: [],
+	});
 	const file = canon.files.find((f) => f.dest === dest);
 	if (!file) throw new Error(`no canon file ${dest} for profile ${profile}`);
 	return file.content;
@@ -576,9 +582,11 @@ export async function spawnIn(cmd: string[], cwd: string) {
 export const HOOK = 'pnpm run stack:post-sync|VERSION=1.2.3';
 
 // Ожидаемые обращения к реестру — из канона, а не литералом.
-export const SERVED = loadCanon({ profile: 'node', with: [], exceptions: [] }).ownPackages.map(
-	(p) => `served ${p.name}@${p.version}`,
-);
+export const SERVED = canonFor(OWNER_SOURCE, {
+	profile: 'node',
+	with: [],
+	exceptions: [],
+}).ownPackages.map((p) => `served ${p.name}@${p.version}`);
 
 export const NODE_PKG = JSON.stringify({ name: 'app', scripts: { 'stack:post-sync': 'true' } });
 
@@ -609,6 +617,7 @@ export async function runSyncPr(
 			appSlug: 'acme-bot',
 			install: true,
 			wait: { attempts: 2, intervalMs: 0 },
+			source: OWNER_SOURCE,
 			...over,
 		},
 		{
