@@ -1,6 +1,6 @@
 import type { Finding, FindingCode, FindingOf } from './findings.ts';
 
-// Исключение из .stack.jsonc: держит одну находку, задаётся адресом и обязательной причиной.
+// Исключение из файла настроек потребителя: держит одну находку, задаётся адресом и обязательной причиной.
 export interface Exception {
 	file?: string;
 	catalog?: string;
@@ -40,7 +40,7 @@ export function exceptionSchema(): Record<string, unknown> {
 	};
 }
 
-// Текст проблемы одной записи .stack.jsonc или undefined, если запись верна. Порядок: запись — объект,
+// Текст проблемы одной записи файла настроек потребителя или undefined, если запись верна. Порядок: запись — объект,
 // ключи известны, причина есть и непустая строка, форма адреса. Форма допустима, если все ключи одной
 // формы — непустые строки, а остальные адресные ключи отсутствуют.
 export function exceptionProblem(raw: unknown): string | undefined {

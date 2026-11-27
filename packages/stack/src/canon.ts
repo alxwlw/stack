@@ -15,7 +15,7 @@ export interface CanonFile {
 	dest: string;
 	appliesTo: Profile[];
 	strategy?: SyncStrategy;
-	/** Группа, включаемая через `with` в .stack.jsonc. Без группы файл обязателен всем. */
+	/** Группа, включаемая через `with` в файле настроек потребителя. Без группы файл обязателен всем. */
 	group?: string;
 	/** Для create-if-absent: другие пути, любой из которых тоже закрывает засев (у конфига несколько законных имён). */
 	satisfiedBy?: string[];
@@ -141,7 +141,7 @@ export function canonDir(): string {
 	return join(dirname(fileURLToPath(import.meta.url)), '..', 'canon');
 }
 
-// Устаревшие группы принимаются ради старых .stack.jsonc и ничего не включают.
+// Устаревшие группы принимаются ради старых файлов настроек потребителя и ничего не включают.
 const DEPRECATED_GROUPS: readonly string[] = ['renovate'];
 
 // Группа правила включает правило `stack check`, файлов и каталогов не даёт.

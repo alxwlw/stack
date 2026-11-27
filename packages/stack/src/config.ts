@@ -6,7 +6,7 @@ import { type Node, type ParseError, parseTree } from 'jsonc-parser';
 import type { CanonSettings } from './canon-settings.ts';
 import { type Exception, exceptionProblem, exceptionSchema } from './exceptions.ts';
 
-// Допустимые ключи верхнего уровня .stack.jsonc; schema.json описывает тот же набор.
+// Допустимые ключи верхнего уровня файла настроек потребителя; schema.json описывает тот же набор.
 export const CONFIG_KEYS = ['$schema', 'profile', 'with', 'exceptions'] as const;
 // Имя профиля из настроек канона; список проверяют читатели, не tsc.
 export type Profile = string;

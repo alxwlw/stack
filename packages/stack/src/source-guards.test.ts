@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { expect, test } from 'bun:test';
@@ -78,4 +78,34 @@ test('сквозных запусков cli.ts вне блока проводн�
 		'cli.test.ts',
 	]);
 	expect(Object.values(launches).reduce((a, b) => a + b, 0)).toBeLessThanOrEqual(15);
+});
+
+// Имена канона владельца живут в его настройках, не в исходниках движка (спецификация, «Чего нельзя допустить»).
+const ENGINE_SOURCES = readdirSync(import.meta.dir).filter(
+	(f) => f.endsWith('.ts') && !f.endsWith('.test.ts') && !f.startsWith('testkit'),
+);
+const OWNER_NAMES =
+	/\.stack\.jsonc|node\|contracts\|infra|@alxwlw\/stack|\b(?:PROFILES|STACK_CONFIG_FILE|SCOPE)\b/g;
+
+test('сторож имён видит исходники', () => {
+	expect(ENGINE_SOURCES.length).toBeGreaterThanOrEqual(50);
+	expect(ENGINE_SOURCES).toContain('canon-settings.ts');
+	expect(ENGINE_SOURCES).not.toContain('testkit-sources.ts');
+});
+
+test.each(ENGINE_SOURCES)('%s не называет имена канона владельца', (file) => {
+	expect(readFileSync(join(import.meta.dir, file), 'utf8').match(OWNER_NAMES) ?? []).toStrictEqual(
+		[],
+	);
+});
+
+test.each([
+	"'.stack.jsonc'",
+	"'--profile is required: <node|contracts|infra>'",
+	"'./node_modules/@alxwlw/stack/schema.json'",
+	'PROFILES.join',
+	'join(repoRoot, STACK_CONFIG_FILE)',
+	'name.startsWith(SCOPE)',
+])('регулярка имён канона владельца ловит: %s', (sample) => {
+	expect(sample.match(OWNER_NAMES)).not.toBeNull();
 });
