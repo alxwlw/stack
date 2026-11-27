@@ -95,6 +95,20 @@ const OWNER_NAMES = new RegExp(
 	'g',
 );
 
+// Имена из частей закреплены в обратном написании: опечатка в части, даже при той же длине, краснит тест.
+test('имена удалённых констант собраны без опечаток', () => {
+	expect(REMOVED.map((s) => [...s].toReversed().join(''))).toStrictEqual([
+		'SELIFORP',
+		'ELIF_GIFNOC_KCATS',
+		'EPOCS',
+	]);
+});
+
+test('граница слова: удалённое имя внутри длинного идентификатора не ловится', () => {
+	expect(`${REMOVED[2]}D`.match(OWNER_NAMES)).toBeNull();
+	expect(`D${REMOVED[2]}`.match(OWNER_NAMES)).toBeNull();
+});
+
 test('сторож имён видит исходники', () => {
 	expect(ENGINE_SOURCES.length).toBeGreaterThanOrEqual(50);
 	expect(ENGINE_SOURCES).toContain('canon-settings.ts');
