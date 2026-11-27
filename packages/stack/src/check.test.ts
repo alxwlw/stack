@@ -7,7 +7,15 @@ import { expect, spyOn, test } from 'bun:test';
 import type { Canon } from './canon.ts';
 import { check, checkRepo, syncRepo } from './check.ts';
 import { STACK_RENOVATE_PRESET } from './deps.ts';
-import { fakeRepoRulesReader, repoDir, repoRulesRun, testCanon, testRepo } from './testkit.ts';
+import {
+	fakePeersReader,
+	fakeRepoRulesReader,
+	repoDir,
+	repoRulesRun,
+	testCanon,
+	testRepo,
+} from './testkit.ts';
+import { ACME_SETTINGS } from './testkit-sources.ts';
 
 // Конфиг Renovate на пресете канона: тесты исключений и каталогов не про бота.
 const RENOVATE = { 'renovate.json5': `{ extends: ['${STACK_RENOVATE_PRESET}'] }\n` };
@@ -306,4 +314,30 @@ test('checkRepo: группа включена, входов нет — Error о
 	expect(() => checkRepo(repoDir(CLEAN_REPO), rulesCanon, [])).toThrow(
 		new Error('rule group "repo-rules" is enabled but has no port'),
 	);
+});
+
+// Подсказки групп называют команду канона прогона: checkRepo кладёт свой канон в контекст групп.
+test('checkRepo: подсказки stale групп peers и repo-rules называют команду канона прогона', () => {
+	const acme = testCanon({ rules: ['peers', 'repo-rules'], settings: ACME_SETTINGS });
+	const stalePeer = { importer: '.', peer: 'viem', kind: 'conflict' };
+	const repo = repoDir({
+		...CLEAN_REPO,
+		'pnpm-lock.yaml': 'lockfileVersion: x\n',
+		'.stack-peers-baseline.json': JSON.stringify({ version: 1, peers: [stalePeer] }),
+	});
+	const peers = fakePeersReader({ status: 0, signal: null, stdout: '{}', stderr: '' });
+	const rr = fakeRepoRulesReader(
+		repoRulesRun(0, {
+			violations: [],
+			stale: [{ rule: 'max-lines', path: 'src/a.ts', baseline: 2, actual: 1 }],
+			notes: [],
+		}),
+	);
+	const { findings } = checkRepo(repo, acme, [], {
+		ports: { peers: peers.read, 'repo-rules': rr.read },
+		env: {},
+	});
+	const message = (code: string) => findings.find((f) => f.code === code)?.message;
+	expect(message('stale-peer-baseline')).toEndWith('drop it with: acme peers-baseline');
+	expect(message('stale-repo-rules-baseline')).toEndWith('lower it with: acme repo-rules baseline');
 });

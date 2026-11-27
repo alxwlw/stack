@@ -13,7 +13,8 @@ import { dirname, join } from 'node:path';
 
 import { parse as parseYaml, stringify } from 'yaml';
 
-import { type Canon, canonDir, canonFor, loadCanon, readCanonSource } from './canon.ts';
+import { type Canon, canonDir, canonFor, type CanonSource, readCanonSource } from './canon.ts';
+import type { SyncPrTexts } from './canon-settings.ts';
 import { type CommandPorts, type ExitCode, runCommand } from './command.ts';
 import type { Profile } from './config.ts';
 import { STACK_RENOVATE_PRESET } from './deps.ts';
@@ -35,6 +36,7 @@ import {
 	syncPr,
 	type SyncPrOptions,
 } from './sync-pr.ts';
+import { TEST_SETTINGS } from './testkit-sources.ts';
 
 // Тест со своим TMPDIR: перечисление временных каталогов видит только каталоги этого теста, а не
 // соседние процессы на том же хосте (раннеры CI делят /tmp). Каталог удаляется, TMPDIR возвращается.
@@ -78,11 +80,16 @@ export const SCHEMA_PATH = join(import.meta.dir, '..', 'schema.json');
 // зашитая в правило, осталась бы незамеченной (engines-node в deps.ts, packageManager в package-manager.ts).
 export function testCanon(over: Partial<Canon> = {}): Canon {
 	return {
+		settings: TEST_SETTINGS,
 		files: [],
 		catalogs: {},
 		pins: { node: '25.4.1', pnpm: '10.99.0' },
 		rules: [],
-		ownPackages: ownPackages(over.catalogs?.dev, { version: '0.0.0' }),
+		ownPackages: ownPackages(
+			over.catalogs?.dev,
+			{ name: '@alxwlw/stack', version: '0.0.0' },
+			(over.settings ?? TEST_SETTINGS).ownPackages,
+		),
 		...over,
 	};
 }
@@ -126,12 +133,18 @@ snapshots:
   peer@1.0.0: {}
 `;
 
+// Настоящий канон, прочитанный один раз на загрузку модуля.
+export const OWNER_SOURCE: CanonSource = readCanonSource();
+
 // Содержимое канон-файла по его dest, как его видит loadCanon: все группы включены. Тесты, сверяющие
 // канон с корнем репозитория или с самим собой, берут файл здесь, а не по пути в canon/files.
 export function canonFile(dest: string, profile: Profile = 'node'): string {
-	const source = readCanonSource();
-	const g = source.groups;
-	const canon = canonFor(source, { profile, with: [...g.files, ...g.catalogs], exceptions: [] });
+	const g = OWNER_SOURCE.groups;
+	const canon = canonFor(OWNER_SOURCE, {
+		profile,
+		with: [...g.files, ...g.catalogs],
+		exceptions: [],
+	});
 	const file = canon.files.find((f) => f.dest === dest);
 	if (!file) throw new Error(`no canon file ${dest} for profile ${profile}`);
 	return file.content;
@@ -245,6 +258,7 @@ export function groupContext(repo: Repo, over: Partial<GroupContext> = {}): Grou
 		repo,
 		env: {},
 		prBase: { skipped: 'no --base outside GitHub Actions' },
+		canon: testCanon(),
 		...over,
 	};
 }
@@ -523,10 +537,11 @@ export function put(dir: string, path: string, content: string): void {
 export async function run(
 	opts: PublishOptions,
 	github: GitHub,
+	texts: SyncPrTexts = OWNER_SOURCE.settings.syncPr,
 ): Promise<{ code: 0 | 1; out: string[]; err: string[] }> {
 	const out: string[] = [];
 	const err: string[] = [];
-	const code = await publishChanges(opts, github, (stream, line) =>
+	const code = await publishChanges(opts, texts, github, (stream, line) =>
 		(stream === 'out' ? out : err).push(line),
 	);
 	return { code, out, err };
@@ -574,9 +589,11 @@ export async function spawnIn(cmd: string[], cwd: string) {
 export const HOOK = 'pnpm run stack:post-sync|VERSION=1.2.3';
 
 // Ожидаемые обращения к реестру — из канона, а не литералом.
-export const SERVED = loadCanon({ profile: 'node', with: [], exceptions: [] }).ownPackages.map(
-	(p) => `served ${p.name}@${p.version}`,
-);
+export const SERVED = canonFor(OWNER_SOURCE, {
+	profile: 'node',
+	with: [],
+	exceptions: [],
+}).ownPackages.map((p) => `served ${p.name}@${p.version}`);
 
 export const NODE_PKG = JSON.stringify({ name: 'app', scripts: { 'stack:post-sync': 'true' } });
 
@@ -607,6 +624,7 @@ export async function runSyncPr(
 			appSlug: 'acme-bot',
 			install: true,
 			wait: { attempts: 2, intervalMs: 0 },
+			source: OWNER_SOURCE,
 			...over,
 		},
 		{

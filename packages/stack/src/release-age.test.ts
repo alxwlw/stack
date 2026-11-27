@@ -11,6 +11,7 @@ import { type Exception, isHeld, resolve } from './exceptions.ts';
 import type { Change } from './findings.ts';
 import { WORKSPACE_FILE } from './repo.ts';
 import { repoDir, testCanon, testRepo } from './testkit.ts';
+import { ACME_SETTINGS } from './testkit-sources.ts';
 
 const KEY = 'minimumReleaseAgeExclude';
 
@@ -387,4 +388,26 @@ test('находку для пакета вне каталога удержив�
 	);
 	expect(found.some((f) => f.code === 'stale-exception')).toBe(false);
 	expect(rendered(text, transitive, [exception])).not.toContain('@alxwlw/repo-rules');
+});
+
+test('запись <scope>/* покрывает пакеты своего scope и не покрывает пакет, названный точным именем', () => {
+	const acme = testCanon({
+		settings: ACME_SETTINGS,
+		catalogs: { dev: { '@acme/lint': '1.0.0', 'acme-engine': '2.0.0' } },
+	});
+	const text = `packages:\n  - packages/*\n\n${AGE}${KEY}:\n  - '@acme/*'\n  - '@alxwlw/*'\n`;
+	expect(drift(text, acme).map((d) => d.fix)).toStrictEqual([
+		'minimumReleaseAgeExclude: acme-engine@2.0.0',
+	]);
+});
+
+test('запись <имя>* не покрывает пакет, образец которого — точное имя', () => {
+	const acme = testCanon({
+		settings: ACME_SETTINGS,
+		catalogs: { dev: { '@acme/lint': '1.0.0', 'acme-engine': '2.0.0' } },
+	});
+	const text = `packages:\n  - packages/*\n\n${AGE}${KEY}:\n  - '@acme/*'\n  - 'acme-engine*'\n`;
+	expect(drift(text, acme).map((d) => d.fix)).toStrictEqual([
+		'minimumReleaseAgeExclude: acme-engine@2.0.0',
+	]);
 });

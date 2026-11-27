@@ -8,6 +8,7 @@ import { parse as parseYaml } from 'yaml';
 import { canonDir, loadCanon, readCanonSource, selectEntries } from './canon.ts';
 import { checkRepo, planRepo, syncRepo, type SyncResult } from './check.ts';
 import { readStackConfig, type StackConfig } from './config.ts';
+import { OWNER_SOURCE } from './testkit.ts';
 
 const FIXTURES = join(import.meta.dir, '..', '..', '..', 'fixtures');
 
@@ -31,7 +32,7 @@ const catalogDrift = (dir: string, cfg: StackConfig) =>
 // Фикстура в `fixtures/` — только семя; всё остальное приносит sync, как у потребителя.
 function syncedFixture(profile: 'node' | 'contracts' | 'infra'): { dir: string; cfg: StackConfig } {
 	const dir = copyFixture(profile);
-	const cfg = readStackConfig(dir);
+	const cfg = readStackConfig(dir, OWNER_SOURCE.settings);
 	sync(dir, cfg);
 	return { dir, cfg };
 }
@@ -68,7 +69,10 @@ test('fixtures/ хранит только семя: ни один файл фи�
 // отбор (selectEntries), что у loadCanon. Запись узнаём по src: dest в манифесте не уникален.
 test('фикстуры вместе получают каждый файл файловой группы и включают каждую каталожную группу', () => {
 	const profiles = ['node', 'contracts', 'infra'] as const;
-	const cfgs = profiles.map((p) => ({ p, cfg: readStackConfig(join(FIXTURES, p)) }));
+	const cfgs = profiles.map((p) => ({
+		p,
+		cfg: readStackConfig(join(FIXTURES, p), OWNER_SOURCE.settings),
+	}));
 	const source = readCanonSource();
 	const received = new Set(cfgs.flatMap(({ cfg }) => selectEntries(source, cfg).map((f) => f.src)));
 	expect(
@@ -136,7 +140,7 @@ test('check краснеет на каждой категории нарушен
 // синхронизировать некуда — а не потому что профиль infra тихо пропущен внутри функции.
 test('infra: без pnpm-workspace.yaml синхронизация каталогов — no-op на самом первом вызове', () => {
 	const dir = copyFixture('infra');
-	const cfg = readStackConfig(dir);
+	const cfg = readStackConfig(dir, OWNER_SOURCE.settings);
 	expect(existsSync(join(dir, 'pnpm-workspace.yaml'))).toBe(false);
 	expect(existsSync(join(dir, 'package.json'))).toBe(false);
 	expect(catalogDrift(dir, cfg)).toEqual([]);
@@ -146,7 +150,7 @@ test('infra: без pnpm-workspace.yaml синхронизация катало�
 // отсутствием файла, а не строкой "profile === 'infra'" где-то внутри правила каталогов.
 test('infra: появился pnpm-workspace.yaml — синхронизация каталогов больше не no-op', () => {
 	const dir = copyFixture('infra');
-	const cfg = readStackConfig(dir);
+	const cfg = readStackConfig(dir, OWNER_SOURCE.settings);
 	writeFileSync(join(dir, 'pnpm-workspace.yaml'), 'packages:\n  - packages/*\n');
 	expect(catalogDrift(dir, cfg).length).toBeGreaterThan(0);
 });

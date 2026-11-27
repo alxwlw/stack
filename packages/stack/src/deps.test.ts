@@ -4,6 +4,7 @@ import { check } from './check.ts';
 import { STACK_RENOVATE_PRESET } from './deps.ts';
 import type { FindingCode } from './findings.ts';
 import { canonFile, testCanon, testRepo } from './testkit.ts';
+import { ACME_SETTINGS } from './testkit-sources.ts';
 
 // Пин node у testCanon нарочно не совпадает с реальным каноном (26.x): иначе тест engines-node
 // не отличит canon.pins.node от зашитой константы.
@@ -244,4 +245,18 @@ test('dependabot-config: .yml и .yaml — по находке на файл, б
 		['dependabot-config', '.github/dependabot.yml'],
 		['dependabot-config', '.github/dependabot.yaml'],
 	]);
+});
+
+test('renovate-preset: имя команды в сообщениях идёт из настроек канона', () => {
+	const acme = testCanon({ settings: ACME_SETTINGS });
+	const none = check(testRepo(acme, { 'renovate.json5': null }), acme, []).find(
+		(f) => f.code === 'renovate-preset',
+	);
+	expect(none?.message).toContain('acme sync seeds renovate.json5');
+	const bare = check(
+		testRepo(acme, { 'renovate.json5': '{ extends: ["config:recommended"] }\n' }),
+		acme,
+		[],
+	).find((f) => f.code === 'renovate-preset');
+	expect(bare?.message).toEndWith('the bot fights acme sync');
 });

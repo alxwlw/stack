@@ -1,0 +1,12 @@
+{
+	"profiles": ["node", "contracts", "infra"],
+	"configFile": ".stack.jsonc",
+	"command": "stack",
+	"ownPackages": ["@alxwlw/"],
+	"syncPr": {
+		"title": "chore(stack): канон {version}",
+		"body": "Канон `@alxwlw/stack@{version}` применён к репозиторию.\n\nИзменённые файлы:\n{files}\nРелиз: https://github.com/alxwlw/stack/releases/tag/v{version}\n",
+		"closeComment": "Заменён {url} — канон {version}.",
+		"upToDateComment": "Канон {version} уже в `{base}` — этот PR устарел."
+	}
+}

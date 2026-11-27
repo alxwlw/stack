@@ -7,15 +7,15 @@ The vocabulary of the toolchain canon and its `stack` CLI: what a repo adopts, w
 ### Canon and consumers
 
 **Canon**:
-The one shared set of toolchain files and pinned dependency versions, shipped inside `@alxwlw/stack`. Loaded per repo as a value by `loadCanon` (`packages/stack/src/canon.ts`: `readCanonSource` reads `canon/` once, `canonFor` is the pure step of profile and `with` selection, group check and pins); its sources are `packages/stack/canon/`.
+The one shared set of toolchain files and pinned dependency versions, shipped inside `@alxwlw/stack`. Read from disk once per run, in `runCommand` (`packages/stack/src/command.ts`), by `readCanonSource` (`packages/stack/src/canon.ts`); each command then narrows that value per repo with `canonFor`, the pure step of profile and `with` selection, group check and pins; its sources are `packages/stack/canon/`.
 _Avoid_: template, boilerplate, preset
 
 **Consumer**:
-A repository that adopts the canon and is kept in line with it by `stack sync` and `stack check` (for example `acme/app`). It states how in its `.stack.jsonc` (`readStackConfig`, `packages/stack/src/config.ts`). Loaded once per command as a value by `loadRepo` (`packages/stack/src/repo.ts`): the content of the files it could read, and which paths exist. An unreadable or unparsable `package.json` (root or nested), `pnpm-workspace.yaml`, Renovate config, moon's toolchain or workspace config, or **Peer baseline** becomes exactly one `unreadable-file` finding; the rules are pure functions of that value and the canon. The shape of that file is declared once, by `CONFIG_KEYS`, `PROFILES`, `EXCEPTION_SHAPES` and the canon's group names (`knownGroups`): `readStackConfig` rejects any other key or shape, `canonFor` rejects an unknown group, and `packages/stack/schema.json` must equal what `stackConfigSchema` builds from them.
+A repository that adopts the canon and is kept in line with it by `stack sync` and `stack check` (for example `acme/app`). It states how in its `.stack.jsonc` (`readStackConfig`, `packages/stack/src/config.ts`). Loaded once per command as a value by `loadRepo` (`packages/stack/src/repo.ts`): the content of the files it could read, and which paths exist. An unreadable or unparsable `package.json` (root or nested), `pnpm-workspace.yaml`, Renovate config, moon's toolchain or workspace config, or **Peer baseline** becomes exactly one `unreadable-file` finding; the rules are pure functions of that value and the canon. The shape of that file is declared once, by `CONFIG_KEYS`, the profiles of the canon's settings, `EXCEPTION_SHAPES` and the canon's group names (`knownGroups`): `readStackConfig` rejects any other key or shape, `canonFor` rejects an unknown group, and `packages/stack/schema.json` must equal what `stackConfigSchema` builds from them.
 _Avoid_: client, downstream, target repo
 
 **Profile**:
-The kind of repository a consumer declares, `node`, `contracts` or `infra`; it decides which canon files apply. `PROFILES` in `packages/stack/src/config.ts`, `appliesTo` in `canon/manifest.json`.
+The kind of repository a consumer declares, one of the names the canon lists in its Canon settings (`node`, `contracts` or `infra` in the owner's canon); it decides which canon files apply. `profiles` in `canon/settings.json`, `appliesTo` in `canon/manifest.json`.
 _Avoid_: preset, flavour, template
 
 **Group**:
@@ -24,8 +24,12 @@ _Avoid_: feature, module, flag
 
 ### What the canon holds
 
+**Canon settings**:
+The names and texts a canon declares as data: its profile names, the name of the consumer config file, the command name, the own-package patterns and the sync-PR texts. `canon/settings.json`, checked where it is read (`checkSettings`, `packages/stack/src/canon-settings.ts`); a violation is a defect of the canon package, not a finding.
+_Avoid_: canon config, canon options
+
 **Canon file**:
-A file the canon places at a path (`dest`) in a consumer, listed in `canon/manifest.json` and stored under `canon/files/`. Its strategy is either **verbatim** (the consumer's copy must equal the canon's byte for byte) or **seed** (`create-if-absent`: written once, then owned by the consumer, and only its absence is drift; not the seed of a **Fixture**, which holds no canon file). A seed may name `satisfiedBy` paths, other legitimate names that already close the seeding. Three seeds — the gitleaks seed, `.oxlintrc.json` and `tsconfig.options.json` — have to keep extending the canon file or preset they are created with: present without that link, such a seed is a `canon-not-extended` finding, which `sync` does not fix and an exception on the file holds (`SEED_CHECKS`, `checkSeedExtends` in `packages/stack/src/seed-extends.ts`). The Renovate seed is under its own rule, `renovate-preset`, which no exception holds. The manifest is checked where it is read (`readCanonSource`): a profile outside `PROFILES`, a strategy outside `SYNC_STRATEGIES`, `satisfiedBy` on a verbatim file, an unknown key of an entry, or a `dest` listed twice for one profile is an error of the package, not a finding. `CanonFile`, `SyncStrategy`, `SYNC_STRATEGIES` in `packages/stack/src/canon.ts`; `planFiles` in `packages/stack/src/files.ts`.
+A file the canon places at a path (`dest`) in a consumer, listed in `canon/manifest.json` and stored under `canon/files/`. Its strategy is either **verbatim** (the consumer's copy must equal the canon's byte for byte) or **seed** (`create-if-absent`: written once, then owned by the consumer, and only its absence is drift; not the seed of a **Fixture**, which holds no canon file). A seed may name `satisfiedBy` paths, other legitimate names that already close the seeding. Three seeds — the gitleaks seed, `.oxlintrc.json` and `tsconfig.options.json` — have to keep extending the canon file or preset they are created with: present without that link, such a seed is a `canon-not-extended` finding, which `sync` does not fix and an exception on the file holds (`SEED_CHECKS`, `checkSeedExtends` in `packages/stack/src/seed-extends.ts`). The Renovate seed is under its own rule, `renovate-preset`, which no exception holds. The manifest is checked where it is read (`readCanonSource`): a profile outside the settings' `profiles`, a strategy outside `SYNC_STRATEGIES`, `satisfiedBy` on a verbatim file, an unknown key of an entry, or a `dest` listed twice for one profile is an error of the package, not a finding. `CanonFile`, `SyncStrategy`, `SYNC_STRATEGIES` in `packages/stack/src/canon.ts`; `planFiles` in `packages/stack/src/files.ts`.
 _Avoid_: template (for a verbatim file), config file
 
 **Catalog**:
@@ -49,7 +53,7 @@ A version of a pinned tool (node, bun, pnpm, proto) repeated outside `.prototool
 _Avoid_: duplicate pin, hardcoded version, pin site
 
 **Own package**:
-A package this repository publishes that reaches a Consumer with the Canon: an `@alxwlw/*` Catalog entry of the dev Catalog, or an `@alxwlw/*` dependency of `@alxwlw/stack`. Sync keeps each in `minimumReleaseAgeExclude`, and `stack sync-pr` waits for each in the registry. `ownPackages` in `packages/stack/src/own-packages.ts`.
+A package that reaches a Consumer with the Canon and matches an own-package pattern of the Canon settings (`@alxwlw/` in the owner's canon): a Catalog entry of the dev Catalog, or a dependency of the canon package. Sync keeps each in `minimumReleaseAgeExclude`, and `stack sync-pr` waits for each in the registry. `ownPackages` in `packages/stack/src/own-packages.ts`.
 _Avoid_: internal package, scoped package
 
 ### Verdicts

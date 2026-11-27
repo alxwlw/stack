@@ -61,12 +61,12 @@ test.each<[string, Finding[], string]>([
 		'3 finding(s): 2 fixable with: stack sync, 1 to fix by hand (see above)',
 	],
 ])('fixHint: %s', (_name, blocking, hint) => {
-	expect(fixHint(blocking)).toBe(hint);
+	expect(fixHint(blocking, 'stack')).toBe(hint);
 });
 
 test('checkOutput: пометки, удержанные, блокирующие, пустая строка, подсказка — всё в err, код 1', () => {
 	expect(
-		checkOutput({ findings: [held, drift, byHand], notes: ['note a', 'note b'] }),
+		checkOutput({ findings: [held, drift, byHand], notes: ['note a', 'note b'] }, 'stack'),
 	).toStrictEqual({
 		code: 1,
 		lines: [
@@ -83,7 +83,7 @@ test('checkOutput: пометки, удержанные, блокирующие,
 });
 
 test('checkOutput: блокирующих нет — пометки и удержанные в err, no drift в out, код 0', () => {
-	expect(checkOutput({ findings: [held], notes: ['note'] })).toStrictEqual({
+	expect(checkOutput({ findings: [held], notes: ['note'] }, 'stack')).toStrictEqual({
 		code: 0,
 		lines: [err('note'), err('allowed (нужен свой): b.txt — m'), out('canon: no drift')],
 	});
@@ -102,4 +102,18 @@ test('printLines выпускает строки по порядку, кажду
 	const seen: Line[] = [];
 	printLines((stream, text) => void seen.push({ stream, text }), [err('a'), out('b'), err('c')]);
 	expect(seen).toStrictEqual([err('a'), out('b'), err('c')]);
+});
+
+test('fixHint: команда приходит параметром, а не зашита в подсказку', () => {
+	expect(fixHint([drift], 'acme')).toBe('1 finding(s). Fix with: acme sync');
+	expect(fixHint([byHand], 'acme')).toBe(
+		'1 finding(s). acme sync does not fix these — fix them by hand (see above)',
+	);
+	expect(fixHint([drift, byHand], 'acme')).toBe(
+		'2 finding(s): 1 fixable with: acme sync, 1 to fix by hand (see above)',
+	);
+	expect(checkOutput({ findings: [drift], notes: [] }, 'acme').lines.at(-1)).toStrictEqual({
+		stream: 'err',
+		text: '1 finding(s). Fix with: acme sync',
+	});
 });

@@ -14,7 +14,11 @@ import type { RuleGroupModule } from './rule-group.ts';
 const TRAILER_HINT =
 	'repo-rules diff: intended? add a commit trailer "Tests-Removed: <reason>" in the range';
 
-function partFindings(part: RepoRulesPart | { skipped: string }, target: string): Finding[] {
+function partFindings(
+	part: RepoRulesPart | { skipped: string },
+	target: string,
+	command: string,
+): Finding[] {
 	if ('skipped' in part) return [];
 	if ('unavailable' in part) {
 		return [{ code: 'repo-rules-unavailable', target, message: part.unavailable }];
@@ -28,15 +32,15 @@ function partFindings(part: RepoRulesPart | { skipped: string }, target: string)
 		...part.stale.map((s): Finding => ({
 			code: 'stale-repo-rules-baseline',
 			target: s.path,
-			message: `${s.rule}: recorded ${s.baseline}, now ${s.actual}; lower it with: stack repo-rules baseline`,
+			message: `${s.rule}: recorded ${s.baseline}, now ${s.actual}; lower it with: ${command} repo-rules baseline`,
 		})),
 	];
 }
 
-export function checkRepoRules(outcome: RepoRulesOutcome): Finding[] {
+export function checkRepoRules(outcome: RepoRulesOutcome, command: string): Finding[] {
 	return [
-		...partFindings(outcome.check, 'repo-rules check'),
-		...partFindings(outcome.diff, 'repo-rules diff'),
+		...partFindings(outcome.check, 'repo-rules check', command),
+		...partFindings(outcome.diff, 'repo-rules diff', command),
 	];
 }
 
@@ -58,5 +62,8 @@ export function repoRulesNotes(outcome: RepoRulesOutcome): string[] {
 // Группа repo-rules: два вызова через порт (check и diff от базы PR); читателю идёт окружение прогона.
 export const repoRulesGroup: RuleGroupModule<RepoRulesReader> = (ctx, read) => {
 	const outcome = readRepoRules(ctx.repoRoot, read, ctx.env, ctx.prBase);
-	return { findings: checkRepoRules(outcome), notes: repoRulesNotes(outcome) };
+	return {
+		findings: checkRepoRules(outcome, ctx.canon.settings.command),
+		notes: repoRulesNotes(outcome),
+	};
 };

@@ -6,7 +6,6 @@ import { parse as parseJsonc } from 'jsonc-parser';
 
 import { canonFor, readCanonSource } from './canon.ts';
 import { check, plan, syncRepo } from './check.ts';
-import { PROFILES } from './config.ts';
 import type { Exception } from './exceptions.ts';
 import { loadRepo } from './repo.ts';
 import { checkSeedExtends, GITLEAKS_CANON, SEED_CHECKS } from './seed-extends.ts';
@@ -15,6 +14,7 @@ import {
 	canonFile,
 	canonRepoFiles,
 	ioError,
+	OWNER_SOURCE,
 	protoBin,
 	repoDir,
 	runTool,
@@ -23,6 +23,7 @@ import {
 	toolJson,
 } from './testkit.ts';
 import { checkDir, initRepo, syncDir } from './testkit-acceptance.ts';
+import { ACME_SETTINGS } from './testkit-sources.ts';
 
 // Тексты находок заданы планом и записаны литералами, не через константы модуля.
 const M1 =
@@ -39,7 +40,7 @@ const M4 =
 const read = (dest: string, text: string): string | undefined => {
 	const check = SEED_CHECKS.get(dest);
 	if (!check) throw new Error(`SEED_CHECKS has no ${dest}`);
-	return check(text);
+	return check(text, 'stack');
 };
 
 type Row = [name: string, text: string, expected: string | undefined | RegExp];
@@ -377,7 +378,7 @@ test('ключи таблицы — засевы настоящего канон
 		contracts: ['.gitleaks.toml', '.oxlintrc.json', 'tsconfig.options.json'],
 		infra: ['.gitleaks.toml'],
 	};
-	for (const profile of PROFILES) {
+	for (const profile of OWNER_SOURCE.settings.profiles) {
 		const real = canonFor(source, { profile, with: [], exceptions: [] });
 		const seedsOf = real.files
 			.filter((f) => f.strategy === 'create-if-absent' && SEED_CHECKS.has(f.dest))
@@ -446,4 +447,26 @@ test('приёмка 7: check сообщает засев без подключ�
 
 	syncDir(dir);
 	expect(readFileSync(join(dir, '.gitleaks.toml'), 'utf8')).toBe(NO_PATH);
+});
+
+test('чужой канон: «не разобран» и «не читается» называют его команду', () => {
+	const acme = testCanon({ files: canon.files, settings: ACME_SETTINGS });
+	const messages = (over: Over) => seeds(over, [], acme).map((f) => f.message);
+	expect(messages({ '.oxlintrc.json': '{ "extends": [' })).toStrictEqual([
+		'does not parse as JSON with comments (CloseBracketExpected at offset 14) — acme cannot tell whether it extends the canon',
+	]);
+	expect(
+		messages({
+			'.oxlintrc.json': { failed: ioError('EISDIR', 'illegal operation on a directory, read') },
+		}),
+	).toStrictEqual(['is not a readable file — acme cannot tell whether it extends the canon']);
+});
+
+test('читатели засевов берут команду параметром: «не разобран» называет её', () => {
+	expect(SEED_CHECKS.get('.oxlintrc.json')?.('{ "extends": [', 'acme')).toBe(
+		'does not parse as JSON with comments (CloseBracketExpected at offset 14) — acme cannot tell whether it extends the canon',
+	);
+	expect(SEED_CHECKS.get('.gitleaks.toml')?.('[extend\n', 'acme')).toMatch(
+		/^does not parse as TOML \(.+\) — acme cannot tell whether it extends the canon$/,
+	);
 });

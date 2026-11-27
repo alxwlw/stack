@@ -6,7 +6,7 @@ interface FindingBase {
 	suppressedBy?: Exception;
 }
 
-// Предмет находки — данные для сопоставления с исключением из .stack.jsonc: файл — его dest,
+// Предмет находки — данные для сопоставления с исключением из файла настроек потребителя: файл — его dest,
 // запись каталога — catalog+name, inline-version — name. Адрес из них строит exceptions.ts;
 // находки без предмета не подавляются никогда.
 export type Finding = FindingBase &

@@ -7,13 +7,13 @@ import type { Repo } from './repo.ts';
 /** Канон-файл с правилами gitleaks: его подключает засев gitleaks. */
 export const GITLEAKS_CANON = '.gitleaks.canon.toml';
 
-const NOT_PARSED = 'stack cannot tell whether it extends the canon';
+const NOT_PARSED_TAIL = 'cannot tell whether it extends the canon';
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
 	typeof v === 'object' && v !== null && !Array.isArray(v);
 
-const notParsed = (format: string, reason: string) =>
-	`does not parse as ${format} (${reason}) — ${NOT_PARSED}`;
+const notParsed = (format: string, reason: string, command: string) =>
+	`does not parse as ${format} (${reason}) — ${command} ${NOT_PARSED_TAIL}`;
 
 // Ключ записи так, как его находит gitleaks: регистр не важен, а при нескольких написаниях действует то,
 // что идёт первым по ASCII (замер gitleaks 8.30.1: `EXTEND` раньше `Extend`, `Extend` раньше `extend`;
@@ -43,13 +43,13 @@ function readBool(value: unknown): boolean | undefined {
 // не годится и вместе с path: gitleaks такой конфиг не загружает. Ключи и булевы читаются как у
 // gitleaks (viper), по замеру этой фазы: регистр ключей не важен, useDefault может быть строкой или
 // числом, а непонятная строка или массив — конфиг, который gitleaks не загружает.
-function readGitleaks(text: string): string | undefined {
+function readGitleaks(text: string, command: string): string | undefined {
 	let data: unknown;
 	try {
 		data = Bun.TOML.parse(text);
 	} catch (error) {
 		const first = (error instanceof Error ? error.message : String(error)).split('\n')[0] ?? '';
-		return notParsed('TOML', first);
+		return notParsed('TOML', first, command);
 	}
 	const extend = isRecord(data) ? keyOf(data, 'extend') : undefined;
 	const rawDefault = isRecord(extend) ? keyOf(extend, 'usedefault') : undefined;
@@ -66,7 +66,7 @@ function readGitleaks(text: string): string | undefined {
 }
 
 // Записи extends верхнего уровня: строка — одна запись, массив — его строки, прочее — ни одной.
-function readExtends(text: string): string[] | string {
+function readExtends(text: string, command: string): string[] | string {
 	const errors: ParseError[] = [];
 	const data: unknown = parse(text.replace(/^\uFEFF/, ''), errors, { allowTrailingComma: true });
 	const first = errors[0];
@@ -74,6 +74,7 @@ function readExtends(text: string): string[] | string {
 		return notParsed(
 			'JSON with comments',
 			`${printParseErrorCode(first.error)} at offset ${first.offset}`,
+			command,
 		);
 	}
 	const value = isRecord(data) ? data['extends'] : undefined;
@@ -82,16 +83,19 @@ function readExtends(text: string): string[] | string {
 	return [];
 }
 
-function jsonSeed(pattern: RegExp, message: string): (text: string) => string | undefined {
-	return (text) => {
-		const entries = readExtends(text);
+function jsonSeed(pattern: RegExp, message: string): SeedCheck {
+	return (text, command) => {
+		const entries = readExtends(text, command);
 		if (typeof entries === 'string') return entries;
 		return entries.some((entry) => pattern.test(entry)) ? undefined : message;
 	};
 }
 
-/** dest засева → чтение его текста: undefined — канон подключён, строка — текст находки. */
-export const SEED_CHECKS: ReadonlyMap<string, (text: string) => string | undefined> = new Map([
+/** Чтение текста засева: undefined — канон подключён, строка — текст находки; command — команда канона. */
+export type SeedCheck = (text: string, command: string) => string | undefined;
+
+/** dest засева → его чтение. */
+export const SEED_CHECKS: ReadonlyMap<string, SeedCheck> = new Map([
 	['.gitleaks.toml', readGitleaks],
 	[
 		'.oxlintrc.json',
@@ -109,17 +113,20 @@ export const SEED_CHECKS: ReadonlyMap<string, (text: string) => string | undefin
 	],
 ]);
 
-const NOT_READABLE = `is not a readable file — ${NOT_PARSED}`;
-
 // Правило только для отчёта: засев на месте, но канон не подключает. Идёт по файлам канона, не по
 // ключам таблицы: файла нет в каноне — проверять нечего. Отсутствие засева сообщает file-missing.
+// Имя команды в тексте находки — из настроек канона.
 export function checkSeedExtends(repo: Repo, canon: Canon): Finding[] {
+	const { command } = canon.settings;
 	const findings: Finding[] = [];
 	for (const { dest } of canon.files) {
 		const read = SEED_CHECKS.get(dest);
 		if (!read || !repo.paths.has(dest)) continue;
 		const text = repo.files.get(dest);
-		const message = text === undefined ? NOT_READABLE : read(text);
+		const message =
+			text === undefined
+				? `is not a readable file — ${command} ${NOT_PARSED_TAIL}`
+				: read(text, command);
 		if (message !== undefined) {
 			findings.push({ code: 'canon-not-extended', target: dest, file: dest, message });
 		}

@@ -23,6 +23,7 @@ const ctx: GroupContext = {
 	repo: testRepo(testCanon()),
 	env: {},
 	prBase: { skipped: 'no --base outside GitHub Actions' },
+	canon: testCanon(),
 };
 const echo: Say = (word) => `note ${word}`;
 const untouched: Say = () => {

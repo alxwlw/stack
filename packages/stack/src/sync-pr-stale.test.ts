@@ -16,6 +16,7 @@ import {
 	put,
 	run,
 } from './testkit.ts';
+import { ACME_SETTINGS } from './testkit-sources.ts';
 
 let restore: () => void;
 beforeAll(() => {
@@ -138,6 +139,15 @@ describe('publishChanges: устаревшие sync-PR', () => {
 		expect(closed.map(([n]) => n)).toEqual([19]);
 		expect(remoteHeads(remote)).toContain('refs/heads/stack/v1.13.0\n');
 		expect(remoteHeads(remote)).not.toContain('refs/heads/stack/v1.11.0\n');
+	});
+
+	test('коммитить нечего — комментарий закрытия следует настройкам канона', async () => {
+		const { dir } = gitRepo({ 'a.txt': 'a' });
+		pushBranch(dir, 'stack/v1.12.0');
+		const { github, closed } = fakeGitHub({}, [botPr(11, '1.12.0')]);
+		const r = await run(opts13(dir), github, ACME_SETTINGS.syncPr);
+		expect(r.code).toBe(0);
+		expect(closed).toStrictEqual([[11, 'Canon 1.13.0 is already in main.']]);
 	});
 
 	test('коммитить нечего — PR старших версий закрываются, бот не ищется', async () => {
@@ -274,5 +284,16 @@ describe('publishChanges: устаревшие sync-PR', () => {
 		expect(r.err).toEqual(['sync-pr: listing open PRs failed: boom']);
 		expect(r.out).toEqual(['canon already applied, nothing to commit']);
 		expect(closed).toEqual([]);
+	});
+
+	test('комментарий закрытия следует настройкам канона', async () => {
+		const { dir } = gitRepo({ 'a.txt': 'a' });
+		put(dir, 'b.txt', 'b');
+		pushBranch(dir, 'stack/v1.12.0');
+		const own = botPr(30, '1.13.0', 'main', 'alice');
+		const { github, closed } = fakeGitHub({}, [own, botPr(11, '1.12.0')]);
+		const r = await run(opts13(dir), github, ACME_SETTINGS.syncPr);
+		expect(r.code).toBe(0);
+		expect(closed).toStrictEqual([[11, `Superseded by ${own.url} (1.13.0).`]]);
 	});
 });

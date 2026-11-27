@@ -4,7 +4,8 @@ import type { Finding } from './findings.ts';
 import { type PeerEntry, type PeerIssue, PEERS_BASELINE, type PeersRun } from './peers.ts';
 import { checkPeers, peersGroup, readPeers } from './peers-rule.ts';
 import { LOCKFILE, type Read, type Repo, repoFromSnapshot } from './repo.ts';
-import { fakePeersReader, groupContext } from './testkit.ts';
+import { fakePeersReader, groupContext, testCanon } from './testkit.ts';
+import { ACME_SETTINGS } from './testkit-sources.ts';
 
 // Repo из снимка: pnpm-lock.yaml есть, если не сказано иное; baseline — записи или сырой текст.
 function repoWith(
@@ -103,13 +104,13 @@ test('исход unavailable — одна находка с этой причи�
 			message: 'pnpm peers check exited with 2: ERR_PNPM_BOOM nope',
 		},
 	];
-	expect(checkPeers(repoWith(), unavailable)).toStrictEqual(expected);
+	expect(checkPeers(repoWith(), unavailable, 'stack')).toStrictEqual(expected);
 	// Сбой pnpm сообщается и при битом baseline: загрузчик даёт свою находку, правило — свою.
-	expect(checkPeers(repoWith('{'), unavailable)).toStrictEqual(expected);
+	expect(checkPeers(repoWith('{'), unavailable, 'stack')).toStrictEqual(expected);
 });
 
 test('нет baseline — каждая запись даёт peer-dependency', () => {
-	expect(checkPeers(repoWith(), { issues: [MISSING, UNMET] })).toStrictEqual([
+	expect(checkPeers(repoWith(), { issues: [MISSING, UNMET] }, 'stack')).toStrictEqual([
 		{
 			code: 'peer-dependency',
 			target: 'peer in .',
@@ -130,7 +131,7 @@ test('запись baseline, которой больше нет, — stale-peer-
 		{ importer: '.', peer: 'viem', kind: 'conflict' },
 		{ importer: 'packages/b', peer: 'react', kind: 'missing', by: 'ui-kit' },
 	];
-	expect(checkPeers(repoWith(baseline), { issues: [] })).toStrictEqual([
+	expect(checkPeers(repoWith(baseline), { issues: [] }, 'stack')).toStrictEqual([
 		{
 			code: 'stale-peer-baseline',
 			target: 'viem in .',
@@ -151,7 +152,7 @@ test('запись baseline, которой больше нет, — stale-peer-
 
 test('новые и протухшие вместе — сначала все peer-dependency, потом все stale-peer-baseline', () => {
 	const stale: PeerEntry = { importer: '.', peer: 'abc', kind: 'conflict' };
-	const codes = checkPeers(repoWith([stale]), { issues: [UNMET, MISSING] }).map((f) => [
+	const codes = checkPeers(repoWith([stale]), { issues: [UNMET, MISSING] }, 'stack').map((f) => [
 		f.code,
 		f.target,
 	]);
@@ -164,7 +165,7 @@ test('новые и протухшие вместе — сначала все pe
 
 test('baseline не разобрался — сравнения нет, находку даёт загрузчик', () => {
 	const broken = repoWith('{"version":1,"peers":[{}]}');
-	expect(checkPeers(broken, { issues: [UNMET] })).toStrictEqual([]);
+	expect(checkPeers(broken, { issues: [UNMET] }, 'stack')).toStrictEqual([]);
 	expect(broken.unreadable.map((f) => [f.code, f.target])).toStrictEqual([
 		['unreadable-file', '.stack-peers-baseline.json'],
 	]);
@@ -175,13 +176,25 @@ test('baseline не разобрался — сравнения нет, нахо
 			[PEERS_BASELINE, { failed: new Error('EACCES') }],
 		]),
 	);
-	expect(checkPeers(unread, { issues: [UNMET] })).toStrictEqual([]);
+	expect(checkPeers(unread, { issues: [UNMET] }, 'stack')).toStrictEqual([]);
 	expect(unread.unreadable).toHaveLength(1);
 });
 
 test('всё в baseline — находок нет', () => {
 	const repo = repoWith([MISSING.entry, UNMET.entry]);
-	expect(checkPeers(repo, { issues: [UNMET, MISSING] })).toStrictEqual([]);
+	expect(checkPeers(repo, { issues: [UNMET, MISSING] }, 'stack')).toStrictEqual([]);
 	// Пустой baseline — тоже baseline: без записей нечему протухнуть.
-	expect(checkPeers(repoWith([]), { issues: [] })).toStrictEqual([]);
+	expect(checkPeers(repoWith([]), { issues: [] }, 'stack')).toStrictEqual([]);
+});
+
+test('checkPeers и peersGroup: команда в подсказке stale — параметр и настройки канона контекста', () => {
+	const stale: PeerEntry[] = [{ importer: '.', peer: 'viem', kind: 'conflict' }];
+	expect(checkPeers(repoWith(stale), { issues: [] }, 'acme').at(-1)?.message).toEndWith(
+		'drop it with: acme peers-baseline',
+	);
+	const acme = groupContext(repoWith(stale), { canon: testCanon({ settings: ACME_SETTINGS }) });
+	const port = fakePeersReader(CLEAN_RUN);
+	expect(peersGroup(acme, port.read).findings.at(-1)?.message).toEndWith(
+		'drop it with: acme peers-baseline',
+	);
 });

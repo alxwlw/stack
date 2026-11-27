@@ -3,7 +3,7 @@
 // предел 800 строк; здесь только то, что берут тесты приёмки Guardrails, peers и команд.
 import { rmSync } from 'node:fs';
 
-import { assertKnownGroups, loadCanon, readCanonSource } from './canon.ts';
+import { assertKnownGroups, loadCanon } from './canon.ts';
 import { checkRepo, syncRepo } from './check.ts';
 import { type Profile, readStackConfig } from './config.ts';
 import { spawnRunner } from './guardrails-port.ts';
@@ -12,7 +12,7 @@ import { checkOutput, syncOutput } from './output.ts';
 import { peersBaseline, type PeersBaselineMode } from './peers-baseline.ts';
 import { pnpmPeers } from './peers-port.ts';
 import { inProcessRepoRules } from './repo-rules-port.ts';
-import { BARE, channels, git, gitRepo, testEnv } from './testkit.ts';
+import { BARE, channels, git, gitRepo, OWNER_SOURCE, testEnv } from './testkit.ts';
 
 // Приёмка ниже команды: те же функции, что зовёт обработчик, на боевых adapter. StackConfigError они
 // не ловят — случаи с кодом 2 идут через runStack.
@@ -20,13 +20,13 @@ import { BARE, channels, git, gitRepo, testEnv } from './testkit.ts';
 /** `stack init` в процессе: assertKnownGroups и initConfig; профиль по умолчанию — node. */
 export function initRepo(dir: string, opts: { profile?: Profile; with?: string[] } = {}): void {
 	const groups = opts.with ?? [];
-	assertKnownGroups(groups, readCanonSource());
-	initConfig(dir, { profile: opts.profile ?? 'node', with: groups });
+	assertKnownGroups(groups, OWNER_SOURCE);
+	initConfig(dir, OWNER_SOURCE, { profile: opts.profile ?? 'node', with: groups });
 }
 
 /** `stack sync` в процессе: syncRepo по конфигурации каталога и syncOutput. */
 export function syncDir(dir: string): { out: string; err: string } {
-	const cfg = readStackConfig(dir);
+	const cfg = readStackConfig(dir, OWNER_SOURCE.settings);
 	return channels(syncOutput(syncRepo(dir, loadCanon(cfg), cfg.exceptions)));
 }
 
@@ -37,7 +37,7 @@ export function checkDir(
 	opts: { env?: Record<string, string>; base?: string } = {},
 ): { code: 0 | 1; out: string; err: string } {
 	const env = testEnv(opts.env);
-	const cfg = readStackConfig(dir);
+	const cfg = readStackConfig(dir, OWNER_SOURCE.settings);
 	const { lines, code } = checkOutput(
 		checkRepo(dir, loadCanon(cfg), cfg.exceptions, {
 			ports: {
@@ -48,6 +48,7 @@ export function checkDir(
 			env,
 			base: opts.base,
 		}),
+		OWNER_SOURCE.settings.command,
 	);
 	return { code, ...channels(lines) };
 }
@@ -58,7 +59,7 @@ export function baselineDir(
 	mode: PeersBaselineMode,
 	env?: Record<string, string>,
 ): { code: 0 | 1 | 2; out: string; err: string } {
-	const cfg = readStackConfig(dir);
+	const cfg = readStackConfig(dir, OWNER_SOURCE.settings);
 	const r = peersBaseline(dir, loadCanon(cfg), mode, pnpmPeers(testEnv(env)));
 	return {
 		code: r.code,

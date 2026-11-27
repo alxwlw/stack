@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { expect, test } from 'bun:test';
@@ -78,4 +78,56 @@ test('сквозных запусков cli.ts вне блока проводн�
 		'cli.test.ts',
 	]);
 	expect(Object.values(launches).reduce((a, b) => a + b, 0)).toBeLessThanOrEqual(15);
+});
+
+// Имена канона владельца живут в его настройках, не в исходниках движка (спецификация, «Чего нельзя допустить»).
+const ENGINE_SOURCES = readdirSync(import.meta.dir).filter(
+	(f) => f.endsWith('.ts') && !f.endsWith('.test.ts') && !f.startsWith('testkit'),
+);
+// Имена удалённых констант собраны из частей: цельным словом они в тесте были бы остатком удалённого для cite-check.
+const REMOVED = [
+	['PROF', 'ILES'],
+	['STACK_CONFIG_', 'FILE'],
+	['SCO', 'PE'],
+].map((p) => p.join(''));
+const OWNER_NAMES = new RegExp(
+	String.raw`\.stack\.jsonc|node\|contracts\|infra|@alxwlw/stack|\b(?:${REMOVED.join('|')})\b`,
+	'g',
+);
+
+// Имена из частей закреплены в обратном написании: опечатка в части, даже при той же длине, краснит тест.
+test('имена удалённых констант собраны без опечаток', () => {
+	expect(REMOVED.map((s) => [...s].toReversed().join(''))).toStrictEqual([
+		'SELIFORP',
+		'ELIF_GIFNOC_KCATS',
+		'EPOCS',
+	]);
+});
+
+test('граница слова: удалённое имя внутри длинного идентификатора не ловится', () => {
+	expect(`${REMOVED[2]}D`.match(OWNER_NAMES)).toBeNull();
+	expect(`D${REMOVED[2]}`.match(OWNER_NAMES)).toBeNull();
+});
+
+test('сторож имён видит исходники', () => {
+	expect(ENGINE_SOURCES.length).toBeGreaterThanOrEqual(50);
+	expect(ENGINE_SOURCES).toContain('canon-settings.ts');
+	expect(ENGINE_SOURCES).not.toContain('testkit-sources.ts');
+});
+
+test.each(ENGINE_SOURCES)('%s не называет имена канона владельца', (file) => {
+	expect(readFileSync(join(import.meta.dir, file), 'utf8').match(OWNER_NAMES) ?? []).toStrictEqual(
+		[],
+	);
+});
+
+test.each([
+	"'.stack.jsonc'",
+	"'--profile is required: <node|contracts|infra>'",
+	"'./node_modules/@alxwlw/stack/schema.json'",
+	`${REMOVED[0]}.join`,
+	`join(repoRoot, ${REMOVED[1]})`,
+	`name.startsWith(${REMOVED[2]})`,
+])('регулярка имён канона владельца ловит: %s', (sample) => {
+	expect(sample.match(OWNER_NAMES)).not.toBeNull();
 });

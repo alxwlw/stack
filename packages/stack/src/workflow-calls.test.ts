@@ -6,8 +6,7 @@ import { parse as parseYaml } from 'yaml';
 
 import { DISPATCH_WORKFLOW, dispatchRequest } from '../../../scripts/rollout.ts';
 import { readCanonSource } from './canon.ts';
-import { PROFILES } from './config.ts';
-import { canonFile } from './testkit.ts';
+import { canonFile, OWNER_SOURCE } from './testkit.ts';
 
 // Вызов reusable workflow стека должен укладываться в on.workflow_call цели: иначе у потребителя
 // workflow падает при запуске. Таблицу вызовов строит обход файлов (корень + канон-файлы), а не список
@@ -292,7 +291,7 @@ test('проводка registry: свой setup в check.yml и sync.yml пол�
 // rollout шлёт workflow_dispatch каждому потребителю, какой бы у него ни был Profile: канон-файл с этим именем
 // есть в каждом Profile, и тело dispatch укладывается в его on.workflow_dispatch.inputs — иначе GitHub отвечает 422.
 describe('dispatch из scripts/rollout.ts в рамках workflow_dispatch канон-файла', () => {
-	test.each(PROFILES)('%s', (profile) => {
+	test.each([...OWNER_SOURCE.settings.profiles])('%s', (profile) => {
 		const dest = `${WORKFLOWS}${DISPATCH_WORKFLOW}`;
 		const text = canonFile(dest, profile);
 		const wd = (

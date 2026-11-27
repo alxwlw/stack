@@ -39,7 +39,7 @@ export function peersBaseline(
 	if (!canon.rules.includes('peers')) {
 		return dropFixed
 			? quiet()
-			: failed(2, 'peers-baseline needs "peers" in "with" of .stack.jsonc');
+			: failed(2, `peers-baseline needs "peers" in "with" of ${canon.settings.configFile}`);
 	}
 	const repo = loadRepo(repoRoot, canon);
 	// Неразобранный файл не перезаписывается: в нём могли быть записи, которых больше нигде нет.
@@ -48,7 +48,9 @@ export function peersBaseline(
 	const exists = repo.paths.has(PEERS_BASELINE);
 	if (mode === 'init' && exists) return failed(2, `${PEERS_BASELINE} already exists`);
 	if (mode !== 'init' && !exists) {
-		return dropFixed ? quiet() : failed(2, `no ${PEERS_BASELINE}: run stack peers-baseline --init`);
+		return dropFixed
+			? quiet()
+			: failed(2, `no ${PEERS_BASELINE}: run ${canon.settings.command} peers-baseline --init`);
 	}
 	const outcome = readPeers(repo, repoRoot, read);
 	if ('unavailable' in outcome) return failed(1, outcome.unavailable);
