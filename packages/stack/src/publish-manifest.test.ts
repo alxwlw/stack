@@ -87,3 +87,18 @@ test('markdownlint-cli2 — точная зависимость stack, ранн�
 	expect(out).toContain('src/markdownlint-run.ts');
 	expect(out).toContain('src/markdownlint-run.bunfig.toml');
 }, 30_000);
+
+test('в тарболл stack не попадают помощники тестов и сами тесты', () => {
+	const res = spawnSync('npm', ['pack', '--dry-run', '--json'], {
+		cwd: join(ROOT, 'packages', 'stack'),
+		encoding: 'utf8',
+	});
+	expect(res.status).toBe(0);
+	const packed = (JSON.parse(res.stdout) as { files: { path: string }[] }[])[0]?.files ?? [];
+	const paths = packed.map((f) => f.path);
+	// Положительный контроль: список непустой и содержит исходники.
+	expect(paths).toContain('src/cli.ts');
+	expect(paths.filter((p) => /(^|\/)testkit[^/]*\.ts$/.test(p) || p.endsWith('.test.ts'))).toEqual(
+		[],
+	);
+}, 30_000);
