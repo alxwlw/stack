@@ -49,14 +49,15 @@ export const STACK_RENOVATE_PRESET = 'github>alxwlw/stack//renovate/canon.json5#
 
 // Пресет выключает Renovate для всего, что двигает stack sync (proto, каталоги канона dev и libs, @alxwlw/*,
 // ссылки alxwlw/stack) — без него бот и rollout перетягивают одни версии. Профиль не важен.
-export function checkRenovatePreset(repo: Repo): Finding[] {
+export function checkRenovatePreset(repo: Repo, canon: Canon): Finding[] {
 	const { renovate } = repo;
+	const { command } = canon.settings;
 	if (!renovate) {
 		return [
 			{
 				code: 'renovate-preset',
 				target: 'renovate.json5',
-				message: `no Renovate config found — stack sync seeds renovate.json5; an own config must extend "${STACK_RENOVATE_PRESET}"`,
+				message: `no Renovate config found — ${command} sync seeds renovate.json5; an own config must extend "${STACK_RENOVATE_PRESET}"`,
 			},
 		];
 	}
@@ -73,7 +74,7 @@ export function checkRenovatePreset(repo: Repo): Finding[] {
 				{
 					code: 'renovate-preset',
 					target: renovate.path,
-					message: `"extends" must include "${STACK_RENOVATE_PRESET}" — without the canon preset the bot fights stack sync`,
+					message: `"extends" must include "${STACK_RENOVATE_PRESET}" — without the canon preset the bot fights ${command} sync`,
 				},
 			];
 }

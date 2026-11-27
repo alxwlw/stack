@@ -38,7 +38,7 @@ export function readPeers(repo: Repo, repoRoot: string, read: PeersReader): Peer
 }
 
 // Неразобранный baseline даёт находку в загрузчике, и пустым baseline он не считается.
-export function checkPeers(repo: Repo, outcome: PeersOutcome): Finding[] {
+export function checkPeers(repo: Repo, outcome: PeersOutcome, command: string): Finding[] {
 	if ('unavailable' in outcome) {
 		return [{ code: 'peers-unavailable', target: TARGET, message: outcome.unavailable }];
 	}
@@ -53,13 +53,17 @@ export function checkPeers(repo: Repo, outcome: PeersOutcome): Finding[] {
 		...stale.map((e): Finding => ({
 			code: 'stale-peer-baseline',
 			target: where(e),
-			message: `recorded ${recorded(e)} is gone; drop it with: stack peers-baseline`,
+			message: `recorded ${recorded(e)} is gone; drop it with: ${command} peers-baseline`,
 		})),
 	];
 }
 
 // Группа peers: исход читается через порт pnpm, пометок у группы нет.
 export const peersGroup: RuleGroupModule<PeersReader> = (ctx, read) => ({
-	findings: checkPeers(ctx.repo, readPeers(ctx.repo, ctx.repoRoot, read)),
+	findings: checkPeers(
+		ctx.repo,
+		readPeers(ctx.repo, ctx.repoRoot, read),
+		ctx.canon.settings.command,
+	),
 	notes: [],
 });

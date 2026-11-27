@@ -124,6 +124,7 @@ export const COMMANDS: Record<'init' | 'sync' | 'check' | 'sync-pr' | 'peers-bas
 					env,
 					base: flags.base,
 				}),
+				source.settings.command,
 			);
 			printLines(ports.print, lines);
 			return code;

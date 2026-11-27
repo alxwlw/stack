@@ -4,6 +4,7 @@ import type { Finding } from './findings.ts';
 import type { RepoRulesOutcome } from './repo-rules.ts';
 import { checkRepoRules, repoRulesGroup, repoRulesNotes } from './repo-rules-rule.ts';
 import { fakeRepoRulesReader, groupContext, repoRulesRun, testCanon, testRepo } from './testkit.ts';
+import { ACME_SETTINGS } from './testkit-sources.ts';
 
 const EMPTY = { violations: [], stale: [], notes: [] };
 const HINT =
@@ -24,7 +25,7 @@ test('checkRepoRules: нарушения и устаревшие записи ch
 			notes: [],
 		},
 	};
-	expect(checkRepoRules(outcome)).toStrictEqual([
+	expect(checkRepoRules(outcome, 'stack')).toStrictEqual([
 		{ code: 'repo-rules-violation', target: 'src/a.ts:801', message: 'max-lines: 812 lines' },
 		{
 			code: 'stale-repo-rules-baseline',
@@ -40,16 +41,16 @@ test('checkRepoRules: нарушения и устаревшие записи ch
 });
 
 test('checkRepoRules: обе части недоступны — две находки с разными целями', () => {
-	expect(checkRepoRules({ check: { unavailable: 'x' }, diff: { unavailable: 'y' } })).toStrictEqual(
-		[
-			{ code: 'repo-rules-unavailable', target: 'repo-rules check', message: 'x' },
-			{ code: 'repo-rules-unavailable', target: 'repo-rules diff', message: 'y' },
-		],
-	);
+	expect(
+		checkRepoRules({ check: { unavailable: 'x' }, diff: { unavailable: 'y' } }, 'stack'),
+	).toStrictEqual([
+		{ code: 'repo-rules-unavailable', target: 'repo-rules check', message: 'x' },
+		{ code: 'repo-rules-unavailable', target: 'repo-rules diff', message: 'y' },
+	]);
 });
 
 test('checkRepoRules: чистый check и пропущенный diff — находок нет', () => {
-	expect(checkRepoRules({ check: EMPTY, diff: { skipped: 's' } })).toStrictEqual([]);
+	expect(checkRepoRules({ check: EMPTY, diff: { skipped: 's' } }, 'stack')).toStrictEqual([]);
 });
 
 test('repoRulesNotes: причина пропуска diff — в скобках после skipped', () => {
@@ -65,7 +66,7 @@ test('repoRulesNotes: причина пропуска diff — в скобках
 test('checkRepoRules: недоступная база PR — находка у diff с причиной базы', () => {
 	const clean = { violations: [], stale: [], notes: [] };
 	const reason = 'GITHUB_BASE_REF is empty in a pull_request job';
-	expect(checkRepoRules({ check: clean, diff: { unavailable: reason } })).toStrictEqual([
+	expect(checkRepoRules({ check: clean, diff: { unavailable: reason } }, 'stack')).toStrictEqual([
 		{ code: 'repo-rules-unavailable', target: 'repo-rules diff', message: reason },
 	]);
 });
@@ -146,4 +147,23 @@ test('repoRulesGroup: вне pull request check недоступен — нах�
 		notes: ['repo-rules diff: skipped (not a pull request)'],
 	});
 	expect(port.calls).toHaveLength(1);
+});
+
+const STALE = [{ rule: 'suppression-reason', path: 'src/b.ts', baseline: 2, actual: 1 }];
+const STALE_ONLY: RepoRulesOutcome = {
+	check: { violations: [], stale: STALE, notes: [] },
+	diff: { skipped: 's' },
+};
+
+test('checkRepoRules и repoRulesGroup: команда в подсказке stale — параметр и настройки канона контекста', () => {
+	expect(checkRepoRules(STALE_ONLY, 'acme').at(-1)?.message).toEndWith(
+		'lower it with: acme repo-rules baseline',
+	);
+	const port = fakeRepoRulesReader(repoRulesRun(0, { violations: [], stale: STALE, notes: [] }));
+	const acme = groupContext(testRepo(testCanon()), {
+		canon: testCanon({ settings: ACME_SETTINGS }),
+	});
+	expect(repoRulesGroup(acme, port.read).findings.at(-1)?.message).toEndWith(
+		'lower it with: acme repo-rules baseline',
+	);
 });

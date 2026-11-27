@@ -146,7 +146,10 @@ test('вывод check длиннее 128 КиБ доходит до канал�
 	}));
 	const dir = repoDir({ ...BARE, '.stack.jsonc': JSON.stringify({ profile: 'node', exceptions }) });
 	const cfg = readStackConfig(dir, OWNER_SOURCE.settings);
-	const expected = checkOutput(checkRepo(dir, loadCanon(cfg), cfg.exceptions));
+	const expected = checkOutput(
+		checkRepo(dir, loadCanon(cfg), cfg.exceptions),
+		OWNER_SOURCE.settings.command,
+	);
 	expect(expected.code).toBe(1);
 	const bytes = expected.lines
 		.filter((l) => l.stream === 'err')

@@ -1,3 +1,4 @@
+import type { Canon } from './canon.ts';
 import type { Finding } from './findings.ts';
 import type { PrBase } from './pr-base.ts';
 import type { Repo } from './repo.ts';
@@ -8,6 +9,7 @@ export interface GroupContext {
 	repo: Repo;
 	env: NodeJS.ProcessEnv;
 	prBase: PrBase;
+	canon: Canon;
 }
 
 /** Что группа отдаёт: находки в своём порядке и пометки. */

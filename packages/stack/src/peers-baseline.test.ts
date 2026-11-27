@@ -6,6 +6,7 @@ import { expect, test } from 'bun:test';
 import type { PeerEntry, PeersReader, PeersRun } from './peers.ts';
 import { peersBaseline, type PeersBaselineResult } from './peers-baseline.ts';
 import { repoDir, testCanon } from './testkit.ts';
+import { ACME_SETTINGS } from './testkit-sources.ts';
 
 const CANON = testCanon({ rules: ['peers'] });
 const FILE = '.stack-peers-baseline.json';
@@ -251,4 +252,19 @@ test('файл с отступом в два пробела — после lower
 	const dir = repo(baselineText([A, B], '  '));
 	expect(peersBaseline(dir, CANON, 'lower', port(pnpmRun(B)).read).code).toBe(0);
 	expect(read(dir)).toBe(baselineText([B], '  '));
+});
+
+test('чужой канон: сообщения называют его команду и файл настроек', () => {
+	const acme = testCanon({ settings: ACME_SETTINGS });
+	const p = port(pnpmRun(A));
+	expect(peersBaseline(repo(), acme, 'lower', p.read)).toStrictEqual({
+		code: 2,
+		out: [],
+		err: ['peers-baseline needs "peers" in "with" of .acme.jsonc'],
+	});
+	const withPeers = testCanon({ rules: ['peers'], settings: ACME_SETTINGS });
+	expect(peersBaseline(repo(), withPeers, 'lower', p.read).err).toStrictEqual([
+		`no ${FILE}: run acme peers-baseline --init`,
+	]);
+	expect(p.calls()).toBe(0);
 });

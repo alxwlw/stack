@@ -23,15 +23,15 @@ export function allowedLine(f: Held): string {
 	return `allowed (${f.suppressedBy.reason}): ${f.target} — ${f.message}`;
 }
 
-// Подсказка под находками: stack sync закрывает только Drift; правила deps.ts — отчёт без действия.
-export function fixHint(blocking: Finding[]): string {
+// Подсказка под находками: `<command> sync` закрывает только Drift; правила deps.ts — отчёт без действия.
+export function fixHint(blocking: Finding[], command: string): string {
 	const total = blocking.length;
 	const bySync = blocking.filter(isDrift).length;
-	if (bySync === total) return `${total} finding(s). Fix with: stack sync`;
+	if (bySync === total) return `${total} finding(s). Fix with: ${command} sync`;
 	if (bySync === 0) {
-		return `${total} finding(s). stack sync does not fix these — fix them by hand (see above)`;
+		return `${total} finding(s). ${command} sync does not fix these — fix them by hand (see above)`;
 	}
-	return `${total} finding(s): ${bySync} fixable with: stack sync, ${total - bySync} to fix by hand (see above)`;
+	return `${total} finding(s): ${bySync} fixable with: ${command} sync, ${total - bySync} to fix by hand (see above)`;
 }
 
 const err = (text: string): Line => ({ stream: 'err', text });
@@ -39,7 +39,7 @@ const out = (text: string): Line => ({ stream: 'out', text });
 
 /** Пометки, удержанные, блокирующие, пустая строка и подсказка — всё в err, код 1; без блокирующих
  *  последней идёт `canon: no drift` в out, код 0. */
-export function checkOutput(report: CheckReport): { lines: Line[]; code: 0 | 1 } {
+export function checkOutput(report: CheckReport, command: string): { lines: Line[]; code: 0 | 1 } {
 	const blocking = report.findings.filter((f) => !isHeld(f));
 	const lines = [
 		...report.notes.map(err),
@@ -47,7 +47,7 @@ export function checkOutput(report: CheckReport): { lines: Line[]; code: 0 | 1 }
 		...blocking.map((f) => err(findingLine(f))),
 	];
 	if (blocking.length === 0) return { lines: [...lines, out('canon: no drift')], code: 0 };
-	return { lines: [...lines, err(''), err(fixHint(blocking))], code: 1 };
+	return { lines: [...lines, err(''), err(fixHint(blocking, command))], code: 1 };
 }
 
 /** Удержанные — в err, затем правки и итог — в out. */

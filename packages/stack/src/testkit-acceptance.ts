@@ -48,6 +48,7 @@ export function checkDir(
 			env,
 			base: opts.base,
 		}),
+		OWNER_SOURCE.settings.command,
 	);
 	return { code, ...channels(lines) };
 }

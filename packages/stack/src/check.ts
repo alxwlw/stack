@@ -57,7 +57,7 @@ function resolveWith(
 			...repo.unreadable,
 			...checkInlineVersions(repo, canon),
 			...checkEnginesNode(repo, canon),
-			...checkRenovatePreset(repo),
+			...checkRenovatePreset(repo, canon),
 			...checkDependabot(repo),
 			...checkSeedExtends(repo, canon),
 			...checkMoonToolchains(repo, canon),
@@ -108,7 +108,7 @@ export function checkRepo(
 ): CheckReport {
 	const repo = loadRepo(repoRoot, canon);
 	// База PR — одно значение на прогон: группы читают её готовой.
-	const ctx = { repoRoot, repo, env: inputs.env, prBase: prBase(inputs.base, inputs.env) };
+	const ctx = { repoRoot, repo, env: inputs.env, prBase: prBase(inputs.base, inputs.env), canon };
 	const groups = runGroups(RULE_GROUP_MODULES, canon.rules, ctx, inputs.ports);
 	return {
 		findings: resolveWith(repo, canon, exceptions, groups.findings),

@@ -133,7 +133,6 @@ export const OWNER_SOURCE: CanonSource = readCanonSource();
 
 // Содержимое канон-файла по его dest, как его видит loadCanon: все группы включены. Тесты, сверяющие
 // канон с корнем репозитория или с самим собой, берут файл здесь, а не по пути в canon/files.
-
 export function canonFile(dest: string, profile: Profile = 'node'): string {
 	const g = OWNER_SOURCE.groups;
 	const canon = canonFor(OWNER_SOURCE, {
@@ -254,6 +253,7 @@ export function groupContext(repo: Repo, over: Partial<GroupContext> = {}): Grou
 		repo,
 		env: {},
 		prBase: { skipped: 'no --base outside GitHub Actions' },
+		canon: testCanon(),
 		...over,
 	};
 }

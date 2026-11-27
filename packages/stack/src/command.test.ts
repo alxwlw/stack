@@ -313,3 +313,12 @@ test.each(['sync', 'check', 'peers-baseline'] as const)('%s ищет файл н
 		'.acme.jsonc not found. Create it: acme init --profile <profile>',
 	);
 });
+
+test('check: подсказка под находками называет команду канона из контекста', async () => {
+	const { ctx, lines } = acmeCtx(repoDir({ '.acme.jsonc': '{ "profile": "web" }' }));
+	expect(await COMMANDS.check.run(ctx)).toBe(1);
+	expect(lines.at(-1)).toStrictEqual({
+		stream: 'err',
+		text: expect.stringContaining('acme sync'),
+	});
+});
