@@ -14,6 +14,10 @@ import { dirname, join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { parse as parseJsonc } from 'jsonc-parser';
 
+import { checkRepo } from './check.ts';
+import { loadCanon } from './canon.ts';
+import { readStackConfig } from './config.ts';
+import { checkOutput } from './output.ts';
 import { ownVersion } from './own-packages.ts';
 import {
 	BARE,
@@ -601,6 +605,36 @@ test('init и check отвергают опечатку в with одной и т
 	expect(line(init.err)).toContain('unknown group "typo" in "with", expected one of: ');
 	expect(line(init.err)).toBe(line(check.err));
 });
+
+test('вывод check длиннее 128 КиБ доходит до канала целиком при коде 1', async () => {
+	const exceptions = Array.from({ length: 2000 }, (_, i) => ({
+		file: `nope-${i}.txt`,
+		reason: 'r'.repeat(80),
+	}));
+	const dir = repoDir({ ...BARE, '.stack.jsonc': JSON.stringify({ profile: 'node', exceptions }) });
+	const cfg = readStackConfig(dir);
+	const expected = checkOutput(checkRepo(dir, loadCanon(cfg), cfg.exceptions));
+	expect(expected.code).toBe(1);
+	const bytes = expected.lines
+		.filter((l) => l.stream === 'err')
+		.reduce((n, l) => n + Buffer.byteLength(l.text) + 1, 0);
+	expect(bytes).toBeGreaterThan(200_000);
+	const rc = join(mkdtempSync(join(tmpdir(), 'stack-rc-')), 'rc');
+	// Читатель через shell-канал: Response().text() выбирает канал слишком быстро и обрезания не видит.
+	const piped = await spawnIn(
+		[
+			'sh',
+			'-c',
+			'{ bun "$0" check --repo "$1" 2>&1 >/dev/null; echo $? >"$2"; } | wc -c',
+			CLI,
+			dir,
+			rc,
+		],
+		dir,
+	);
+	expect(Number(piped.out.trim())).toBe(bytes);
+	expect(readFileSync(rc, 'utf8').trim()).toBe('1');
+}, 60_000);
 
 const RR_BIN = join(import.meta.dir, '../../repo-rules/src/cli.mjs');
 
