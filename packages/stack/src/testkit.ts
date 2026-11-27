@@ -8,11 +8,13 @@ import { parse as parseYaml, stringify } from 'yaml';
 import { type Canon, canonDir, canonFor, loadCanon, readCanonSource } from './canon.ts';
 import type { Profile } from './config.ts';
 import { STACK_RENOVATE_PRESET } from './deps.ts';
+import type { GuardrailRun, GuardrailRunner } from './guardrails-port.ts';
 import { ownPackages } from './own-packages.ts';
-import type { PeersReader } from './peers.ts';
+import type { PeersReader, PeersRun } from './peers.ts';
 import type { Served } from './registry.ts';
 import { type Read, RENOVATE_CONFIGS, type Repo, repoFromSnapshot } from './repo.ts';
-import type { RepoRulesReader } from './repo-rules.ts';
+import type { RepoRulesReader, RepoRulesRun } from './repo-rules.ts';
+import type { GroupContext } from './rule-group.ts';
 import {
 	type GitHub,
 	type NewPr,
@@ -207,6 +209,70 @@ export function testRepo(canon: Canon, over: Record<string, string | Read | null
 		else snapshot.set(path, typeof value === 'string' ? { text: value } : value);
 	}
 	return repoFromSnapshot(snapshot);
+}
+
+// Контекст группы правил для тестов: корень '/r', пустое окружение, база PR пропущена.
+export function groupContext(repo: Repo, over: Partial<GroupContext> = {}): GroupContext {
+	return {
+		repoRoot: '/r',
+		repo,
+		env: {},
+		prBase: { skipped: 'no --base outside GitHub Actions' },
+		...over,
+	};
+}
+
+// Ответ repo-rules: код выхода и отчёт, сериализованный в stdout.
+export const repoRulesRun = (code: number, report: unknown): RepoRulesRun => ({
+	code,
+	out: JSON.stringify(report),
+	err: '',
+});
+
+// Порт pnpm: записывает каталог каждого вызова и отдаёт заданный запуск.
+export function fakePeersReader(run: PeersRun): { read: PeersReader; calls: string[] } {
+	const calls: string[] = [];
+	return {
+		read: (root) => {
+			calls.push(root);
+			return run;
+		},
+		calls,
+	};
+}
+
+// Порт repo-rules: записывает argv и окружение каждого вызова, отвечает по очереди; лишний вызов бросает.
+export function fakeRepoRulesReader(...runs: RepoRulesRun[]): {
+	read: RepoRulesReader;
+	calls: { argv: string[]; env: NodeJS.ProcessEnv }[];
+} {
+	const calls: { argv: string[]; env: NodeJS.ProcessEnv }[] = [];
+	return {
+		read: (argv, env) => {
+			calls.push({ argv, env });
+			const run = runs[calls.length - 1];
+			if (run === undefined) throw new Error('лишний вызов порта repo-rules');
+			return run;
+		},
+		calls,
+	};
+}
+
+// Порт guardrails: ключ таблицы — «cmd argv…»; вызов вне таблицы бросает.
+export function fakeGuardrailRunner(table: Record<string, GuardrailRun>): {
+	run: GuardrailRunner;
+	calls: [string, string[]][];
+} {
+	const calls: [string, string[]][] = [];
+	return {
+		run: (cmd, argv) => {
+			calls.push([cmd, argv]);
+			const hit = table[[cmd, ...argv].join(' ')];
+			if (hit === undefined) throw new Error(`unexpected call: ${cmd} ${argv.join(' ')}`);
+			return hit;
+		},
+		calls,
+	};
 }
 
 // Единственный сборщик каталога на диске: ключ — путь от корня, вложенные каталоги создаются.

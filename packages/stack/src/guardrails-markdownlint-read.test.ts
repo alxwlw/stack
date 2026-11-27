@@ -13,7 +13,10 @@ import {
 } from './guardrails-markdownlint.ts';
 import { type GuardrailRun, type GuardrailsPort } from './guardrails-port.ts';
 import { guardrailsNotes } from './guardrails-rule.ts';
+import { prBase } from './pr-base.ts';
 import { repoDir, ROOT, withPrivateTmpdir } from './testkit.ts';
+
+const NO_PR = prBase(undefined, {});
 
 const NO_FILES = { skipped: 'no files' } as const;
 // Ни пина, ни бинарника: из внешних инструментов в этих фикстурах нужен один раннер stack.
@@ -82,7 +85,7 @@ describe('читатель: markdownlint-cli2 с портом-таблицей',
 			[RUN]: (c) => ({ code: 1, out: '', err: `boom ${c}/x in ${c}\n` }),
 		});
 		withPrivateTmpdir(() => {
-			expect(part(readGuardrails(root, PROTOTOOLS, f.port))).toStrictEqual({
+			expect(part(readGuardrails(root, PROTOTOOLS, f.port, NO_PR))).toStrictEqual({
 				unavailable: 'boom x in .',
 			});
 		});
@@ -105,7 +108,7 @@ describe('читатель: markdownlint-cli2 с портом-таблицей',
 			},
 		});
 		withPrivateTmpdir(() => {
-			const out = readGuardrails(root, PROTOTOOLS, f.port);
+			const out = readGuardrails(root, PROTOTOOLS, f.port, NO_PR);
 			expect(part(out)).toStrictEqual({
 				version: '9.8.7',
 				files: 3,
@@ -133,7 +136,7 @@ describe('читатель: markdownlint-cli2 с портом-таблицей',
 	test('Markdown нет — раннер не вызван, часть skipped', () => {
 		const root = repo({ 'a.txt': 'x\n', 'b.markdown': '# x\n', 'C.MD': '# x\n' });
 		const f = fakePort({ [GIT]: tracked('a.txt', 'b.markdown', 'C.MD') });
-		expect(part(readGuardrails(root, PROTOTOOLS, f.port))).toStrictEqual(NO_FILES);
+		expect(part(readGuardrails(root, PROTOTOOLS, f.port, NO_PR))).toStrictEqual(NO_FILES);
 		expect(f.calls).toStrictEqual([GIT]);
 	});
 
@@ -147,7 +150,7 @@ describe('читатель: markdownlint-cli2 с портом-таблицей',
 				err: "Unable to use configuration file '/c/.markdownlint-cli2.jsonc'\n",
 			},
 		});
-		const out = readGuardrails(root, PROTOTOOLS, f.port);
+		const out = readGuardrails(root, PROTOTOOLS, f.port, NO_PR);
 		expect(part(out)).toStrictEqual({
 			unavailable: "Unable to use configuration file '/c/.markdownlint-cli2.jsonc'",
 		});
@@ -159,7 +162,7 @@ describe('читатель: markdownlint-cli2 с портом-таблицей',
 	test('нет конфига — код отчёта 2, недоступность no globs', () => {
 		const root = repo({ 'README.md': '# x\n' });
 		const f = fakePort({ [GIT]: tracked('README.md'), [RUN]: reportOf([], { code: 2 }) });
-		expect(part(readGuardrails(root, PROTOTOOLS, f.port))).toStrictEqual({
+		expect(part(readGuardrails(root, PROTOTOOLS, f.port, NO_PR))).toStrictEqual({
 			unavailable: 'no globs: the markdownlint-cli2 config is missing or lists none',
 		});
 	});
@@ -170,7 +173,7 @@ describe('читатель: markdownlint-cli2 с портом-таблицей',
 		const saved = process.env.TMPDIR;
 		process.env.TMPDIR = '/nonexistent';
 		try {
-			const p = part(readGuardrails(root, PROTOTOOLS, f.port));
+			const p = part(readGuardrails(root, PROTOTOOLS, f.port, NO_PR));
 			expect('unavailable' in p && p.unavailable.startsWith('copy: ')).toBe(true);
 		} finally {
 			if (saved === undefined) Reflect.deleteProperty(process.env, 'TMPDIR');
@@ -199,7 +202,7 @@ describe('читатель: markdownlint-cli2 с портом-таблицей',
 			{ GITLEAKS_BIN: '/x/gl' },
 		);
 		withPrivateTmpdir(() => {
-			const out = readGuardrails(root, `gitleaks = "${GL_PIN}"\n`, f.port);
+			const out = readGuardrails(root, `gitleaks = "${GL_PIN}"\n`, f.port, NO_PR);
 			if ('unavailable' in out) throw new Error(out.unavailable);
 			expect(out.tools.gitleaks).toMatchObject({ version: GL_PIN, violations: [] });
 			expect(out.tools['markdownlint-cli2']).toStrictEqual({

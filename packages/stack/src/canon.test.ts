@@ -425,6 +425,11 @@ test('группа правила peers: известна, попадает в C
 	}
 });
 
+test('группы правил в Canon.rules идут в порядке RULE_GROUPS, каким бы ни был порядок with', () => {
+	const cfg = { profile: 'node' as const, with: ['guardrails', 'peers'], exceptions: [] };
+	expect(canonFor(readCanonSource(), cfg).rules).toStrictEqual(['peers', 'guardrails']);
+});
+
 // Строки таблицы «Group» в README: имя группы (текст между обратными кавычками первой ячейки) → вторая ячейка.
 function readmeGroupRows(): Map<string, string> {
 	const lines = readFileSync(README_PATH, 'utf8').split('\n');

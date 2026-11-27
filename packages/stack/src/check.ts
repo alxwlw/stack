@@ -1,5 +1,5 @@
 import { applyChanges } from './apply.ts';
-import type { Canon } from './canon.ts';
+import type { Canon, RuleGroup } from './canon.ts';
 import { planCatalogs } from './catalogs.ts';
 import {
 	checkDependabot,
@@ -10,21 +10,18 @@ import {
 import { allowedLine, type Exception, type Held, isHeld, resolve } from './exceptions.ts';
 import { planFiles } from './files.ts';
 import type { Drift, Finding } from './findings.ts';
-import { type GuardrailsOutcome, readGuardrails } from './guardrails.ts';
-import type { GuardrailsPort } from './guardrails-port.ts';
-import { checkGuardrails, guardrailsNotes } from './guardrails-rule.ts';
+import { guardrailsGroup } from './guardrails-rule.ts';
 import { checkMoonToolchains, checkMoonV1Toolchain } from './moon-toolchains.ts';
 import { checkMoonDefaultBranch, planMoonDefaultBranch } from './moon-workspace.ts';
 import { planPackageManager } from './package-manager.ts';
-import { type PeersOutcome, peersOutcome, type PeersReader } from './peers.ts';
-import { checkPeers } from './peers-rule.ts';
+import { peersGroup } from './peers-rule.ts';
+import { prBase } from './pr-base.ts';
 import { planReleaseAgeExcludes } from './release-age.ts';
-import { loadRepo, LOCKFILE, type Repo } from './repo.ts';
-import { readRepoRules, type RepoRulesOutcome, type RepoRulesPort } from './repo-rules.ts';
-import { checkRepoRules, repoRulesNotes } from './repo-rules-rule.ts';
+import { loadRepo, type Repo } from './repo.ts';
+import { repoRulesGroup } from './repo-rules-rule.ts';
+import { type GroupPorts, type RuleGroupModule, runGroups } from './rule-group.ts';
 import { checkSeedExtends } from './seed-extends.ts';
 import { planToolchainPins } from './toolchain-pins-rule.ts';
-import { checkWorkflowHygiene } from './workflow-hygiene.ts';
 
 // План дрейфа: всё, что sync умеет закрыть, в порядке применения — файлы, каталоги, release-age,
 // packageManager, ветка по умолчанию moon, копии пинов тулчейна. Правки одного файла друг от друга не
@@ -41,17 +38,18 @@ export function plan(repo: Repo, canon: Canon, exceptions: readonly Exception[] 
 	];
 }
 
-// Находки в порядке: план, нечитаемые файлы загрузчика, правила «только отчёт» из deps.ts, засевы и moon,
-// правила групп peers, repo-rules и guardrails, если они включены (в этом порядке); затем протухшие исключения.
-// Все они проходят через исключения. peers — исход `pnpm peers check`, repoRules — исход двух вызовов
-// repo-rules, guardrails — исход чтения отслеживаемых файлов, инструментов и скана коммитов PR; все три получает checkRepo.
-export function check(
+// Находки над снимком репозитория в порядке: план, нечитаемые файлы загрузчика, правила «только отчёт»
+// из deps.ts, засевы и moon. Находки групп правил добавляет checkRepo; все вместе проходят через
+// исключения, после них идут протухшие исключения.
+export function check(repo: Repo, canon: Canon, exceptions: Exception[]): Finding[] {
+	return resolveWith(repo, canon, exceptions, []);
+}
+
+function resolveWith(
 	repo: Repo,
 	canon: Canon,
 	exceptions: Exception[],
-	peers?: PeersOutcome,
-	repoRules?: RepoRulesOutcome,
-	guardrails?: GuardrailsOutcome,
+	groupFindings: Finding[],
 ): Finding[] {
 	const r = resolve(
 		[
@@ -65,11 +63,7 @@ export function check(
 			...checkMoonToolchains(repo, canon),
 			...checkMoonV1Toolchain(repo),
 			...checkMoonDefaultBranch(repo),
-			...(canon.rules.includes('peers') ? checkPeers(repo, peers) : []),
-			...(canon.rules.includes('repo-rules') ? checkRepoRules(repoRules) : []),
-			...(canon.rules.includes('guardrails')
-				? [...checkGuardrails(guardrails), ...checkWorkflowHygiene(repo.files)]
-				: []),
+			...groupFindings,
 		],
 		exceptions,
 	);
@@ -84,11 +78,19 @@ export function planRepo(
 	return plan(loadRepo(repoRoot, canon), canon, exceptions);
 }
 
-/** Порты `checkRepo`: каждый нужен только своей группе. */
-export interface CheckPorts {
-	peers?: PeersReader;
-	repoRules?: RepoRulesPort;
-	guardrails?: GuardrailsPort;
+/** Таблица групп правил: имя из RULE_GROUPS → функция группы; имя без записи не компилируется. */
+export const RULE_GROUP_MODULES = {
+	peers: peersGroup,
+	'repo-rules': repoRulesGroup,
+	guardrails: guardrailsGroup,
+} satisfies Record<RuleGroup, RuleGroupModule<never>>;
+/** Порты `checkRepo`: порт группы выводится из её функции, нужен только включённой группе. */
+export type CheckPorts = GroupPorts<typeof RULE_GROUP_MODULES>;
+/** Входы прогона для групп правил: порты, окружение и значение --base. */
+export interface CheckInputs {
+	ports: CheckPorts;
+	env: NodeJS.ProcessEnv;
+	base?: string;
 }
 /** Итог check: находки (блокируют, если не удержаны) и пометки (выход не меняют). */
 export interface CheckReport {
@@ -96,38 +98,21 @@ export interface CheckReport {
 	notes: string[];
 }
 
-// pnpm запускается, только если группа peers включена и лок есть: без лока правило отвечает само.
-// repo-rules — только если включена группа: два вызова через порт, пометки идут отдельно от находок.
-// guardrails — тоже только если включена группа: один `git ls-files`, пробы версий, запуски инструментов, `git merge-base` и второй запуск gitleaks по коммитам PR.
+// Группы обходит runGroups в порядке canon.rules: каждая читает свой порт и отдаёт находки и пометки;
+// включённая группа без порта — ошибка. Находки групп проходят тот же resolve, что и правила над снимком.
 export function checkRepo(
 	repoRoot: string,
 	canon: Canon,
 	exceptions: Exception[],
-	ports: CheckPorts = {},
+	inputs: CheckInputs = { ports: {}, env: {} },
 ): CheckReport {
 	const repo = loadRepo(repoRoot, canon);
-	let peers: PeersOutcome | undefined;
-	if (canon.rules.includes('peers') && repo.paths.has(LOCKFILE)) {
-		if (ports.peers === undefined) throw new Error('checkRepo: peers group needs a PeersReader');
-		peers = peersOutcome(ports.peers(repoRoot));
-	}
-	let repoRules: RepoRulesOutcome | undefined;
-	if (canon.rules.includes('repo-rules')) {
-		if (ports.repoRules === undefined) {
-			throw new Error('checkRepo: repo-rules group needs a RepoRulesPort');
-		}
-		repoRules = readRepoRules(repoRoot, ports.repoRules);
-	}
-	let guardrails: GuardrailsOutcome | undefined;
-	if (canon.rules.includes('guardrails')) {
-		if (ports.guardrails === undefined) {
-			throw new Error('checkRepo: guardrails group needs a GuardrailsPort');
-		}
-		guardrails = readGuardrails(repoRoot, repo.files.get('.prototools'), ports.guardrails);
-	}
+	// База PR — одно значение на прогон: группы читают её готовой.
+	const ctx = { repoRoot, repo, env: inputs.env, prBase: prBase(inputs.base, inputs.env) };
+	const groups = runGroups(RULE_GROUP_MODULES, canon.rules, ctx, inputs.ports);
 	return {
-		findings: check(repo, canon, exceptions, peers, repoRules, guardrails),
-		notes: [...repoRulesNotes(repoRules), ...guardrailsNotes(guardrails)],
+		findings: resolveWith(repo, canon, exceptions, groups.findings),
+		notes: groups.notes,
 	};
 }
 

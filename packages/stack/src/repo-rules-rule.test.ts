@@ -1,7 +1,9 @@
 import { expect, test } from 'bun:test';
 
+import type { Finding } from './findings.ts';
 import type { RepoRulesOutcome } from './repo-rules.ts';
-import { checkRepoRules, repoRulesNotes } from './repo-rules-rule.ts';
+import { checkRepoRules, repoRulesGroup, repoRulesNotes } from './repo-rules-rule.ts';
+import { fakeRepoRulesReader, groupContext, repoRulesRun, testCanon, testRepo } from './testkit.ts';
 
 const EMPTY = { violations: [], stale: [], notes: [] };
 const HINT =
@@ -50,15 +52,21 @@ test('checkRepoRules: чистый check и пропущенный diff — на
 	expect(checkRepoRules({ check: EMPTY, diff: { skipped: 's' } })).toStrictEqual([]);
 });
 
-test('checkRepoRules: группа включена, исхода нет — Error', () => {
-	expect(() => checkRepoRules(undefined)).toThrow(
-		new Error('checkRepoRules: no repo-rules outcome'),
-	);
+test('repoRulesNotes: причина пропуска diff — в скобках после skipped', () => {
+	const clean = { violations: [], stale: [], notes: [] };
+	expect(repoRulesNotes({ check: clean, diff: { skipped: 'not a pull request' } })).toStrictEqual([
+		'repo-rules diff: skipped (not a pull request)',
+	]);
+	expect(
+		repoRulesNotes({ check: clean, diff: { skipped: 'no --base outside GitHub Actions' } }),
+	).toStrictEqual(['repo-rules diff: skipped (no --base outside GitHub Actions)']);
 });
 
-test('repoRulesNotes: пропуск diff — одна строка', () => {
-	expect(repoRulesNotes({ check: EMPTY, diff: { skipped: 'skipped (x)' } })).toStrictEqual([
-		'repo-rules diff: skipped (x)',
+test('checkRepoRules: недоступная база PR — находка у diff с причиной базы', () => {
+	const clean = { violations: [], stale: [], notes: [] };
+	const reason = 'GITHUB_BASE_REF is empty in a pull_request job';
+	expect(checkRepoRules({ check: clean, diff: { unavailable: reason } })).toStrictEqual([
+		{ code: 'repo-rules-unavailable', target: 'repo-rules diff', message: reason },
 	]);
 });
 
@@ -78,9 +86,64 @@ test('repoRulesNotes: пометки check получают префикс', () 
 	).toStrictEqual(['repo-rules check: c1']);
 });
 
-test('repoRulesNotes: без исхода и при недоступных частях — пусто', () => {
-	expect(repoRulesNotes(undefined)).toStrictEqual([]);
+test('repoRulesNotes: при недоступных частях — пусто', () => {
 	expect(repoRulesNotes({ check: { unavailable: 'x' }, diff: { unavailable: 'y' } })).toStrictEqual(
 		[],
 	);
+});
+
+const RR_EMPTY = repoRulesRun(0, EMPTY);
+const RR_LONG = repoRulesRun(1, {
+	violations: [{ rule: 'max-lines', path: 'src/a.ts', line: 801, message: '812 lines' }],
+	stale: [],
+	notes: [],
+});
+const RR_REMOVED = repoRulesRun(1, {
+	violations: [
+		{ rule: 'removed-assertions', path: 'a.test.ts', line: 0, message: '−1 / +0 assertions' },
+	],
+	stale: [],
+	notes: [],
+});
+const LONG: Finding = {
+	code: 'repo-rules-violation',
+	target: 'src/a.ts:801',
+	message: 'max-lines: 812 lines',
+};
+const REMOVED: Finding = {
+	code: 'repo-rules-violation',
+	target: 'a.test.ts',
+	message: 'removed-assertions: −1 / +0 assertions',
+};
+
+test('repoRulesGroup: база есть — check и diff через порт с окружением контекста', () => {
+	const port = fakeRepoRulesReader(RR_EMPTY, RR_REMOVED);
+	const env = { X: '1' };
+	const ctx = groupContext(testRepo(testCanon()), { env, prBase: { base: 'origin/main' } });
+	expect(repoRulesGroup(ctx, port.read)).toStrictEqual({ findings: [REMOVED], notes: [HINT] });
+	expect(port.calls).toStrictEqual([
+		{ argv: ['-C', '/r', 'check', '--json'], env },
+		{ argv: ['-C', '/r', 'diff', '--json', '--base', 'origin/main'], env },
+	]);
+});
+
+test('repoRulesGroup: база пропущена — один вызов, находки check и пометка о пропуске', () => {
+	const port = fakeRepoRulesReader(RR_LONG);
+	expect(repoRulesGroup(groupContext(testRepo(testCanon())), port.read)).toStrictEqual({
+		findings: [LONG],
+		notes: ['repo-rules diff: skipped (no --base outside GitHub Actions)'],
+	});
+	expect(port.calls).toHaveLength(1);
+});
+
+// Второе названное отличие вывода (решение 4 спека): repo-rules вне PR не стартует, check падает —
+// находка у check, а пометка о пропуске diff называет причину базы.
+test('repoRulesGroup: вне pull request check недоступен — находка и пометка с причиной пропуска', () => {
+	const port = fakeRepoRulesReader({ code: 2, out: '', err: 'repo-rules: boom' });
+	const ctx = groupContext(testRepo(testCanon()), { prBase: { skipped: 'not a pull request' } });
+	expect(repoRulesGroup(ctx, port.read)).toStrictEqual({
+		findings: [{ code: 'repo-rules-unavailable', target: 'repo-rules check', message: 'boom' }],
+		notes: ['repo-rules diff: skipped (not a pull request)'],
+	});
+	expect(port.calls).toHaveLength(1);
 });

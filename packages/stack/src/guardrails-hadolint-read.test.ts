@@ -18,7 +18,10 @@ import { readGuardrails } from './guardrails.ts';
 import { gitleaksDirArgv } from './guardrails-gitleaks.ts';
 import { hadolintArgv } from './guardrails-hadolint.ts';
 import { type GuardrailRun, type GuardrailsPort } from './guardrails-port.ts';
+import { prBase } from './pr-base.ts';
 import { repoDir, ROOT, withPrivateTmpdir } from './testkit.ts';
+
+const NO_PR = prBase(undefined, {});
 
 const ROOT_PINS = parsePins(readFileSync(join(ROOT, '.prototools'), 'utf8'));
 const GL_PIN = ROOT_PINS.gitleaks ?? '';
@@ -120,7 +123,7 @@ describe('читатель: hadolint с портом-таблицей', () => {
 			BINS,
 		);
 		withPrivateTmpdir(() => {
-			const out = readGuardrails(root, PROTOTOOLS, f.port);
+			const out = readGuardrails(root, PROTOTOOLS, f.port, NO_PR);
 			expect(out).toStrictEqual({
 				tools: {
 					actionlint: NO_FILES,
@@ -159,7 +162,7 @@ describe('читатель: hadolint с портом-таблицей', () => {
 			{ [GIT]: tracked('README.txt'), [GL_VERSION]: ok(`${GL_PIN}\n`), [GL_DIR]: ok('[]') },
 			{ GITLEAKS_BIN: '/x/gl' },
 		);
-		const out = readGuardrails(root, PROTOTOOLS, f.port);
+		const out = readGuardrails(root, PROTOTOOLS, f.port, NO_PR);
 		expect(hadolintPart(out)).toStrictEqual(NO_FILES);
 		expect(f.calls).toStrictEqual([GIT, GL_VERSION, GL_DIR]);
 		expect(f.calls.some((c) => c.includes('hadolint') || c.includes('/x/hl'))).toBe(false);
@@ -171,7 +174,7 @@ describe('читатель: hadolint с портом-таблицей', () => {
 			{ [GIT]: tracked('Dockerfile'), [GL_VERSION]: ok(`${GL_PIN}\n`), [GL_DIR]: ok('[]') },
 			BINS,
 		);
-		const out = readGuardrails(root, `gitleaks = "${GL_PIN}"\n`, f.port);
+		const out = readGuardrails(root, `gitleaks = "${GL_PIN}"\n`, f.port, NO_PR);
 		expect(out).toStrictEqual({
 			tools: {
 				actionlint: NO_FILES,
@@ -200,7 +203,7 @@ describe('читатель: hadolint с портом-таблицей', () => {
 			},
 			BINS,
 		);
-		const out = readGuardrails(root, `hadolint = "${HL_PIN}"\n`, f.port);
+		const out = readGuardrails(root, `hadolint = "${HL_PIN}"\n`, f.port, NO_PR);
 		expect(out).toStrictEqual({
 			tools: {
 				actionlint: NO_FILES,
@@ -238,11 +241,11 @@ describe('читатель: hadolint с портом-таблицей', () => {
 			[HL_VERSION]: ok(hlBanner),
 		};
 		const broken = fakePort({ ...base, [hlRun(['Dockerfile'])]: ok('[]', `${line}\n`) }, BINS);
-		expect(hadolintPart(readGuardrails(root, PROTOTOOLS, broken.port))).toStrictEqual({
+		expect(hadolintPart(readGuardrails(root, PROTOTOOLS, broken.port, NO_PR))).toStrictEqual({
 			unavailable: line,
 		});
 		const found = fakePort({ ...base, [hlRun(['Dockerfile'])]: ok(finding('Dockerfile')) }, BINS);
-		expect(hadolintPart(readGuardrails(root, PROTOTOOLS, found.port))).toMatchObject({
+		expect(hadolintPart(readGuardrails(root, PROTOTOOLS, found.port, NO_PR))).toMatchObject({
 			version: HL_PIN,
 			files: 1,
 			violations: [{ tool: 'hadolint', rule: 'DL3025', path: 'Dockerfile', line: 4 }],
@@ -271,7 +274,7 @@ describe('читатель: hadolint с портом-таблицей', () => {
 				BINS,
 			);
 			withPrivateTmpdir(() => {
-				expect(hadolintPart(readGuardrails(root, PROTOTOOLS, f.port))).toStrictEqual({
+				expect(hadolintPart(readGuardrails(root, PROTOTOOLS, f.port, NO_PR))).toStrictEqual({
 					unavailable: SHORT,
 				});
 			});
@@ -284,7 +287,7 @@ describe('читатель: hadolint с портом-таблицей', () => {
 				BINS,
 			);
 			withPrivateTmpdir(() => {
-				expect(hadolintPart(readGuardrails(root, PROTOTOOLS, f.port))).toStrictEqual({
+				expect(hadolintPart(readGuardrails(root, PROTOTOOLS, f.port, NO_PR))).toStrictEqual({
 					unavailable: 'cwd: .',
 				});
 			});
@@ -311,7 +314,7 @@ describe('читатель: hadolint с портом-таблицей', () => {
 				BINS,
 			);
 			try {
-				expect(hadolintPart(readGuardrails(root, PROTOTOOLS, f.port))).toStrictEqual({
+				expect(hadolintPart(readGuardrails(root, PROTOTOOLS, f.port, NO_PR))).toStrictEqual({
 					unavailable: SHORT,
 				});
 				expect(checked).toBe(true);
@@ -338,7 +341,7 @@ describe('читатель: hadolint с портом-таблицей', () => {
 			BINS,
 		);
 		withPrivateTmpdir(() => {
-			expect(() => readGuardrails(root, PROTOTOOLS, f.port)).toThrow('boom');
+			expect(() => readGuardrails(root, PROTOTOOLS, f.port, NO_PR)).toThrow('boom');
 			expect(homes()).toStrictEqual([]);
 			expect(copies()).toStrictEqual([]);
 		});
@@ -357,7 +360,7 @@ describe('читатель: hadolint с портом-таблицей', () => {
 		const saved = process.env.TMPDIR;
 		process.env.TMPDIR = '/nonexistent';
 		try {
-			const out = readGuardrails(root, PROTOTOOLS, f.port);
+			const out = readGuardrails(root, PROTOTOOLS, f.port, NO_PR);
 			if ('unavailable' in out) throw new Error(out.unavailable);
 			for (const part of [out.tools.gitleaks, out.tools.hadolint]) {
 				expect('unavailable' in part && part.unavailable.startsWith('copy: ')).toBe(true);
@@ -386,7 +389,7 @@ describe('читатель: hadolint с портом-таблицей', () => {
 			BINS,
 		);
 		try {
-			const out = readGuardrails(root, PROTOTOOLS, f.port);
+			const out = readGuardrails(root, PROTOTOOLS, f.port, NO_PR);
 			if ('unavailable' in out) throw new Error(out.unavailable);
 			const part = out.tools.hadolint;
 			expect('unavailable' in part && part.unavailable.startsWith('home: ')).toBe(true);

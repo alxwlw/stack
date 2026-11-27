@@ -1,9 +1,10 @@
 import { expect, test } from 'bun:test';
 
 import type { Finding } from './findings.ts';
-import { type PeerEntry, type PeerIssue, PEERS_BASELINE } from './peers.ts';
-import { checkPeers } from './peers-rule.ts';
+import { type PeerEntry, type PeerIssue, PEERS_BASELINE, type PeersRun } from './peers.ts';
+import { checkPeers, peersGroup, readPeers } from './peers-rule.ts';
 import { LOCKFILE, type Read, type Repo, repoFromSnapshot } from './repo.ts';
+import { fakePeersReader, groupContext } from './testkit.ts';
 
 // Repo из снимка: pnpm-lock.yaml есть, если не сказано иное; baseline — записи или сырой текст.
 function repoWith(
@@ -35,11 +36,62 @@ const NO_LOCK: Finding = {
 	message: 'no pnpm-lock.yaml',
 };
 
-test('нет pnpm-lock.yaml — peers-unavailable, исход не нужен', () => {
-	const repo = repoWith(undefined, { lock: false });
-	expect(checkPeers(repo, undefined)).toStrictEqual([NO_LOCK]);
-	// Исход не читается вовсе: даже готовые записи не дают peer-dependency.
-	expect(checkPeers(repo, { issues: [UNMET] })).toStrictEqual([NO_LOCK]);
+// Ответ `pnpm peers check --lockfile-only --json` с одной записью bad, в форме настоящего pnpm.
+const ONE_BAD = JSON.stringify({
+	'.': {
+		bad: {
+			peer: [
+				{
+					parents: [{ name: 'decl', version: '1.0.0' }],
+					optional: false,
+					wantedRange: '^2.0.0',
+					foundVersion: '1.0.0',
+					resolvedFrom: [],
+				},
+			],
+		},
+		missing: {},
+		conflicts: [],
+		intersections: {},
+	},
+});
+
+const CLEAN_RUN: PeersRun = { status: 0, signal: null, stdout: '{}', stderr: '' };
+
+test('readPeers: без pnpm-lock.yaml порт не зовётся, исход — unavailable', () => {
+	const port = fakePeersReader(CLEAN_RUN);
+	expect(readPeers(repoWith(undefined, { lock: false }), '/r', port.read)).toStrictEqual({
+		unavailable: 'no pnpm-lock.yaml',
+	});
+	expect(port.calls).toStrictEqual([]);
+});
+
+test('readPeers: с pnpm-lock.yaml порт зовётся в корне репозитория', () => {
+	const port = fakePeersReader(CLEAN_RUN);
+	expect(readPeers(repoWith(), '/r', port.read)).toStrictEqual({ issues: [] });
+	expect(port.calls).toStrictEqual(['/r']);
+});
+
+test('peersGroup: находки правила по ответу порта, пометок нет', () => {
+	const port = fakePeersReader({ status: 1, signal: null, stdout: ONE_BAD, stderr: '' });
+	expect(peersGroup(groupContext(repoWith()), port.read)).toStrictEqual({
+		findings: [
+			{
+				code: 'peer-dependency',
+				target: 'peer in .',
+				message: 'decl@1.0.0 wants ^2.0.0, found 1.0.0; not in .stack-peers-baseline.json',
+			},
+		],
+		notes: [],
+	});
+});
+
+test('peersGroup: без pnpm-lock.yaml — peers-unavailable', () => {
+	const port = fakePeersReader(CLEAN_RUN);
+	expect(peersGroup(groupContext(repoWith(undefined, { lock: false })), port.read)).toStrictEqual({
+		findings: [NO_LOCK],
+		notes: [],
+	});
 });
 
 test('исход unavailable — одна находка с этой причиной', () => {
@@ -54,12 +106,6 @@ test('исход unavailable — одна находка с этой причи�
 	expect(checkPeers(repoWith(), unavailable)).toStrictEqual(expected);
 	// Сбой pnpm сообщается и при битом baseline: загрузчик даёт свою находку, правило — свою.
 	expect(checkPeers(repoWith('{'), unavailable)).toStrictEqual(expected);
-});
-
-test('лок есть, исхода нет — Error, а не находка', () => {
-	expect(() => checkPeers(repoWith(), undefined)).toThrow(
-		new Error('checkPeers: no pnpm peers check outcome'),
-	);
 });
 
 test('нет baseline — каждая запись даёт peer-dependency', () => {

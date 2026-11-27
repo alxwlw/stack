@@ -4,17 +4,17 @@ import { join } from 'node:path';
 import { main } from '@alxwlw/repo-rules';
 import { afterAll, beforeAll, expect, test } from 'bun:test';
 
+import type { PrBase } from './pr-base.ts';
 import {
-	DIFF_SKIPPED_NO_BASE,
 	readRepoRules,
-	repoRulesCalls,
 	type RepoRulesDropFixed,
 	repoRulesDropFixed,
 	repoRulesDropFixedCall,
+	type RepoRulesOutcome,
 	repoRulesPart,
 	type RepoRulesRun,
 } from './repo-rules.ts';
-import { git, gitRepo, isolateGitConfig, repoDir } from './testkit.ts';
+import { fakeRepoRulesReader, git, gitRepo, isolateGitConfig, repoDir } from './testkit.ts';
 
 const V = { rule: 'max-lines', path: 'src/a.ts', line: 801, message: '812 lines' };
 const S = { rule: 'suppression-reason', path: 'src/b.ts', baseline: 2, actual: 1 };
@@ -23,32 +23,6 @@ const SHAPE_S = 'output has an unexpected shape: stale';
 const SHAPE_N = 'output has an unexpected shape: notes';
 const json = (o: unknown) => JSON.stringify(o, null, 2);
 const ok = (code: number, o: unknown): RepoRulesRun => ({ code, out: json(o), err: '' });
-
-test('repoRulesCalls: --base уходит в diff и не уходит в check', () => {
-	expect(repoRulesCalls('/r', 'origin/main', {})).toStrictEqual({
-		check: ['-C', '/r', 'check', '--json'],
-		diff: ['-C', '/r', 'diff', '--json', '--base', 'origin/main'],
-	});
-});
-
-test('repoRulesCalls: без --base в GitHub Actions diff зовётся без базы', () => {
-	expect(repoRulesCalls('/r', undefined, { GITHUB_ACTIONS: 'true' }).diff).toStrictEqual([
-		'-C',
-		'/r',
-		'diff',
-		'--json',
-	]);
-});
-
-test.each([
-	['не задано', {}],
-	['пустая строка', { GITHUB_ACTIONS: '' }],
-	['не true', { GITHUB_ACTIONS: '1' }],
-	['только GITHUB_BASE_REF', { GITHUB_BASE_REF: 'main' }],
-])('repoRulesCalls: без --base вне GitHub Actions (%s) diff не зовётся', (_name, env) => {
-	expect(repoRulesCalls('/r', undefined, env).diff).toBeUndefined();
-	expect(repoRulesCalls('/r', '', env).diff).toBeUndefined();
-});
 
 test('repoRulesPart: код 1 с нарушением и устаревшей записью — отчёт, лишние поля отброшены', () => {
 	const run = ok(1, { violations: [{ ...V, extra: 1 }], stale: [S], notes: ['n'], more: true });
@@ -158,55 +132,51 @@ test.each<[string, RepoRulesRun, string]>([
 	expect(repoRulesPart(run)).toStrictEqual({ unavailable: message });
 });
 
-// Порт, который записывает каждый вызов и отвечает по очереди.
-function fakeReader(...runs: RepoRulesRun[]) {
-	const calls: { argv: string[]; env: NodeJS.ProcessEnv }[] = [];
-	return {
-		calls,
-		read: (argv: string[], env: NodeJS.ProcessEnv) => {
-			calls.push({ argv, env });
-			const run = runs[calls.length - 1];
-			if (!run) throw new Error('лишний вызов порта');
-			return run;
-		},
-	};
-}
-
 const EMPTY = { violations: [], stale: [], notes: [] };
 
-test('readRepoRules: check, затем diff — оба с окружением порта; сбой diff не трогает отчёт check', () => {
-	const env = { GITHUB_ACTIONS: 'true' };
-	const r = fakeReader(ok(1, { ...EMPTY, violations: [V] }), {
+const CHECK = ['-C', '/r', 'check', '--json'];
+const NO_REF = 'GITHUB_BASE_REF is empty in a pull_request job';
+test.each<[string, PrBase, string[][], RepoRulesOutcome['diff']]>([
+	[
+		'база есть',
+		{ base: 'origin/main' },
+		[CHECK, ['-C', '/r', 'diff', '--json', '--base', 'origin/main']],
+		EMPTY,
+	],
+	['вне PR', { skipped: 'not a pull request' }, [CHECK], { skipped: 'not a pull request' }],
+	[
+		'без --base вне Actions',
+		{ skipped: 'no --base outside GitHub Actions' },
+		[CHECK],
+		{ skipped: 'no --base outside GitHub Actions' },
+	],
+	['база недоступна', { unavailable: NO_REF }, [CHECK], { unavailable: NO_REF }],
+])('readRepoRules: %s', (_name, pr, argv, diff) => {
+	const r = fakeRepoRulesReader(ok(0, EMPTY), ok(0, EMPTY));
+	const env = { X: '1' };
+	expect(readRepoRules('/r', r.read, env, pr)).toStrictEqual({ check: EMPTY, diff });
+	expect(r.calls.map((c) => c.argv)).toStrictEqual(argv);
+	expect(r.calls.every((c) => c.env === env)).toBe(true);
+});
+
+test('readRepoRules: сбой diff не трогает отчёт check', () => {
+	const r = fakeRepoRulesReader(ok(1, { ...EMPTY, violations: [V] }), {
 		code: 2,
 		out: '',
 		err: 'repo-rules: boom',
 	});
-	expect(readRepoRules('/r', { read: r.read, env, base: undefined })).toStrictEqual({
+	expect(readRepoRules('/r', r.read, {}, { base: 'origin/main' })).toStrictEqual({
 		check: { ...EMPTY, violations: [V] },
 		diff: { unavailable: 'boom' },
 	});
-	expect(r.calls.map((c) => c.argv)).toStrictEqual([
-		['-C', '/r', 'check', '--json'],
-		['-C', '/r', 'diff', '--json'],
-	]);
-	expect(r.calls.every((c) => c.env === env)).toBe(true);
 });
 
 test('readRepoRules: сбой check не отменяет diff', () => {
-	const r = fakeReader({ code: 2, out: '', err: 'repo-rules: boom' }, ok(0, EMPTY));
-	expect(readRepoRules('/r', { read: r.read, env: {}, base: 'origin/main' })).toStrictEqual({
+	const r = fakeRepoRulesReader({ code: 2, out: '', err: 'repo-rules: boom' }, ok(0, EMPTY));
+	expect(readRepoRules('/r', r.read, {}, { base: 'origin/main' })).toStrictEqual({
 		check: { unavailable: 'boom' },
 		diff: EMPTY,
 	});
-});
-
-test('readRepoRules: вне GitHub Actions без --base diff пропущен, порт зовётся один раз', () => {
-	const r = fakeReader(ok(0, EMPTY));
-	expect(readRepoRules('/r', { read: r.read, env: {}, base: undefined })).toStrictEqual({
-		check: EMPTY,
-		diff: { skipped: DIFF_SKIPPED_NO_BASE },
-	});
-	expect(r.calls).toHaveLength(1);
 });
 
 // Настоящий вызов repo-rules в форме порта.

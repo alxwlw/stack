@@ -10,11 +10,11 @@ import {
 	comparePeers,
 	lowerPeersBaseline,
 	PEERS_BASELINE,
-	peersOutcome,
 	type PeersReader,
 	serializePeersBaseline,
 } from './peers.ts';
-import { loadRepo, LOCKFILE } from './repo.ts';
+import { readPeers } from './peers-rule.ts';
+import { loadRepo } from './repo.ts';
 
 export type PeersBaselineMode = 'init' | 'lower' | 'grow' | 'drop-fixed';
 
@@ -33,7 +33,7 @@ export function peersBaseline(
 	repoRoot: string,
 	canon: Canon,
 	mode: PeersBaselineMode,
-	readPeers: PeersReader,
+	read: PeersReader,
 ): PeersBaselineResult {
 	const dropFixed = mode === 'drop-fixed';
 	if (!canon.rules.includes('peers')) {
@@ -50,8 +50,7 @@ export function peersBaseline(
 	if (mode !== 'init' && !exists) {
 		return dropFixed ? quiet() : failed(2, `no ${PEERS_BASELINE}: run stack peers-baseline --init`);
 	}
-	if (!repo.paths.has(LOCKFILE)) return failed(1, `no ${LOCKFILE}`);
-	const outcome = peersOutcome(readPeers(repoRoot));
+	const outcome = readPeers(repo, repoRoot, read);
 	if ('unavailable' in outcome) return failed(1, outcome.unavailable);
 
 	const current = outcome.issues;

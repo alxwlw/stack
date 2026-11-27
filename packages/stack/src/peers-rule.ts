@@ -1,9 +1,18 @@
-// Правило группы peers над Repo: исход `pnpm peers check` против baseline. Отдельный модуль, потому
-// что repo.ts берёт разбор baseline из peers.ts, и правило в peers.ts замкнуло бы цикл импортов.
+// Группа peers над Repo: правило — исход `pnpm peers check` против baseline (checkPeers); чтение
+// readPeers и сама группа peersGroup — через порт pnpm. Отдельный модуль, потому что repo.ts берёт
+// разбор baseline из peers.ts, и правило в peers.ts замкнуло бы цикл импортов.
 
 import type { Finding } from './findings.ts';
-import { comparePeers, type PeerEntry, PEERS_BASELINE, type PeersOutcome } from './peers.ts';
+import {
+	comparePeers,
+	type PeerEntry,
+	PEERS_BASELINE,
+	type PeersOutcome,
+	peersOutcome,
+	type PeersReader,
+} from './peers.ts';
 import { LOCKFILE, type Repo } from './repo.ts';
+import type { RuleGroupModule } from './rule-group.ts';
 
 const TARGET = 'pnpm peers check';
 
@@ -21,13 +30,15 @@ function recorded(e: PeerEntry): string {
 	}
 }
 
-// Без лока pnpm ответил бы `{}` с кодом 0, то есть «чисто», поэтому исход тогда не читается вовсе.
+// Чтение группы peers: без pnpm-lock.yaml порт не зовётся, исход — unavailable с причиной «no pnpm-lock.yaml».
+// Без лока pnpm ответил бы `{}` с кодом 0, то есть «чисто», поэтому порт тогда не зовётся вовсе.
+export function readPeers(repo: Repo, repoRoot: string, read: PeersReader): PeersOutcome {
+	if (!repo.paths.has(LOCKFILE)) return { unavailable: `no ${LOCKFILE}` };
+	return peersOutcome(read(repoRoot));
+}
+
 // Неразобранный baseline даёт находку в загрузчике, и пустым baseline он не считается.
-export function checkPeers(repo: Repo, outcome: PeersOutcome | undefined): Finding[] {
-	if (!repo.paths.has(LOCKFILE)) {
-		return [{ code: 'peers-unavailable', target: TARGET, message: `no ${LOCKFILE}` }];
-	}
-	if (outcome === undefined) throw new Error('checkPeers: no pnpm peers check outcome');
+export function checkPeers(repo: Repo, outcome: PeersOutcome): Finding[] {
 	if ('unavailable' in outcome) {
 		return [{ code: 'peers-unavailable', target: TARGET, message: outcome.unavailable }];
 	}
@@ -46,3 +57,9 @@ export function checkPeers(repo: Repo, outcome: PeersOutcome | undefined): Findi
 		})),
 	];
 }
+
+// Группа peers: исход читается через порт pnpm, пометок у группы нет.
+export const peersGroup: RuleGroupModule<PeersReader> = (ctx, read) => ({
+	findings: checkPeers(ctx.repo, readPeers(ctx.repo, ctx.repoRoot, read)),
+	notes: [],
+});
