@@ -6,13 +6,12 @@ import { parseArgs } from 'node:util';
 import { main as repoRulesMain } from '@alxwlw/repo-rules';
 
 import { assertKnownGroups, loadCanon, readCanonSource } from './canon.ts';
-import { checkRepo, syncOutput, syncRepo } from './check.ts';
+import { checkRepo, syncRepo } from './check.ts';
 import { type Profile, PROFILES, readStackConfig, StackConfigError } from './config.ts';
-import { allowedLine, isHeld } from './exceptions.ts';
-import { type Finding, isDrift } from './findings.ts';
 import { ghGitHub } from './gh.ts';
 import { spawnRunner } from './guardrails-port.ts';
 import { initConfig } from './init.ts';
+import { checkOutput, type Print, printLines, syncOutput } from './output.ts';
 import { ownVersion } from './own-packages.ts';
 import type { PeersReader } from './peers.ts';
 import { peersBaseline } from './peers-baseline.ts';
@@ -46,16 +45,8 @@ function parseCliArgs() {
 	}
 }
 
-// Подсказка под находками: stack sync закрывает только Drift; правила deps.ts — отчёт без действия.
-function fixHint(blocking: Finding[]): string {
-	const total = blocking.length;
-	const bySync = blocking.filter(isDrift).length;
-	if (bySync === total) return `${total} finding(s). Fix with: stack sync`;
-	if (bySync === 0) {
-		return `${total} finding(s). stack sync does not fix these — fix them by hand (see above)`;
-	}
-	return `${total} finding(s): ${bySync} fixable with: stack sync, ${total - bySync} to fix by hand (see above)`;
-}
+// Порт печати входа: строка сразу в свой канал.
+const print: Print = (stream, line) => (stream === 'out' ? console.log(line) : console.error(line));
 
 // Боевой adapter порта процессов: stdio наследуется, вывод идёт в лог job.
 const runProcess: RunProcess = (cmd, args, { cwd, env }) => {
@@ -156,29 +147,22 @@ try {
 		console.log(`created ${path}`);
 	} else if (command === 'sync') {
 		const cfg = readStackConfig(repoRoot);
-		const { stdout, stderr } = syncOutput(syncRepo(repoRoot, loadCanon(cfg), cfg.exceptions));
-		for (const line of stderr) console.warn(line);
-		for (const line of stdout) console.log(line);
+		printLines(print, syncOutput(syncRepo(repoRoot, loadCanon(cfg), cfg.exceptions)));
 	} else if (command === 'check') {
 		const cfg = readStackConfig(repoRoot);
-		const { findings, notes } = checkRepo(repoRoot, loadCanon(cfg), cfg.exceptions, {
-			ports: {
-				peers: pnpmPeers,
-				'repo-rules': inProcessRepoRules,
-				guardrails: spawnRunner(repoRoot),
-			},
-			env: process.env,
-			base: values.base,
-		});
-		for (const n of notes) console.warn(n);
-		const blocking = findings.filter((f) => !isHeld(f));
-		for (const f of findings.filter(isHeld)) console.warn(allowedLine(f));
-		for (const f of blocking) console.error(`${f.code}: ${f.target} — ${f.message}`);
-		if (blocking.length) {
-			console.error(`\n${fixHint(blocking)}`);
-			process.exit(1);
-		}
-		console.log('canon: no drift');
+		const { lines, code } = checkOutput(
+			checkRepo(repoRoot, loadCanon(cfg), cfg.exceptions, {
+				ports: {
+					peers: pnpmPeers,
+					'repo-rules': inProcessRepoRules,
+					guardrails: spawnRunner(repoRoot),
+				},
+				env: process.env,
+				base: values.base,
+			}),
+		);
+		printLines(print, lines);
+		if (code === 1) process.exit(1);
 	} else if (command === 'sync-pr') {
 		const appSlug = process.env.STACK_APP_SLUG;
 		if (!process.env.GH_TOKEN || !appSlug) {

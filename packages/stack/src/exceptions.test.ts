@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 
-import { addressOf, allowedLine, type Exception, exceptionProblem, resolve } from './exceptions.ts';
+import { addressOf, type Exception, exceptionProblem, resolve } from './exceptions.ts';
 import type { Finding, FindingCode } from './findings.ts';
 
 const drift: Finding = {
@@ -170,12 +170,6 @@ test('два исключения на одну находку: гасит пе�
 	expect(out.map((f) => [f.code, f.suppressedBy?.reason])).toEqual([
 		['file-drift', 'исторический отступ'],
 	]);
-});
-
-test('allowedLine печатает причину, цель и сообщение удержанной находки', () => {
-	expect(allowedLine({ ...drift, suppressedBy: onEditorconfig })).toBe(
-		'allowed (исторический отступ): .editorconfig — m',
-	);
 });
 
 test('адрес находки строит таблица: предмет в адрес, неподавляемая — без адреса', () => {

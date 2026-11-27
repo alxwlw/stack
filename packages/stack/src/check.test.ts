@@ -5,10 +5,8 @@ import { join, relative } from 'node:path';
 import { expect, spyOn, test } from 'bun:test';
 
 import type { Canon } from './canon.ts';
-import { check, checkRepo, syncOutput, syncRepo } from './check.ts';
+import { check, checkRepo, syncRepo } from './check.ts';
 import { STACK_RENOVATE_PRESET } from './deps.ts';
-import { allowedLine, type Held } from './exceptions.ts';
-import type { Drift } from './findings.ts';
 import { fakeRepoRulesReader, repoDir, repoRulesRun, testCanon, testRepo } from './testkit.ts';
 
 // Конфиг Renovate на пресете канона: тесты исключений и каталогов не про бота.
@@ -308,29 +306,4 @@ test('checkRepo: группа включена, входов нет — Error о
 	expect(() => checkRepo(repoDir(CLEAN_REPO), rulesCanon, [])).toThrow(
 		new Error('rule group "repo-rules" is enabled but has no port'),
 	);
-});
-
-test('syncOutput: удержанные — в stderr, правки и итог — в stdout', () => {
-	const drift: Drift = {
-		code: 'file-drift',
-		file: 'a.txt',
-		target: 'a.txt',
-		message: 'm',
-		fix: 'fixed a.txt',
-		change: { file: 'a.txt', kind: 'write', content: 'x' },
-	};
-	const held: Held<Drift> = {
-		...drift,
-		file: 'b.txt',
-		target: 'b.txt',
-		suppressedBy: { file: 'b.txt', reason: 'нужен свой' },
-	};
-	expect(syncOutput({ applied: [drift], held: [held] })).toEqual({
-		stderr: [allowedLine(held)],
-		stdout: ['fixed a.txt', 'canon applied'],
-	});
-	expect(syncOutput({ applied: [], held: [] })).toEqual({
-		stderr: [],
-		stdout: ['canon already up to date'],
-	});
 });

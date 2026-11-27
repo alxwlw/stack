@@ -163,7 +163,3 @@ export function resolve<F extends Finding>(
 		}));
 	return { findings: resolved, stale };
 }
-
-export function allowedLine(f: Held): string {
-	return `allowed (${f.suppressedBy.reason}): ${f.target} — ${f.message}`;
-}
