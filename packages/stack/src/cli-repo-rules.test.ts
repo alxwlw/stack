@@ -5,20 +5,20 @@ import { join } from 'node:path';
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 
+import { inProcessRepoRules } from './repo-rules-port.ts';
 import {
 	BARE,
-	CLI,
 	git,
 	gitRepo,
 	historyStep as step,
 	isolateGitConfig,
 	repoDir,
-	runCli as run,
 	shallowPrCheckout,
-	spawnIn,
+	testEnv,
 } from './testkit.ts';
+import { checkDir, initRepo, syncDir } from './testkit-acceptance.ts';
 
-describe('check с группой repo-rules через настоящий cli', () => {
+describe('check с группой repo-rules на настоящем repo-rules', () => {
 	const LOCAL = { GITHUB_ACTIONS: '', GITHUB_EVENT_NAME: '', GITHUB_BASE_REF: '' };
 	const PR = { GITHUB_ACTIONS: 'true', GITHUB_EVENT_NAME: 'pull_request', GITHUB_BASE_REF: 'main' };
 	const PUSH = { GITHUB_ACTIONS: 'true', GITHUB_EVENT_NAME: 'push', GITHUB_BASE_REF: '' };
@@ -38,17 +38,16 @@ describe('check с группой repo-rules через настоящий cli',
 
 	// Репозиторий под git: init (с группой или без), sync, по желанию baseline repo-rules; всё закоммичено и
 	// отправлено в origin/main. Пакета @alxwlw/repo-rules в манифестах нет.
-	async function rulesRepo(
+	function rulesRepo(
 		files: Record<string, string>,
 		opts: { group?: boolean; baseline?: boolean } = {},
-	): Promise<string> {
+	): string {
 		const { dir } = gitRepo({ ...BARE, ...files });
-		const withGroup = opts.group === false ? [] : ['--with', 'repo-rules'];
-		expect((await run(['init', '--profile', 'node', ...withGroup], dir)).code).toBe(0);
-		expect((await run(['sync'], dir)).code).toBe(0);
+		initRepo(dir, { with: opts.group === false ? [] : ['repo-rules'] });
+		syncDir(dir);
 		git(dir, 'add', '-A');
 		if (opts.baseline !== false) {
-			expect((await spawnIn(['bun', CLI, 'repo-rules', 'baseline', '--init'], dir)).code).toBe(0);
+			expect(inProcessRepoRules(['-C', dir, 'baseline', '--init'], testEnv()).code).toBe(0);
 			git(dir, 'add', '-A');
 		}
 		git(dir, 'commit', '-m', 'canon');
@@ -57,28 +56,28 @@ describe('check с группой repo-rules через настоящий cli',
 	}
 
 	// Ветка PR: удалена одна из двух проверок, коммит не отправлен.
-	async function removedAssertion(): Promise<string> {
-		const dir = await rulesRepo({ 'a.test.ts': TWO_EXPECTS });
+	function removedAssertion(): string {
+		const dir = rulesRepo({ 'a.test.ts': TWO_EXPECTS });
 		writeFileSync(join(dir, 'a.test.ts'), 'expect(1).toBe(1);\n');
 		git(dir, 'add', '-A');
 		git(dir, 'commit', '-m', 'drop a check');
 		return dir;
 	}
 
-	test('приёмка 1: чистый baseline — no drift и пометка о пропуске diff', async () => {
-		const dir = await rulesRepo({ 'src/a.ts': TWO_DISABLES });
-		const r = await run(['check'], dir, LOCAL);
+	test('приёмка 1: чистый baseline — no drift и пометка о пропуске diff', () => {
+		const dir = rulesRepo({ 'src/a.ts': TWO_DISABLES });
+		const r = checkDir(dir, { env: LOCAL });
 		expect(r.code).toBe(0);
 		expect(r.out).toBe(NO_DRIFT);
 		expect(r.err).toContain('repo-rules diff: skipped (no --base outside GitHub Actions)');
 	});
 
-	test('приёмка 1: новое нарушение и устаревшая запись baseline — код 1', async () => {
-		const dir = await rulesRepo({ 'src/a.ts': TWO_DISABLES });
+	test('приёмка 1: новое нарушение и устаревшая запись baseline — код 1', () => {
+		const dir = rulesRepo({ 'src/a.ts': TWO_DISABLES });
 		writeFileSync(join(dir, 'src/a.ts'), '// eslint-disable-next-line\nexport const a = 1;\n');
 		writeFileSync(join(dir, 'c.test.ts'), ONLY);
 		git(dir, 'add', '-A');
-		const r = await run(['check'], dir, LOCAL);
+		const r = checkDir(dir, { env: LOCAL });
 		expect(r.code).toBe(1);
 		expect(r.err).toContain('repo-rules-violation: c.test.ts:1 — focused-skipped-tests: ');
 		expect(r.err).toContain(
@@ -88,9 +87,9 @@ describe('check с группой repo-rules через настоящий cli',
 		expect(r.out).not.toContain('canon: no drift');
 	});
 
-	test('приёмка 2: PR-джоб сообщает удалённую проверку', async () => {
-		const dir = await removedAssertion();
-		const r = await run(['check'], dir, PR);
+	test('приёмка 2: PR-джоб сообщает удалённую проверку', () => {
+		const dir = removedAssertion();
+		const r = checkDir(dir, { env: PR });
 		expect(r.code).toBe(1);
 		expect(r.err).toContain(REMOVED_LINE);
 		expect(r.err).toContain(
@@ -98,83 +97,83 @@ describe('check с группой repo-rules через настоящий cli',
 		);
 	});
 
-	test('приёмка 2: вне PR — пропуск с пометкой, код 0', async () => {
-		const dir = await removedAssertion();
-		const r = await run(['check'], dir, PUSH);
+	test('приёмка 2: вне PR — пропуск с пометкой, код 0', () => {
+		const dir = removedAssertion();
+		const r = checkDir(dir, { env: PUSH });
 		expect(r.code).toBe(0);
 		expect(r.err).toContain('repo-rules diff: skipped (not a pull request)');
 		expect(r.out).toBe(NO_DRIFT);
 	});
 
-	test('--base локально: с базой — нарушение, без неё — пометка', async () => {
-		const dir = await removedAssertion();
-		const withBase = await run(['check', '--base', 'origin/main'], dir, LOCAL);
+	test('--base локально: с базой — нарушение, без неё — пометка', () => {
+		const dir = removedAssertion();
+		const withBase = checkDir(dir, { env: LOCAL, base: 'origin/main' });
 		expect(withBase.code).toBe(1);
 		expect(withBase.err).toContain(REMOVED_LINE);
-		const without = await run(['check'], dir, LOCAL);
+		const without = checkDir(dir, { env: LOCAL });
 		expect(without.code).toBe(0);
 		expect(without.err).toContain('skipped (no --base outside GitHub Actions)');
 	});
 
-	test('baseline не разбирается — repo-rules-unavailable, не no drift', async () => {
-		const dir = await rulesRepo({});
+	test('baseline не разбирается — repo-rules-unavailable, не no drift', () => {
+		const dir = rulesRepo({});
 		writeFileSync(join(dir, BASELINE), 'not json');
-		const r = await run(['check'], dir, LOCAL);
+		const r = checkDir(dir, { env: LOCAL });
 		expect(r.code).toBe(1);
 		expect(r.err).toContain('repo-rules-unavailable: repo-rules check — ');
 		expect(r.err).toContain('not JSON');
 		expect(r.out).not.toContain('canon: no drift');
 	});
 
-	test('базовой ветки нет — repo-rules-unavailable у diff, check отработал', async () => {
-		const dir = await rulesRepo({});
-		const r = await run(['check'], dir, { ...PR, GITHUB_BASE_REF: 'gone' });
+	test('базовой ветки нет — repo-rules-unavailable у diff, check отработал', () => {
+		const dir = rulesRepo({});
+		const r = checkDir(dir, { env: { ...PR, GITHUB_BASE_REF: 'gone' } });
 		expect(r.code).toBe(1);
 		expect(r.err).toContain('repo-rules-unavailable: repo-rules diff — git merge-base failed');
 		expect(r.err).not.toContain('repo-rules check');
 	});
 
-	test('каталог не под git — repo-rules-unavailable', async () => {
+	test('каталог не под git — repo-rules-unavailable', () => {
 		const dir = repoDir(BARE);
-		expect((await run(['init', '--profile', 'node', '--with', 'repo-rules'], dir)).code).toBe(0);
-		expect((await run(['sync'], dir)).code).toBe(0);
-		const r = await run(['check'], dir, LOCAL);
+		initRepo(dir, { with: ['repo-rules'] });
+		syncDir(dir);
+		const r = checkDir(dir, { env: LOCAL });
 		expect(r.code).toBe(1);
 		expect(r.err).toContain('repo-rules-unavailable: repo-rules check — git rev-parse failed');
 	});
 
-	test('группа без файла baseline — нарушения становятся находками', async () => {
-		const dir = await rulesRepo({ 'c.test.ts': ONLY }, { baseline: false });
-		const r = await run(['check'], dir, LOCAL);
+	test('группа без файла baseline — нарушения становятся находками', () => {
+		const dir = rulesRepo({ 'c.test.ts': ONLY }, { baseline: false });
+		const r = checkDir(dir, { env: LOCAL });
 		expect(r.code).toBe(1);
 		expect(r.err).toContain('repo-rules-violation: c.test.ts:1 — focused-skipped-tests: ');
 	});
 
-	test('группа выключена: repo-rules не запускается, --base не мешает', async () => {
-		const dir = await rulesRepo({ 'c.test.ts': ONLY }, { group: false, baseline: false });
+	test('группа выключена: repo-rules не запускается, --base не мешает', () => {
+		const dir = rulesRepo({ 'c.test.ts': ONLY }, { group: false, baseline: false });
 		const cfg = join(dir, '.stack.jsonc');
 		writeFileSync(cfg, `// repo-rules: not yet\n${readFileSync(cfg, 'utf8')}`);
-		const r = await run(['check', '--base', 'origin/main'], dir, PR);
+		const r = checkDir(dir, { env: PR, base: 'origin/main' });
 		expect(r.code).toBe(0);
 		expect(r.out).toBe(NO_DRIFT);
 		expect(r.err).not.toContain('repo-rules');
 		// Без базы и вне Actions включённая группа дала бы пометку о пропуске diff: её нет.
-		const local = await run(['check'], dir, LOCAL);
+		const local = checkDir(dir, { env: LOCAL });
 		expect(local.code).toBe(0);
 		expect(local.err).not.toContain('repo-rules');
 	});
 
-	test('--repo на подкаталог git: проверяется весь репозиторий, пути от его корня', async () => {
+	test('--repo на подкаталог git: проверяется весь репозиторий, пути от его корня', () => {
 		const { dir } = gitRepo({
 			'x.test.ts': ONLY,
 			'app/package.json': BARE['package.json'],
 			'app/pnpm-workspace.yaml': BARE['pnpm-workspace.yaml'],
 		});
 		const app = join(dir, 'app');
-		expect((await run(['init', '--profile', 'node', '--with', 'repo-rules'], app)).code).toBe(0);
-		expect((await run(['sync'], app)).code).toBe(0);
+		initRepo(app, { with: ['repo-rules'] });
+		syncDir(app);
 		git(dir, 'add', '-A');
-		const r = await run(['check'], app, LOCAL);
+		const r = checkDir(app, { env: LOCAL });
 		expect(r.code).toBe(1);
 		expect(r.err).toContain('repo-rules-violation: x.test.ts:1 — focused-skipped-tests: ');
 	});
@@ -187,8 +186,8 @@ describe('check с группой repo-rules через настоящий cli',
 
 		// origin с PR: feature убирает одну проверку из тестового файла фикстуры, main после ответвления ушёл на коммит вперёд,
 		// merge-коммит лежит в refs/pull/1/merge, как у GitHub. Возвращает путь bare-remote.
-		async function prOrigin(opts: { group?: boolean; baseline?: boolean } = {}): Promise<string> {
-			const dir = await rulesRepo({ 'a.test.ts': TWO_EXPECTS }, opts);
+		function prOrigin(opts: { group?: boolean; baseline?: boolean } = {}): string {
+			const dir = rulesRepo({ 'a.test.ts': TWO_EXPECTS }, opts);
 			git(dir, 'checkout', '-b', 'feature');
 			writeFileSync(join(dir, 'a.test.ts'), 'expect(1).toBe(1);\n');
 			git(dir, 'commit', '-am', 'drop a check');
@@ -205,8 +204,8 @@ describe('check с группой repo-rules через настоящий cli',
 			return remote;
 		}
 
-		test('группа включена: после шага stack check видит удалённую проверку', async () => {
-			const work = shallowPrCheckout(await prOrigin());
+		test('группа включена: после шага stack check видит удалённую проверку', () => {
+			const work = shallowPrCheckout(prOrigin());
 			expect(probe(work, 'rev-parse', '--is-shallow-repository').out).toBe('true');
 			const s = step(work);
 			expect(s.code).toBe(0);
@@ -214,45 +213,45 @@ describe('check с группой repo-rules через настоящий cli',
 			expect(probe(work, 'merge-base', 'origin/main', 'HEAD').code).toBe(0);
 			// --filter=blob:none оставляет origin промисорным: полный fetch не качает содержимое файлов.
 			expect(probe(work, 'config', '--get', 'remote.origin.promisor').out).toBe('true');
-			const r = await run(['check'], work, PR);
+			const r = checkDir(work, { env: PR });
 			expect(r.code).toBe(1);
 			expect(r.err).toContain(REMOVED_LINE);
 		});
 
-		test('контроль: без шага тот же checkout — repo-rules-unavailable', async () => {
-			const work = shallowPrCheckout(await prOrigin());
-			const r = await run(['check'], work, PR);
+		test('контроль: без шага тот же checkout — repo-rules-unavailable', () => {
+			const work = shallowPrCheckout(prOrigin());
+			const r = checkDir(work, { env: PR });
 			expect(r.code).toBe(1);
 			expect(r.err).toContain('repo-rules-unavailable: repo-rules diff — git merge-base failed');
 		});
 
-		test('группа выключена: шаг ничего не скачивает', async () => {
-			const work = shallowPrCheckout(await prOrigin({ group: false, baseline: false }));
+		test('группа выключена: шаг ничего не скачивает', () => {
+			const work = shallowPrCheckout(prOrigin({ group: false, baseline: false }));
 			expect(step(work).code).toBe(0);
 			expect(probe(work, 'rev-parse', '--is-shallow-repository').out).toBe('true');
 			expect(probe(work, 'rev-parse', '--verify', '-q', 'origin/main').code).toBe(1);
 		});
 
-		test('нет .stack.jsonc: шаг проходит и ничего не скачивает', async () => {
-			const work = shallowPrCheckout(await prOrigin({ group: false, baseline: false }));
+		test('нет .stack.jsonc: шаг проходит и ничего не скачивает', () => {
+			const work = shallowPrCheckout(prOrigin({ group: false, baseline: false }));
 			rmSync(join(work, '.stack.jsonc'));
 			expect(step(work).code).toBe(0);
 			expect(probe(work, 'rev-parse', '--is-shallow-repository').out).toBe('true');
 		});
 
-		test('слово repo-rules только в комментарии: лишний fetch, падения нет', async () => {
-			const work = shallowPrCheckout(await prOrigin({ group: false, baseline: false }));
+		test('слово repo-rules только в комментарии: лишний fetch, падения нет', () => {
+			const work = shallowPrCheckout(prOrigin({ group: false, baseline: false }));
 			const cfg = join(work, '.stack.jsonc');
 			writeFileSync(cfg, `// "repo-rules" later\n${readFileSync(cfg, 'utf8')}`);
 			expect(step(work).code).toBe(0);
 			expect(probe(work, 'rev-parse', '--is-shallow-repository').out).toBe('false');
-			const r = await run(['check'], work, PR);
+			const r = checkDir(work, { env: PR });
 			expect(r.code).toBe(0);
 			expect(r.out).toBe(NO_DRIFT);
 		});
 
-		test('полный клон: шаг не зовёт --unshallow', async () => {
-			const remote = await prOrigin();
+		test('полный клон: шаг не зовёт --unshallow', () => {
+			const remote = prOrigin();
 			const work = mkdtempSync(join(tmpdir(), 'stack-full-'));
 			git(work, 'clone', `file://${remote}`, '.');
 			git(work, 'fetch', 'origin', '+refs/pull/1/merge:refs/remotes/pull/1/merge');
@@ -262,8 +261,8 @@ describe('check с группой repo-rules через настоящий cli',
 			expect(s.err).toBe('');
 		});
 
-		test('базовой ветки нет на origin: шаг падает', async () => {
-			const work = shallowPrCheckout(await prOrigin());
+		test('базовой ветки нет на origin: шаг падает', () => {
+			const work = shallowPrCheckout(prOrigin());
 			const s = step(work, 'gone');
 			expect(s.code).not.toBe(0);
 			expect(s.err).toContain("couldn't find remote ref");

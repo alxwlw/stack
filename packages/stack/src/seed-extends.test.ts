@@ -17,12 +17,12 @@ import {
 	ioError,
 	protoBin,
 	repoDir,
-	runCli,
 	runTool,
 	testCanon,
 	testRepo,
 	toolJson,
 } from './testkit.ts';
+import { checkDir, initRepo, syncDir } from './testkit-acceptance.ts';
 
 // Тексты находок заданы планом и записаны литералами, не через константы модуля.
 const M1 =
@@ -420,14 +420,14 @@ test('checkSeedExtends: правило само по себе даёт нахо�
 	]);
 });
 
-test('приёмка 7: check сообщает засев без подключения, исключение его держит, sync файл не трогает', async () => {
+test('приёмка 7: check сообщает засев без подключения, исключение его держит, sync файл не трогает', () => {
 	const dir = repoDir(BARE);
-	await runCli(['init', '--profile', 'node'], dir);
-	await runCli(['sync'], dir);
-	expect((await runCli(['check'], dir)).code).toBe(0);
+	initRepo(dir);
+	syncDir(dir);
+	expect(checkDir(dir).code).toBe(0);
 	writeFileSync(join(dir, '.gitleaks.toml'), NO_PATH);
 
-	const red = await runCli(['check'], dir);
+	const red = checkDir(dir);
 	expect(red.code).toBe(1);
 	expect(red.err).toContain(`canon-not-extended: .gitleaks.toml — ${M2}`);
 	expect(red.err).toContain('1 finding(s). stack sync does not fix these — fix them by hand');
@@ -439,11 +439,11 @@ test('приёмка 7: check сообщает засев без подключ�
 	>;
 	cfg.exceptions = [{ file: '.gitleaks.toml', reason: 'свой набор правил' }];
 	writeFileSync(join(dir, '.stack.jsonc'), JSON.stringify(cfg, null, '\t'));
-	const held = await runCli(['check'], dir);
+	const held = checkDir(dir);
 	expect(held.code).toBe(0);
 	expect(held.err).toContain(`allowed (свой набор правил): .gitleaks.toml — ${M2}`);
 	expect(held.out).toContain('no drift');
 
-	expect((await runCli(['sync'], dir)).code).toBe(0);
+	syncDir(dir);
 	expect(readFileSync(join(dir, '.gitleaks.toml'), 'utf8')).toBe(NO_PATH);
 });

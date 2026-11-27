@@ -42,3 +42,27 @@ test('cli.ts после проводника печатает только че�
 	expect(entry).toContain('console.error(');
 	expect(entry.match(/\.write\(/g) ?? []).toStrictEqual([]);
 });
+
+// Строка 5 приёмки: сквозных запусков cli.ts мало и они в двух файлах; остальное идёт в процессе.
+test('сквозных запусков cli.ts вне блока проводника — не больше пятнадцати, в двух файлах', () => {
+	const BLOCK = "describe('stack repo-rules', () => {";
+	const launches: Record<string, number> = {};
+	for (const f of new Bun.Glob('*.test.ts').scanSync(import.meta.dir)) {
+		if (f === 'source-guards.test.ts') continue;
+		let text = readFileSync(join(import.meta.dir, f), 'utf8');
+		if (f === 'cli.test.ts') {
+			const at = text.indexOf(BLOCK);
+			expect(at).toBeGreaterThan(0);
+			text = text.slice(0, at);
+		}
+		// Список импорта — не запуск. Запуск — вызов runCli или константа CLI среди аргументов.
+		const body = text.replace(/^import[\s\S]*?;\n/gm, '');
+		const n = body.match(/\brunCli\(|[,[(]\s*CLI\s*[,\])]/g)?.length ?? 0;
+		if (n > 0) launches[f] = n;
+	}
+	expect(Object.keys(launches).toSorted()).toStrictEqual([
+		'cli-guardrails-gitleaks.test.ts',
+		'cli.test.ts',
+	]);
+	expect(Object.values(launches).reduce((a, b) => a + b, 0)).toBeLessThanOrEqual(15);
+});
