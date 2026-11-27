@@ -6,19 +6,10 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 
 import { parsePins } from './canon.ts';
 import { YAMLLINT_VERSION } from './guardrails-yamllint.ts';
-import {
-	BARE,
-	git,
-	gitRepo,
-	isolateGitConfig,
-	protoBin,
-	put,
-	ROOT,
-	runCli as run,
-} from './testkit.ts';
+import { checkDir, git, guardRepos, isolateGitConfig, protoBin, put, ROOT } from './testkit.ts';
 
-// Приёмка группы guardrails через настоящий cli на всех шести настоящих инструментах.
-describe('check с группой guardrails: все шесть инструментов через настоящий cli', () => {
+// Приёмка группы guardrails на всех шести настоящих инструментах.
+describe('check с группой guardrails: на всех шести настоящих инструментах', () => {
 	const NO_DRIFT = 'canon: no drift\n';
 	const VIOLATION_LINE = 'guardrails-violation: ';
 	const TIMEOUT = 120_000;
@@ -75,27 +66,13 @@ describe('check с группой guardrails: все шесть инструме
 		};
 	});
 	// Каталоги фикстур файла: убираются в afterAll, в том числе после упавшего теста.
+	const { guardRepo, clean } = guardRepos();
 	const made: string[] = [];
 	afterAll(() => {
 		restore();
+		clean();
 		for (const d of made) rmSync(d, { recursive: true, force: true });
 	});
-
-	// Репозиторий под git: init с группой (или без), sync, всё закоммичено.
-	async function guardRepo(
-		files: Record<string, string>,
-		opts: { group?: boolean; profile?: 'node' | 'infra' } = {},
-	): Promise<string> {
-		const profile = opts.profile ?? 'node';
-		const { dir, remote } = gitRepo(profile === 'node' ? { ...BARE, ...files } : files);
-		made.push(dir, remote);
-		const withGroup = opts.group === false ? [] : ['--with', 'guardrails'];
-		expect((await run(['init', '--profile', profile, ...withGroup], dir)).code).toBe(0);
-		expect((await run(['sync'], dir)).code).toBe(0);
-		git(dir, 'add', '-A');
-		git(dir, 'commit', '-m', 'canon');
-		return dir;
-	}
 
 	const violations = (err: string) => err.split('\n').filter((l) => l.startsWith(VIOLATION_LINE));
 	// Пометки инструмента: `guardrails <tool> <версия>: …` или `guardrails <tool>: skipped (no files)`.
@@ -109,9 +86,9 @@ describe('check с группой guardrails: все шесть инструме
 
 	test(
 		'приёмка 1 и 11: по нарушению на инструмент — шесть находок, версии пометок из источников',
-		async () => {
-			const dir = await guardRepo(BAD_FILES);
-			const r = await run(['check'], dir, tools);
+		() => {
+			const { dir } = guardRepo(BAD_FILES);
+			const r = checkDir(dir, { env: tools });
 			expect(r.err).not.toContain('guardrails-unavailable');
 			expect(r.code).toBe(1);
 			const found = violations(r.err);
@@ -155,9 +132,9 @@ describe('check с группой guardrails: все шесть инструме
 
 	test(
 		'чистый репозиторий: no drift, у каждого из шести ровно одна пометка',
-		async () => {
-			const dir = await guardRepo(CLEAN_FILES);
-			const r = await run(['check'], dir, tools);
+		() => {
+			const { dir } = guardRepo(CLEAN_FILES);
+			const r = checkDir(dir, { env: tools });
 			expect(r.err).not.toContain(VIOLATION_LINE);
 			expect(r.err).not.toContain('guardrails-unavailable');
 			expect(r.code).toBe(0);
@@ -171,8 +148,8 @@ describe('check с группой guardrails: все шесть инструме
 
 	test(
 		'приёмка 8: неотслеживаемые файлы и каталог worktree не доходят до инструментов',
-		async () => {
-			const dir = await guardRepo({ ...CLEAN_FILES, '.gitignore': '.worktrees/\n' });
+		() => {
+			const { dir } = guardRepo({ ...CLEAN_FILES, '.gitignore': '.worktrees/\n' });
 			const dirty = {
 				'local.Dockerfile': LOCAL_DOCKERFILE,
 				'notes.md': BAD_README,
@@ -181,7 +158,7 @@ describe('check с группой guardrails: все шесть инструме
 			for (const [path, text] of Object.entries(dirty)) put(dir, path, text);
 			git(dir, 'worktree', 'add', '--detach', '.worktrees/wt');
 			for (const [path, text] of Object.entries(dirty)) put(dir, join('.worktrees/wt', path), text);
-			const r = await run(['check'], dir, tools);
+			const r = checkDir(dir, { env: tools });
 			expect(violations(r.err)).toStrictEqual([]);
 			expect(r.err).not.toContain('guardrails-unavailable');
 			expect(r.code).toBe(0);
@@ -192,32 +169,32 @@ describe('check с группой guardrails: все шесть инструме
 
 	test(
 		'приёмка 5: порог и override отслеживаемого конфига hadolint действуют, неотслеживаемый — нет',
-		async () => {
+		() => {
 			const df = { Dockerfile: BAD_DOCKERFILE };
-			const threshold = await guardRepo({
+			const { dir: threshold } = guardRepo({
 				...CLEAN_FILES,
 				...df,
 				[HADOLINT_CONFIG]: 'failure-threshold: error\n',
 			});
-			const a = await run(['check'], threshold, tools);
+			const a = checkDir(threshold, { env: tools });
 			expect(hadolintFindings(a.err)).toHaveLength(1);
 			expect(a.err).toContain(' — hadolint DL3025: ');
 			expect(a.code).toBe(1);
 
-			const lowered = await guardRepo({
+			const { dir: lowered } = guardRepo({
 				...CLEAN_FILES,
 				...df,
 				[HADOLINT_CONFIG]: 'override:\n  info: [DL3025]\n',
 			});
-			const b = await run(['check'], lowered, tools);
+			const b = checkDir(lowered, { env: tools });
 			expect(hadolintFindings(b.err)).toStrictEqual([]);
 			expect(b.err).not.toContain('guardrails-unavailable');
 			expect(b.code).toBe(0);
 			expect(b.out).toBe(NO_DRIFT);
 
-			const untracked = await guardRepo({ ...CLEAN_FILES, ...df });
+			const { dir: untracked } = guardRepo({ ...CLEAN_FILES, ...df });
 			put(untracked, HADOLINT_CONFIG, 'ignored: [DL3025]\n');
-			const c = await run(['check'], untracked, tools);
+			const c = checkDir(untracked, { env: tools });
 			expect(hadolintFindings(c.err)).toHaveLength(1);
 			expect(c.err).toContain(' — hadolint DL3025: ');
 			expect(c.code).toBe(1);
@@ -227,13 +204,13 @@ describe('check с группой guardrails: все шесть инструме
 
 	test(
 		'сломанный отслеживаемый .hadolint.yaml — короткая пометка',
-		async () => {
-			const dir = await guardRepo({
+		() => {
+			const { dir } = guardRepo({
 				...CLEAN_FILES,
 				Dockerfile: BAD_DOCKERFILE,
 				[HADOLINT_CONFIG]: 'ignored: [\n',
 			});
-			const r = await run(['check'], dir, tools);
+			const r = checkDir(dir, { env: tools });
 			const lines = r.err
 				.split('\n')
 				.filter((l) => l.startsWith('guardrails-unavailable: hadolint — '));
@@ -251,8 +228,8 @@ describe('check с группой guardrails: все шесть инструме
 
 	test(
 		'hadolint из HOME и XDG_CONFIG_HOME не действует: находка DL3025 остаётся',
-		async () => {
-			const dir = await guardRepo({ ...CLEAN_FILES, Dockerfile: BAD_DOCKERFILE });
+		() => {
+			const { dir } = guardRepo({ ...CLEAN_FILES, Dockerfile: BAD_DOCKERFILE });
 			const home = mkdtempSync(join(tmpdir(), 'stack-foreign-home-'));
 			made.push(home);
 			// Все места, где hadolint ищет конфиг вне репозитория; имена собираются (cite-check).
@@ -278,7 +255,7 @@ describe('check с группой guardrails: все шесть инструме
 				PROTO_HOME: process.env.PROTO_HOME ?? join(homedir(), '.proto'),
 				UV_CACHE_DIR: realCache,
 			};
-			const r = await run(['check'], dir, env);
+			const r = checkDir(dir, { env: env });
 			expect(r.err).not.toContain('guardrails-unavailable');
 			expect(hadolintFindings(r.err)).toHaveLength(1);
 			expect(r.err).toContain(' — hadolint DL3025: ');
@@ -289,9 +266,9 @@ describe('check с группой guardrails: все шесть инструме
 
 	test(
 		'профиль infra без package.json и node_modules: markdownlint-cli2 берётся из установки stack',
-		async () => {
-			const dir = await guardRepo({ 'README.md': BAD_README }, { profile: 'infra' });
-			const r = await run(['check'], dir, tools);
+		() => {
+			const { dir } = guardRepo({ 'README.md': BAD_README }, { profile: 'infra' });
+			const r = checkDir(dir, { env: tools });
 			expect(r.err).not.toContain('guardrails-unavailable');
 			const found = violations(r.err);
 			expect(found).toHaveLength(1);
@@ -303,11 +280,11 @@ describe('check с группой guardrails: все шесть инструме
 
 	test(
 		'uv без сети на холодном кэше: guardrails-unavailable yamllint, не no drift',
-		async () => {
-			const dir = await guardRepo({ ...CLEAN_FILES, 'bad.yml': BAD_YAML });
+		() => {
+			const { dir } = guardRepo({ ...CLEAN_FILES, 'bad.yml': BAD_YAML });
 			const cache = mkdtempSync(join(tmpdir(), 'stack-uv-cache-'));
 			try {
-				const r = await run(['check'], dir, { ...tools, UV_OFFLINE: '1', UV_CACHE_DIR: cache });
+				const r = checkDir(dir, { env: { ...tools, UV_OFFLINE: '1', UV_CACHE_DIR: cache } });
 				expect(r.code).toBe(1);
 				const lines = r.err.split('\n').filter((l) => l.startsWith('guardrails-unavailable: '));
 				expect(lines).toHaveLength(1);
@@ -322,9 +299,9 @@ describe('check с группой guardrails: все шесть инструме
 
 	test(
 		'без группы те же шесть нарушений не видны, слова guardrails в stderr нет',
-		async () => {
-			const dir = await guardRepo(BAD_FILES, { group: false });
-			const r = await run(['check'], dir, tools);
+		() => {
+			const { dir } = guardRepo(BAD_FILES, { group: false });
+			const r = checkDir(dir, { env: tools });
 			expect(r.code).toBe(0);
 			expect(r.out).toBe(NO_DRIFT);
 			expect(r.err).not.toContain('guardrails');

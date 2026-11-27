@@ -1,25 +1,24 @@
-import { readFileSync, rmSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 
 import { parsePins } from './canon.ts';
 import {
-	BARE,
+	checkDir,
 	CLI,
 	git,
-	gitRepo,
+	guardRepos,
 	historyStep,
 	isolateGitConfig,
 	protoBin,
 	put,
 	ROOT,
-	runCli as run,
 	shallowPrCheckout,
 } from './testkit.ts';
 
-// Приёмка gitleaks группы guardrails через настоящий cli на пиннутых бинарниках.
-describe('check с группой guardrails: gitleaks через настоящий cli', () => {
+// Приёмка gitleaks группы guardrails на настоящих пиннутых бинарниках.
+describe('check с группой guardrails: gitleaks на настоящих инструментах', () => {
 	// 64 hex собираются во время выполнения; в имени нет слов key, secret, token (generic-api-key).
 	const HEX = '0123456789abcdef'.repeat(4);
 	const LINE = `ETH_PRIV=0x${HEX}\n`;
@@ -46,27 +45,11 @@ describe('check с группой guardrails: gitleaks через настоящ
 		};
 	});
 	// Каталоги фикстур файла: убираются в afterAll, в том числе после упавшего теста.
-	const madeDirs: string[] = [];
+	const { guardRepo, clean } = guardRepos();
 	afterAll(() => {
 		restore();
-		for (const d of madeDirs) rmSync(d, { recursive: true, force: true });
+		clean();
 	});
-
-	// Репозиторий под git: init с группой (или без), sync, всё закоммичено и отправлено в origin/main.
-	async function guardRepo(
-		files: Record<string, string>,
-		opts: { group?: boolean } = {},
-	): Promise<{ dir: string; remote: string }> {
-		const made = gitRepo({ ...BARE, ...files });
-		madeDirs.push(made.dir, made.remote);
-		const withGroup = opts.group === false ? [] : ['--with', 'guardrails'];
-		expect((await run(['init', '--profile', 'node', ...withGroup], made.dir)).code).toBe(0);
-		expect((await run(['sync'], made.dir)).code).toBe(0);
-		git(made.dir, 'add', '-A');
-		git(made.dir, 'commit', '-m', 'canon');
-		git(made.dir, 'push', 'origin', 'main');
-		return made;
-	}
 
 	const violations = (err: string) => err.split('\n').filter((l) => l.startsWith(VIOLATION_LINE));
 	const noValue = (r: { out: string; err: string }) => {
@@ -80,8 +63,8 @@ describe('check с группой guardrails: gitleaks через настоящ
 
 	// Ветка feature добавляет секрет коммитом и удаляет следующим; main ушёл вперёд; merge-коммит в refs/pull/1/merge.
 	// Возвращает sha добавившего коммита и путь bare-remote.
-	async function prOrigin(): Promise<{ added: string; remote: string; dir: string }> {
-		const { dir, remote } = await guardRepo({ '.gitignore': ignores });
+	function prOrigin(): { added: string; remote: string; dir: string } {
+		const { dir, remote } = guardRepo({ '.gitignore': ignores });
 		git(dir, 'checkout', '-b', 'feature');
 		put(dir, 'leak.ts', LINE);
 		git(dir, 'add', 'leak.ts');
@@ -103,9 +86,9 @@ describe('check с группой guardrails: gitleaks через настоящ
 
 	test(
 		'приёмка 6: закоммиченный секрет — одна находка по файлу, значения в выводе нет',
-		async () => {
-			const { dir } = await guardRepo({ 'src/a.ts': LINE });
-			const r = await run(['check'], dir, { ...tools, ...LOCAL });
+		() => {
+			const { dir } = guardRepo({ 'src/a.ts': LINE });
+			const r = checkDir(dir, { env: { ...tools, ...LOCAL } });
 			expect(r.code).toBe(1);
 			expect(violations(r.err)).toStrictEqual([finding('src/a.ts')]);
 			expect(r.err).toContain(`guardrails gitleaks ${PINS.gitleaks}: `);
@@ -119,13 +102,13 @@ describe('check с группой guardrails: gitleaks через настоящ
 
 	test(
 		'приёмка 6 и 8: секрет вне отслеживаемых файлов (.env, игнорируемый, чужой worktree) не виден',
-		async () => {
-			const { dir } = await guardRepo({ '.gitignore': ignores });
+		() => {
+			const { dir } = guardRepo({ '.gitignore': ignores });
 			put(dir, '.env', LINE);
 			put(dir, 'x.local', LINE);
 			git(dir, 'worktree', 'add', '--detach', '.worktrees/wt');
 			put(dir, '.worktrees/wt/untracked.ts', LINE);
-			const r = await run(['check'], dir, { ...tools, ...LOCAL });
+			const r = checkDir(dir, { env: { ...tools, ...LOCAL } });
 			expect(r.code).toBe(0);
 			expect(r.out).toBe(NO_DRIFT);
 			noValue(r);
@@ -135,12 +118,12 @@ describe('check с группой guardrails: gitleaks через настоящ
 
 	test(
 		'приёмка 6: PR-джоб — секрет, добавленный и удалённый в ветке, находится в коммите',
-		async () => {
-			const { added, remote } = await prOrigin();
+		() => {
+			const { added, remote } = prOrigin();
 			const work = shallowPrCheckout(remote);
 			const s = historyStep(work);
 			expect(s.code).toBe(0);
-			const r = await run(['check'], work, { ...tools, ...PR });
+			const r = checkDir(work, { env: { ...tools, ...PR } });
 			expect(r.code).toBe(1);
 			expect(violations(r.err)).toStrictEqual([
 				`${finding('leak.ts')} (commit ${added.slice(0, 12)})`,
@@ -153,10 +136,10 @@ describe('check с группой guardrails: gitleaks через настоящ
 
 	test(
 		'приёмка 6: без истории тот же мелкий checkout — guardrails-unavailable, не no drift',
-		async () => {
-			const { remote } = await prOrigin();
+		() => {
+			const { remote } = prOrigin();
 			const work = shallowPrCheckout(remote);
-			const r = await run(['check'], work, { ...tools, ...PR });
+			const r = checkDir(work, { env: { ...tools, ...PR } });
 			expect(r.code).toBe(1);
 			expect(r.err).toContain(
 				'guardrails-unavailable: gitleaks commits — git merge-base origin/main HEAD: ',
@@ -169,11 +152,11 @@ describe('check с группой guardrails: gitleaks через настоящ
 
 	test(
 		'базы нет среди веток origin — guardrails-unavailable',
-		async () => {
-			const { remote } = await prOrigin();
+		() => {
+			const { remote } = prOrigin();
 			const work = shallowPrCheckout(remote);
 			expect(historyStep(work).code).toBe(0);
-			const r = await run(['check'], work, { ...tools, ...PR, GITHUB_BASE_REF: 'gone' });
+			const r = checkDir(work, { env: { ...tools, ...PR, GITHUB_BASE_REF: 'gone' } });
 			expect(r.code).toBe(1);
 			expect(r.err).toContain(
 				'guardrails-unavailable: gitleaks commits — git merge-base origin/gone HEAD: ',
@@ -185,9 +168,9 @@ describe('check с группой guardrails: gitleaks через настоящ
 
 	test(
 		'приёмка 6: вне PR (push) — пропуск с пометкой, код 0',
-		async () => {
-			const { dir } = await guardRepo({ '.gitignore': ignores });
-			const r = await run(['check'], dir, { ...tools, ...PUSH });
+		() => {
+			const { dir } = guardRepo({ '.gitignore': ignores });
+			const r = checkDir(dir, { env: { ...tools, ...PUSH } });
 			expect(r.code).toBe(0);
 			expect(r.out).toBe(NO_DRIFT);
 			expect(r.err).toContain('guardrails gitleaks commits: skipped (not a pull request)');
@@ -197,8 +180,8 @@ describe('check с группой guardrails: gitleaks через настоящ
 
 	test(
 		'--base локально: коммиты ветки от базы сканируются',
-		async () => {
-			const { dir } = await guardRepo({ '.gitignore': ignores });
+		() => {
+			const { dir } = guardRepo({ '.gitignore': ignores });
 			git(dir, 'checkout', '-b', 'feature');
 			put(dir, 'leak.ts', LINE);
 			git(dir, 'add', 'leak.ts');
@@ -206,7 +189,7 @@ describe('check с группой guardrails: gitleaks через настоящ
 			const added = git(dir, 'rev-parse', 'HEAD').trim();
 			git(dir, 'rm', '-q', 'leak.ts');
 			git(dir, 'commit', '-m', 'remove leak');
-			const r = await run(['check', '--base', 'main'], dir, { ...tools, ...LOCAL });
+			const r = checkDir(dir, { env: { ...tools, ...LOCAL }, base: 'main' });
 			expect(r.code).toBe(1);
 			expect(violations(r.err)).toStrictEqual([
 				`${finding('leak.ts')} (commit ${added.slice(0, 12)})`,
@@ -219,7 +202,7 @@ describe('check с группой guardrails: gitleaks через настоящ
 	test(
 		'--repo относительным путём: скан коммитов идёт от родительского каталога, как с абсолютным',
 		async () => {
-			const { dir } = await guardRepo({ '.gitignore': ignores });
+			const { dir } = guardRepo({ '.gitignore': ignores });
 			git(dir, 'checkout', '-b', 'feature');
 			put(dir, 'a.txt', 'harmless\n');
 			git(dir, 'add', 'a.txt');
@@ -244,12 +227,12 @@ describe('check с группой guardrails: gitleaks через настоящ
 
 	test(
 		'сломанный конфиг gitleaks — guardrails-unavailable и canon-not-extended, не no drift',
-		async () => {
-			const { dir } = await guardRepo({
+		() => {
+			const { dir } = guardRepo({
 				'.gitignore': ignores,
 				'.gitleaks.toml': '[extend\npath = ".gitleaks.canon.toml"\n',
 			});
-			const r = await run(['check'], dir, { ...tools, ...LOCAL });
+			const r = checkDir(dir, { env: { ...tools, ...LOCAL } });
 			expect(r.code).toBe(1);
 			expect(r.err).toContain(
 				'guardrails-unavailable: gitleaks — FTL unable to load gitleaks config, err: While parsing config: toml: ',
@@ -262,12 +245,12 @@ describe('check с группой guardrails: gitleaks через настоящ
 
 	test(
 		'.gitleaks.toml без [extend] — canon-not-extended, gitleaks отработал',
-		async () => {
-			const { dir } = await guardRepo({
+		() => {
+			const { dir } = guardRepo({
 				'.gitignore': ignores,
 				'.gitleaks.toml': 'title = "own"\n',
 			});
-			const r = await run(['check'], dir, { ...tools, ...LOCAL });
+			const r = checkDir(dir, { env: { ...tools, ...LOCAL } });
 			expect(r.code).toBe(1);
 			expect(r.err).toContain('canon-not-extended');
 			expect(r.err).not.toContain('guardrails-unavailable');
@@ -277,9 +260,9 @@ describe('check с группой guardrails: gitleaks через настоящ
 
 	test(
 		'без группы: gitleaks не запускается, секрет не мешает',
-		async () => {
-			const { dir } = await guardRepo({ 'src/a.ts': LINE }, { group: false });
-			const r = await run(['check'], dir, { GITLEAKS_BIN: '/nonexistent/gitleaks', ...LOCAL });
+		() => {
+			const { dir } = guardRepo({ 'src/a.ts': LINE }, { group: false });
+			const r = checkDir(dir, { env: { GITLEAKS_BIN: '/nonexistent/gitleaks', ...LOCAL } });
 			expect(r.code).toBe(0);
 			expect(r.out).toBe(NO_DRIFT);
 			expect(r.err).not.toContain('guardrails');

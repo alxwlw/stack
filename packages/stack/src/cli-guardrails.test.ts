@@ -6,18 +6,20 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { parsePins } from './canon.ts';
 import {
 	BARE,
+	checkDir,
 	git,
-	gitRepo,
+	guardRepos,
+	initRepo,
 	isolateGitConfig,
 	protoBin,
 	put,
 	repoDir,
 	ROOT,
-	runCli as run,
+	syncDir,
 } from './testkit.ts';
 
-// Приёмка группы guardrails через настоящий cli на пиннутых actionlint и shellcheck.
-describe('check с группой guardrails через настоящий cli', () => {
+// Приёмка группы guardrails на настоящих инструментах: пиннутые actionlint и shellcheck.
+describe('check с группой guardrails на настоящих инструментах', () => {
 	const NO_DRIFT = 'canon: no drift\n';
 	const BAD_SCRIPT = '#!/bin/bash\ncd dir\necho $HOME\n';
 	const GOOD_SCRIPT = '#!/bin/bash\ncd dir || exit 1\necho $HOME\n';
@@ -43,9 +45,11 @@ describe('check с группой guardrails через настоящий cli',
 		};
 	});
 	// Каталоги фикстур файла: убираются в afterAll, в том числе после упавшего теста.
+	const { guardRepo, clean } = guardRepos();
 	const made: string[] = [];
 	afterAll(() => {
 		restore();
+		clean();
 		for (const d of made) rmSync(d, { recursive: true, force: true });
 	});
 
@@ -55,21 +59,6 @@ describe('check с группой guardrails через настоящий cli',
 		GITLEAKS_BIN: '/nonexistent/gitleaks',
 		UV_BIN: '/nonexistent/uv',
 	};
-
-	// Репозиторий под git: init с группой (или без), sync, всё закоммичено.
-	async function guardRepo(
-		files: Record<string, string>,
-		opts: { group?: boolean } = {},
-	): Promise<string> {
-		const { dir, remote } = gitRepo({ ...BARE, ...files });
-		made.push(dir, remote);
-		const withGroup = opts.group === false ? [] : ['--with', 'guardrails'];
-		expect((await run(['init', '--profile', 'node', ...withGroup], dir)).code).toBe(0);
-		expect((await run(['sync'], dir)).code).toBe(0);
-		git(dir, 'add', '-A');
-		git(dir, 'commit', '-m', 'canon');
-		return dir;
-	}
 
 	const violations = (err: string) => err.split('\n').filter((l) => l.startsWith(VIOLATION_LINE));
 	const runLine = (text: string) => text.split('\n').indexOf(BAD_RUN.trimEnd()) + 1;
@@ -84,9 +73,9 @@ describe('check с группой guardrails через настоящий cli',
 
 	test(
 		'приёмка 1: нарушения обоих инструментов — код 1, две находки и две пометки',
-		async () => {
-			const dir = await guardRepo(BAD_FILES);
-			const r = await run(['check'], dir, tools);
+		() => {
+			const { dir } = guardRepo(BAD_FILES);
+			const r = checkDir(dir, { env: tools });
 			expect(r.code).toBe(1);
 			const found = violations(r.err);
 			expect(found).toHaveLength(2);
@@ -106,9 +95,9 @@ describe('check с группой guardrails через настоящий cli',
 
 	test(
 		'SHELLCHECK_OPTS из окружения не сдвигает порог',
-		async () => {
-			const dir = await guardRepo(BAD_FILES);
-			const r = await run(['check'], dir, { ...tools, SHELLCHECK_OPTS: '-S error' });
+		() => {
+			const { dir } = guardRepo(BAD_FILES);
+			const r = checkDir(dir, { env: { ...tools, SHELLCHECK_OPTS: '-S error' } });
 			expect(r.code).toBe(1);
 			expect(violations(r.err)).toContainEqual(
 				expect.stringContaining('scripts/a.sh:2 — shellcheck SC2164: '),
@@ -120,9 +109,9 @@ describe('check с группой guardrails через настоящий cli',
 
 	test(
 		'чистый репозиторий: код 0 и no drift, канонные workflow проходят actionlint',
-		async () => {
-			const dir = await guardRepo(CLEAN_FILES);
-			const r = await run(['check'], dir, tools);
+		() => {
+			const { dir } = guardRepo(CLEAN_FILES);
+			const r = checkDir(dir, { env: tools });
 			expect(r.err).not.toContain(VIOLATION_LINE);
 			expect(r.err).not.toContain('guardrails-unavailable');
 			expect(r.code).toBe(0);
@@ -133,13 +122,13 @@ describe('check с группой guardrails через настоящий cli',
 
 	test(
 		'приёмка 8: неотслеживаемые, игнорируемые и файлы worktree не доходят до инструментов',
-		async () => {
-			const dir = await guardRepo({ ...CLEAN_FILES, '.gitignore': '*.local.sh\n' });
+		() => {
+			const { dir } = guardRepo({ ...CLEAN_FILES, '.gitignore': '*.local.sh\n' });
 			put(dir, 'scripts/new.sh', BAD_SCRIPT);
 			put(dir, 'scripts/b.local.sh', BAD_SCRIPT);
 			git(dir, 'worktree', 'add', '--detach', '.worktrees/wt');
 			put(dir, '.worktrees/wt/scripts/c.sh', BAD_SCRIPT);
-			const r = await run(['check'], dir, tools);
+			const r = checkDir(dir, { env: tools });
 			expect(violations(r.err)).toStrictEqual([]);
 			expect(r.err).toContain(`guardrails shellcheck ${PINS.shellcheck}: 1 file(s), 0 finding(s)`);
 			expect(r.code).toBe(0);
@@ -150,12 +139,12 @@ describe('check с группой guardrails через настоящий cli',
 
 	test(
 		'вне git: guardrails-unavailable для git ls-files, не no drift',
-		async () => {
+		() => {
 			const dir = repoDir(BARE);
 			made.push(dir);
-			expect((await run(['init', '--profile', 'node', '--with', 'guardrails'], dir)).code).toBe(0);
-			expect((await run(['sync'], dir)).code).toBe(0);
-			const r = await run(['check'], dir, { ...tools, GIT_CEILING_DIRECTORIES: dirname(dir) });
+			initRepo(dir, { with: ['guardrails'] });
+			syncDir(dir);
+			const r = checkDir(dir, { env: { ...tools, GIT_CEILING_DIRECTORIES: dirname(dir) } });
 			expect(r.code).toBe(1);
 			expect(r.err).toContain(
 				'guardrails-unavailable: git ls-files — fatal: not a git repository (or any of the parent directories): .git',
@@ -169,9 +158,9 @@ describe('check с группой guardrails через настоящий cli',
 
 	test(
 		'приёмка 3: несуществующий SHELLCHECK_BIN — guardrails-unavailable shellcheck',
-		async () => {
-			const dir = await guardRepo(CLEAN_FILES);
-			const r = await run(['check'], dir, { ...tools, SHELLCHECK_BIN: MISSING.SHELLCHECK_BIN });
+		() => {
+			const { dir } = guardRepo(CLEAN_FILES);
+			const r = checkDir(dir, { env: { ...tools, SHELLCHECK_BIN: MISSING.SHELLCHECK_BIN } });
 			expect(r.code).toBe(1);
 			const lines = r.err.split('\n').filter((l) => l.startsWith('guardrails-unavailable: '));
 			expect(lines.length).toBeGreaterThan(0);
@@ -185,9 +174,9 @@ describe('check с группой guardrails через настоящий cli',
 
 	test(
 		'приёмка 2: без группы нарушения не видны, переменные не читаются, слова guardrails в stderr нет',
-		async () => {
-			const dir = await guardRepo(BAD_FILES, { group: false });
-			const r = await run(['check'], dir, MISSING);
+		() => {
+			const { dir } = guardRepo(BAD_FILES, { group: false });
+			const r = checkDir(dir, { env: MISSING });
 			expect(r.code).toBe(0);
 			expect(r.out).toBe(NO_DRIFT);
 			expect(r.err).not.toContain('guardrails');
@@ -197,10 +186,10 @@ describe('check с группой guardrails через настоящий cli',
 
 	test(
 		'Review Focus 4: удалённый с диска закоммиченный workflow не роняет actionlint',
-		async () => {
-			const dir = await guardRepo({ ...BAD_FILES, [GONE]: workflow(GOOD_RUN) });
+		() => {
+			const { dir } = guardRepo({ ...BAD_FILES, [GONE]: workflow(GOOD_RUN) });
 			rmSync(join(dir, GONE));
-			const r = await run(['check'], dir, tools);
+			const r = checkDir(dir, { env: tools });
 			expect(r.code).toBe(1);
 			const found = violations(r.err);
 			expect(found).toHaveLength(2);
@@ -215,24 +204,23 @@ describe('check с группой guardrails через настоящий cli',
 
 	test(
 		'приёмка 4: sync переписывает пин proto, а check затем показывает нарушение actionlint и нет находки toolchain-pin',
-		async () => {
+		() => {
 			const stale =
 				workflow(BAD_RUN) +
 				'      - uses: moonrepo/setup-toolchain@v0\n        with:\n          proto-version: 0.60.2\n';
-			const dir = await guardRepo({ '.github/workflows/lint.yml': stale });
+			const { dir } = guardRepo({ '.github/workflows/lint.yml': stale });
 			const path = join(dir, '.github/workflows/lint.yml');
 			// guardRepo уже сделал sync: возвращаем устаревший пин и проверяем, что sync его перепишет
 			writeFileSync(path, stale);
 			git(dir, 'add', '-A');
 			git(dir, 'commit', '-m', 'stale pin');
-			const synced = await run(['sync'], dir, MISSING);
-			expect(synced.code).toBe(0);
+			syncDir(dir);
 			const text = readFileSync(path, 'utf8');
 			expect(text).not.toContain('0.60.2');
 			expect(text).toContain(`proto-version: ${PINS.proto}`);
 			git(dir, 'add', '-A');
 			git(dir, 'commit', '-m', 'synced');
-			const r = await run(['check'], dir, tools);
+			const r = checkDir(dir, { env: tools });
 			expect(r.code).toBe(1);
 			const found = violations(r.err);
 			expect(found).toHaveLength(1);
