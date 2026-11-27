@@ -14,7 +14,8 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 
 import { parsePins } from './canon.ts';
 import { YAMLLINT_VERSION } from './guardrails-yamllint.ts';
-import { checkDir, git, guardRepos, isolateGitConfig, protoBin, put, ROOT } from './testkit.ts';
+import { git, isolateGitConfig, protoBin, put, ROOT } from './testkit.ts';
+import { checkDir, guardRepos } from './testkit-acceptance.ts';
 
 // Приёмка группы guardrails на всех шести настоящих инструментах.
 describe('check с группой guardrails: на всех шести настоящих инструментах', () => {
@@ -263,7 +264,7 @@ describe('check с группой guardrails: на всех шести наст�
 				PROTO_HOME: process.env.PROTO_HOME ?? join(homedir(), '.proto'),
 				UV_CACHE_DIR: realCache,
 			};
-			const r = checkDir(dir, { env: env });
+			const r = checkDir(dir, { env });
 			expect(r.err).not.toContain('guardrails-unavailable');
 			expect(hadolintFindings(r.err)).toHaveLength(1);
 			expect(r.err).toContain(' — hadolint DL3025: ');

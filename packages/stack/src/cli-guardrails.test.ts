@@ -4,19 +4,8 @@ import { dirname, join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 
 import { parsePins } from './canon.ts';
-import {
-	BARE,
-	checkDir,
-	git,
-	guardRepos,
-	initRepo,
-	isolateGitConfig,
-	protoBin,
-	put,
-	repoDir,
-	ROOT,
-	syncDir,
-} from './testkit.ts';
+import { BARE, git, isolateGitConfig, protoBin, put, repoDir, ROOT } from './testkit.ts';
+import { checkDir, guardRepos, initRepo, syncDir } from './testkit-acceptance.ts';
 
 // Приёмка группы guardrails на настоящих инструментах: пиннутые actionlint и shellcheck.
 describe('check с группой guardrails на настоящих инструментах', () => {

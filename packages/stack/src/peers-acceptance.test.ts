@@ -4,17 +4,8 @@ import { join } from 'node:path';
 
 import { describe, expect, test } from 'bun:test';
 
-import {
-	BARE,
-	baselineDir,
-	checkDir,
-	fakeBin,
-	initRepo,
-	protoBin,
-	repoDir,
-	syncDir,
-	UNMET_PEER_LOCK,
-} from './testkit.ts';
+import { BARE, fakeBin, protoBin, repoDir, UNMET_PEER_LOCK } from './testkit.ts';
+import { baselineDir, checkDir, initRepo, syncDir } from './testkit-acceptance.ts';
 
 // Приёмка группы peers на боевом adapter: pnpmPeers получает testEnv(env), pnpm — настоящий из пина
 // или подставной скрипт на PATH. Команда идёт функциями, что зовёт обработчик, без процесса cli.ts.

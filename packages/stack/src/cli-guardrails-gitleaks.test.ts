@@ -5,10 +5,8 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 
 import { parsePins } from './canon.ts';
 import {
-	checkDir,
 	CLI,
 	git,
-	guardRepos,
 	historyStep,
 	isolateGitConfig,
 	protoBin,
@@ -16,6 +14,7 @@ import {
 	ROOT,
 	shallowPrCheckout,
 } from './testkit.ts';
+import { checkDir, guardRepos } from './testkit-acceptance.ts';
 
 // Приёмка gitleaks группы guardrails на настоящих пиннутых бинарниках.
 describe('check с группой guardrails: gitleaks на настоящих инструментах', () => {

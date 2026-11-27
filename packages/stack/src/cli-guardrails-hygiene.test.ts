@@ -4,7 +4,8 @@ import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 
 import { parsePins } from './canon.ts';
-import { checkDir, git, guardRepos, isolateGitConfig, protoBin, ROOT, syncDir } from './testkit.ts';
+import { git, isolateGitConfig, protoBin, ROOT } from './testkit.ts';
+import { checkDir, guardRepos, syncDir } from './testkit-acceptance.ts';
 
 // Гигиена workflow в группе guardrails на настоящих инструментах: пиннутые actionlint и shellcheck.
 describe('гигиена workflow в check с группой guardrails на настоящих инструментах', () => {

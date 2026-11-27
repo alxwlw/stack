@@ -4,16 +4,8 @@ import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { parse as parseJsonc } from 'jsonc-parser';
 
-import {
-	BARE,
-	gitRepo,
-	initRepo,
-	isolateGitConfig,
-	repoDir,
-	runStack,
-	syncDir,
-	UNMET_PEER_LOCK,
-} from './testkit.ts';
+import { BARE, gitRepo, isolateGitConfig, repoDir, runStack, UNMET_PEER_LOCK } from './testkit.ts';
+import { initRepo, syncDir } from './testkit-acceptance.ts';
 
 // Команды на каталоге: функция команды на подставных портах, файлы пишет настоящий код. Окружение —
 // только то, что тест передал; процесс cli.ts не запускается (сквозной набор — cli.test.ts).
