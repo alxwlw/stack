@@ -23,6 +23,7 @@ import {
 	toolJson,
 } from './testkit.ts';
 import { checkDir, initRepo, syncDir } from './testkit-acceptance.ts';
+import { ACME_SETTINGS } from './testkit-sources.ts';
 
 // Тексты находок заданы планом и записаны литералами, не через константы модуля.
 const M1 =
@@ -446,4 +447,17 @@ test('приёмка 7: check сообщает засев без подключ�
 
 	syncDir(dir);
 	expect(readFileSync(join(dir, '.gitleaks.toml'), 'utf8')).toBe(NO_PATH);
+});
+
+test('чужой канон: «не разобран» и «не читается» называют его команду', () => {
+	const acme = testCanon({ files: canon.files, settings: ACME_SETTINGS });
+	const messages = (over: Over) => seeds(over, [], acme).map((f) => f.message);
+	expect(messages({ '.oxlintrc.json': '{ "extends": [' })).toStrictEqual([
+		'does not parse as JSON with comments (CloseBracketExpected at offset 14) — acme cannot tell whether it extends the canon',
+	]);
+	expect(
+		messages({
+			'.oxlintrc.json': { failed: ioError('EISDIR', 'illegal operation on a directory, read') },
+		}),
+	).toStrictEqual(['is not a readable file — acme cannot tell whether it extends the canon']);
 });
