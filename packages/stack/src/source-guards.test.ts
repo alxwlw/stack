@@ -47,9 +47,12 @@ test('cli.ts после проводника печатает только че�
 test('сквозных запусков cli.ts вне блока проводника — не больше пятнадцати, в двух файлах', () => {
 	const BLOCK = "describe('stack repo-rules', () => {";
 	const launches: Record<string, number> = {};
+	const aliased: string[] = [];
 	for (const f of new Bun.Glob('*.test.ts').scanSync(import.meta.dir)) {
 		if (f === 'source-guards.test.ts') continue;
 		let text = readFileSync(join(import.meta.dir, f), 'utf8');
+		// Псевдоним при импорте прячет запуск от счёта: красный тест называет файл-нарушитель.
+		if (/\brunCli\s+as\b|\bCLI\s+as\b/.test(text)) aliased.push(f);
 		if (f === 'cli.test.ts') {
 			const at = text.indexOf(BLOCK);
 			expect(at).toBeGreaterThan(0);
@@ -60,6 +63,7 @@ test('сквозных запусков cli.ts вне блока проводн�
 		const n = body.match(/\brunCli\(|[,[(]\s*CLI\s*[,\])]/g)?.length ?? 0;
 		if (n > 0) launches[f] = n;
 	}
+	expect(aliased).toStrictEqual([]);
 	expect(Object.keys(launches).toSorted()).toStrictEqual([
 		'cli-guardrails-gitleaks.test.ts',
 		'cli.test.ts',
