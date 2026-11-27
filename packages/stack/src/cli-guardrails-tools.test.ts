@@ -1,4 +1,12 @@
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import {
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	realpathSync,
+	rmSync,
+	writeFileSync,
+} from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
@@ -268,6 +276,7 @@ describe('check с группой guardrails: на всех шести наст�
 		'профиль infra без package.json и node_modules: markdownlint-cli2 берётся из установки stack',
 		() => {
 			const { dir } = guardRepo({ 'README.md': BAD_README }, { profile: 'infra' });
+			expect(existsSync(join(dir, 'package.json'))).toBe(false);
 			const r = checkDir(dir, { env: tools });
 			expect(r.err).not.toContain('guardrails-unavailable');
 			const found = violations(r.err);

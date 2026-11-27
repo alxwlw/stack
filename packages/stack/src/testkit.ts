@@ -798,20 +798,22 @@ export function guardRepos(): {
 	clean(): void;
 } {
 	const made: string[] = [];
-	return {
-		guardRepo(files, opts = {}) {
-			const profile = opts.profile ?? 'node';
-			const repo = gitRepo(profile === 'node' ? { ...BARE, ...files } : files);
-			made.push(repo.dir, repo.remote);
-			initRepo(repo.dir, { profile, with: opts.group === false ? [] : ['guardrails'] });
-			syncDir(repo.dir);
-			git(repo.dir, 'add', '-A');
-			git(repo.dir, 'commit', '-m', 'canon');
-			git(repo.dir, 'push', 'origin', 'main');
-			return repo;
-		},
-		clean() {
-			for (const d of made) rmSync(d, { recursive: true, force: true });
-		},
-	};
+	function guardRepo(
+		files: Record<string, string>,
+		opts: { group?: boolean; profile?: Profile } = {},
+	): { dir: string; remote: string } {
+		const profile = opts.profile ?? 'node';
+		const repo = gitRepo(profile === 'node' ? { ...BARE, ...files } : files);
+		made.push(repo.dir, repo.remote);
+		initRepo(repo.dir, { profile, with: opts.group === false ? [] : ['guardrails'] });
+		syncDir(repo.dir);
+		git(repo.dir, 'add', '-A');
+		git(repo.dir, 'commit', '-m', 'canon');
+		git(repo.dir, 'push', 'origin', 'main');
+		return repo;
+	}
+	function clean(): void {
+		for (const d of made) rmSync(d, { recursive: true, force: true });
+	}
+	return { guardRepo, clean };
 }
