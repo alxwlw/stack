@@ -199,7 +199,7 @@ export async function publishChanges(
 			print,
 			prs,
 			stalePrs(prs, { version, base, bot }),
-			`Канон ${version} уже в \`${base}\` — этот PR устарел.`,
+			syncPrText(texts, 'upToDateComment', { version, base }),
 		);
 	}
 

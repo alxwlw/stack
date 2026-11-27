@@ -13,6 +13,7 @@ export const TEST_SETTINGS: CanonSettings = {
 		title: 'chore(stack): canon {version}',
 		body: 'Canon {version} applied.\n{files}',
 		closeComment: 'Superseded by {url} ({version}).',
+		upToDateComment: 'Canon {version} is already in {base}.',
 	},
 };
 
@@ -26,6 +27,7 @@ export const ACME_SETTINGS: CanonSettings = {
 		title: 'chore: acme canon {version}',
 		body: 'Canon {version} applied.\n{files}',
 		closeComment: 'Superseded by {url} ({version}).',
+		upToDateComment: 'Canon {version} is already in {base}.',
 	},
 };
 

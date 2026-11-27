@@ -52,12 +52,17 @@ test.each(['profiles', 'configFile', 'command', 'ownPackages', 'syncPr'])(
 	},
 );
 
-test.each(['title', 'body', 'closeComment'])('syncPr.%s: не строка, пусто, нет ключа', (key) => {
-	for (const bad of [7, '', undefined]) {
-		const syncPr = { ...ACME_SETTINGS.syncPr, [key]: bad };
-		expect(() => checkSettings({ ...valid(), syncPr })).toThrow(`canon settings: "syncPr.${key}"`);
-	}
-});
+test.each(['title', 'body', 'closeComment', 'upToDateComment'])(
+	'syncPr.%s: не строка, пусто, нет ключа',
+	(key) => {
+		for (const bad of [7, '', undefined]) {
+			const syncPr = { ...ACME_SETTINGS.syncPr, [key]: bad };
+			expect(() => checkSettings({ ...valid(), syncPr })).toThrow(
+				`canon settings: "syncPr.${key}"`,
+			);
+		}
+	},
+);
 
 test('лишний ключ называется по имени', () => {
 	expect(() => checkSettings({ ...valid(), profile: ['web'] })).toThrow(
@@ -81,6 +86,10 @@ test('опечатка в подстановке — ошибка с ключо�
 	const title = { ...ACME_SETTINGS.syncPr, title: 'canon {url}' };
 	expect(() => checkSettings({ ...valid(), syncPr: title })).toThrow(
 		'"syncPr.title" has unknown placeholder {url}',
+	);
+	const upToDate = { ...ACME_SETTINGS.syncPr, upToDateComment: 'Canon {version} is in {url}' };
+	expect(() => checkSettings({ ...valid(), syncPr: upToDate })).toThrow(
+		'"syncPr.upToDateComment" has unknown placeholder {url}',
 	);
 });
 

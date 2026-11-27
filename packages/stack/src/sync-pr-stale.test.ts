@@ -141,6 +141,15 @@ describe('publishChanges: устаревшие sync-PR', () => {
 		expect(remoteHeads(remote)).not.toContain('refs/heads/stack/v1.11.0\n');
 	});
 
+	test('коммитить нечего — комментарий закрытия следует настройкам канона', async () => {
+		const { dir } = gitRepo({ 'a.txt': 'a' });
+		pushBranch(dir, 'stack/v1.12.0');
+		const { github, closed } = fakeGitHub({}, [botPr(11, '1.12.0')]);
+		const r = await run(opts13(dir), github, ACME_SETTINGS.syncPr);
+		expect(r.code).toBe(0);
+		expect(closed).toStrictEqual([[11, 'Canon 1.13.0 is already in main.']]);
+	});
+
 	test('коммитить нечего — PR старших версий закрываются, бот не ищется', async () => {
 		const { dir, remote } = gitRepo({ 'a.txt': 'a' });
 		pushBranch(dir, 'stack/v1.12.0');

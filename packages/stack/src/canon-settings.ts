@@ -5,6 +5,7 @@ export interface SyncPrTexts {
 	title: string;
 	body: string;
 	closeComment: string;
+	upToDateComment: string;
 }
 
 export interface CanonSettings {
@@ -20,6 +21,7 @@ export const SYNC_PR_PLACEHOLDERS = {
 	title: ['version'],
 	body: ['version', 'files'],
 	closeComment: ['version', 'url'],
+	upToDateComment: ['version', 'base'],
 } as const satisfies Record<keyof SyncPrTexts, readonly string[]>;
 
 export type SyncPrValues<K extends keyof SyncPrTexts> = Record<
