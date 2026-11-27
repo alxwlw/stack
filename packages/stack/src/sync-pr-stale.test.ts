@@ -16,6 +16,7 @@ import {
 	put,
 	run,
 } from './testkit.ts';
+import { ACME_SETTINGS } from './testkit-sources.ts';
 
 let restore: () => void;
 beforeAll(() => {
@@ -274,5 +275,16 @@ describe('publishChanges: устаревшие sync-PR', () => {
 		expect(r.err).toEqual(['sync-pr: listing open PRs failed: boom']);
 		expect(r.out).toEqual(['canon already applied, nothing to commit']);
 		expect(closed).toEqual([]);
+	});
+
+	test('комментарий закрытия следует настройкам канона', async () => {
+		const { dir } = gitRepo({ 'a.txt': 'a' });
+		put(dir, 'b.txt', 'b');
+		pushBranch(dir, 'stack/v1.12.0');
+		const own = botPr(30, '1.13.0', 'main', 'alice');
+		const { github, closed } = fakeGitHub({}, [own, botPr(11, '1.12.0')]);
+		const r = await run(opts13(dir), github, ACME_SETTINGS.syncPr);
+		expect(r.code).toBe(0);
+		expect(closed).toStrictEqual([[11, `Superseded by ${own.url} (1.13.0).`]]);
 	});
 });

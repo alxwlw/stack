@@ -14,6 +14,7 @@ import { dirname, join } from 'node:path';
 import { parse as parseYaml, stringify } from 'yaml';
 
 import { type Canon, canonDir, canonFor, type CanonSource, readCanonSource } from './canon.ts';
+import type { SyncPrTexts } from './canon-settings.ts';
 import { type CommandPorts, type ExitCode, runCommand } from './command.ts';
 import type { Profile } from './config.ts';
 import { STACK_RENOVATE_PRESET } from './deps.ts';
@@ -536,10 +537,11 @@ export function put(dir: string, path: string, content: string): void {
 export async function run(
 	opts: PublishOptions,
 	github: GitHub,
+	texts: SyncPrTexts = OWNER_SOURCE.settings.syncPr,
 ): Promise<{ code: 0 | 1; out: string[]; err: string[] }> {
 	const out: string[] = [];
 	const err: string[] = [];
-	const code = await publishChanges(opts, github, (stream, line) =>
+	const code = await publishChanges(opts, texts, github, (stream, line) =>
 		(stream === 'out' ? out : err).push(line),
 	);
 	return { code, out, err };

@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { type Canon, canonFor, type CanonSource } from './canon.ts';
+import { syncPrText, type SyncPrTexts } from './canon-settings.ts';
 import { syncRepo } from './check.ts';
 import { readStackConfig, StackConfigError } from './config.ts';
 import { type Print, printLines, syncOutput } from './output.ts';
@@ -42,8 +43,9 @@ export interface PublishOptions {
 	appSlug: string;
 }
 
-export function prBody(version: string, files: readonly string[]): string {
-	return `Канон \`@alxwlw/stack@${version}\` применён к репозиторию.\n\nИзменённые файлы:\n${files.map((f) => `- ${f}\n`).join('')}\nРелиз: https://github.com/alxwlw/stack/releases/tag/v${version}\n`;
+// Тело PR из шаблона настроек канона; `{files}` — строки `- <путь>\n` подряд, формат строки задаёт движок.
+export function prBody(texts: SyncPrTexts, version: string, files: readonly string[]): string {
+	return syncPrText(texts, 'body', { version, files: files.map((f) => `- ${f}\n`).join('') });
 }
 
 interface GitResult {
@@ -153,12 +155,13 @@ async function closeStale(
 // commit, force-push, PR и закрытие PR старших версий.
 export async function publishChanges(
 	opts: PublishOptions,
+	texts: SyncPrTexts,
 	github: GitHub,
 	print: Print,
 ): Promise<0 | 1> {
 	const { repoRoot, version, appSlug } = opts;
 	const branch = `stack/v${version}`;
-	const title = `chore(stack): канон ${version}`;
+	const title = syncPrText(texts, 'title', { version });
 	const bot = `${appSlug}[bot]`;
 
 	let files: string[];
@@ -241,7 +244,12 @@ export async function publishChanges(
 		print('out', `updated PR ${url}`);
 	} else {
 		try {
-			url = await github.createPr({ head: branch, base, title, body: prBody(version, files) });
+			url = await github.createPr({
+				head: branch,
+				base,
+				title,
+				body: prBody(texts, version, files),
+			});
 		} catch (error) {
 			print('err', `sync-pr: creating the PR failed: ${message(error)}`);
 			return 1;
@@ -255,7 +263,7 @@ export async function publishChanges(
 		print,
 		prs,
 		stalePrs(prs, { version, base, bot }),
-		`Заменён ${url} — канон ${version}.`,
+		syncPrText(texts, 'closeComment', { version, url }),
 	);
 }
 
@@ -323,7 +331,7 @@ export async function syncPr(opts: SyncPrOptions, ports: SyncPrPorts): Promise<0
 		const pkgPath = join(repoRoot, 'package.json');
 		if (!existsSync(pkgPath)) {
 			dropFixedRepoRules(repoRoot, canon, ports.repoRules, print);
-			return await publishChanges(opts, ports.github, print);
+			return await publishChanges(opts, opts.source.settings.syncPr, ports.github, print);
 		}
 
 		let hook = false;
@@ -361,7 +369,7 @@ export async function syncPr(opts: SyncPrOptions, ports: SyncPrPorts): Promise<0
 		for (const line of peers.err) print('err', `sync-pr: peers baseline: ${line}`);
 
 		dropFixedRepoRules(repoRoot, canon, ports.repoRules, print);
-		return await publishChanges(opts, ports.github, print);
+		return await publishChanges(opts, opts.source.settings.syncPr, ports.github, print);
 	} catch (error) {
 		print('err', `sync-pr: ${message(error)}`);
 		return 1;

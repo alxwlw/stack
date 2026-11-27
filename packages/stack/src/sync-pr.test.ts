@@ -23,6 +23,7 @@ import {
 	isolateGitConfig,
 	NODE_PKG,
 	opts,
+	OWNER_SOURCE,
 	PR_URL,
 	put,
 	repoDir,
@@ -30,7 +31,7 @@ import {
 	runSyncPr,
 	SERVED,
 } from './testkit.ts';
-import { acmeSource, testSource } from './testkit-sources.ts';
+import { ACME_SETTINGS, acmeSource, testSource } from './testkit-sources.ts';
 
 let restore: () => void;
 beforeAll(() => {
@@ -56,7 +57,10 @@ describe('publishChanges', () => {
 		const { github, created } = fakeGitHub();
 		await run(opts(dir), github);
 		expect(created[0]?.body).toBe(
-			prBody('1.2.3', ['.moon/tasks/stack.yml', '.moon/toolchain.yml']),
+			prBody(OWNER_SOURCE.settings.syncPr, '1.2.3', [
+				'.moon/tasks/stack.yml',
+				'.moon/toolchain.yml',
+			]),
 		);
 	});
 
@@ -79,7 +83,7 @@ describe('publishChanges', () => {
 		put(dir, 'a.txt', 'a');
 		const { github, created } = fakeGitHub();
 		await run(opts(dir), github);
-		expect(created[0]?.body).toBe(prBody('1.2.3', ['a.txt']));
+		expect(created[0]?.body).toBe(prBody(OWNER_SOURCE.settings.syncPr, '1.2.3', ['a.txt']));
 		expect(git(remote, 'ls-tree', '-r', '--name-only', 'stack/v1.2.3')).not.toContain(
 			'node_modules/',
 		);
@@ -90,7 +94,9 @@ describe('publishChanges', () => {
 		git(dir, 'mv', 'a.txt', 'b.txt');
 		const { github, created } = fakeGitHub();
 		await run(opts(dir), github);
-		expect(created[0]?.body).toBe(prBody('1.2.3', ['b.txt', 'a.txt']));
+		expect(created[0]?.body).toBe(
+			prBody(OWNER_SOURCE.settings.syncPr, '1.2.3', ['b.txt', 'a.txt']),
+		);
 	});
 
 	test('commit: автор и коммитер — бот, сообщение, ветка от HEAD; вывод', async () => {
@@ -135,7 +141,9 @@ describe('publishChanges', () => {
 		git(dir, 'add', '-A');
 		const { github, created } = fakeGitHub();
 		await run(opts(dir), github);
-		expect(created[0]?.body).toBe(prBody('1.2.3', ['a.txt', 'b.txt']));
+		expect(created[0]?.body).toBe(
+			prBody(OWNER_SOURCE.settings.syncPr, '1.2.3', ['a.txt', 'b.txt']),
+		);
 	});
 
 	test('путь в списке один раз, даже если он и источник переименования, и новый файл', async () => {
@@ -144,7 +152,9 @@ describe('publishChanges', () => {
 		put(dir, 'a.txt', 'new');
 		const { github, created } = fakeGitHub();
 		await run(opts(dir), github);
-		expect(created[0]?.body).toBe(prBody('1.2.3', ['b.txt', 'a.txt']));
+		expect(created[0]?.body).toBe(
+			prBody(OWNER_SOURCE.settings.syncPr, '1.2.3', ['b.txt', 'a.txt']),
+		);
 	});
 
 	test('ветка уже есть локально — checkout -B её пересоздаёт, код 0', async () => {
@@ -236,9 +246,32 @@ describe('publishChanges', () => {
 	});
 
 	test('prBody — текст описания PR, список пофайлово', () => {
-		expect(prBody('1.2.3', ['a.txt', 'b/c.txt'])).toBe(
+		expect(prBody(OWNER_SOURCE.settings.syncPr, '1.2.3', ['a.txt', 'b/c.txt'])).toBe(
 			'Канон `@alxwlw/stack@1.2.3` применён к репозиторию.\n\nИзменённые файлы:\n- a.txt\n- b/c.txt\n\nРелиз: https://github.com/alxwlw/stack/releases/tag/v1.2.3\n',
 		);
+	});
+
+	test('заголовок, коммит и тело PR следуют настройкам канона', async () => {
+		const { dir } = gitRepo({ 'a.txt': 'a' });
+		put(dir, 'b.txt', 'b');
+		const { github, created } = fakeGitHub();
+		await run(opts(dir), github, ACME_SETTINGS.syncPr);
+		expect(created[0]?.title).toBe('chore: acme canon 1.2.3');
+		expect(created[0]?.body).toBe('Canon 1.2.3 applied.\n- b.txt\n');
+		expect(git(dir, 'log', '-1', '--format=%s')).toBe('chore: acme canon 1.2.3\n');
+	});
+
+	test('путь с подстановкой в имени попадает в тело как есть', () => {
+		expect(prBody(ACME_SETTINGS.syncPr, '1.2.3', ['{version}/$&.txt', 'b.txt'])).toBe(
+			'Canon 1.2.3 applied.\n- {version}/$&.txt\n- b.txt\n',
+		);
+	});
+
+	test('syncPr передаёт тексты канона из source в publishChanges', async () => {
+		const { dir } = gitRepo({ '.acme.jsonc': '{ "profile": "web" }' });
+		const { code, github } = await runSyncPr(dir, { source: acmeSource() });
+		expect(code).toBe(0);
+		expect(github.created[0]?.title).toBe('chore: acme canon 1.2.3');
 	});
 
 	test('повторный запуск: ветка пересоздана от нового HEAD, открытый PR переиспользован', async () => {
