@@ -40,7 +40,7 @@ const M4 =
 const read = (dest: string, text: string): string | undefined => {
 	const check = SEED_CHECKS.get(dest);
 	if (!check) throw new Error(`SEED_CHECKS has no ${dest}`);
-	return check(text);
+	return check(text, 'stack');
 };
 
 type Row = [name: string, text: string, expected: string | undefined | RegExp];
@@ -460,4 +460,13 @@ test('чужой канон: «не разобран» и «не читаетс�
 			'.oxlintrc.json': { failed: ioError('EISDIR', 'illegal operation on a directory, read') },
 		}),
 	).toStrictEqual(['is not a readable file — acme cannot tell whether it extends the canon']);
+});
+
+test('читатели засевов берут команду параметром: «не разобран» называет её', () => {
+	expect(SEED_CHECKS.get('.oxlintrc.json')?.('{ "extends": [', 'acme')).toBe(
+		'does not parse as JSON with comments (CloseBracketExpected at offset 14) — acme cannot tell whether it extends the canon',
+	);
+	expect(SEED_CHECKS.get('.gitleaks.toml')?.('[extend\n', 'acme')).toMatch(
+		/^does not parse as TOML \(.+\) — acme cannot tell whether it extends the canon$/,
+	);
 });
