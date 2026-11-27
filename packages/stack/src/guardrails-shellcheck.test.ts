@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test';
 
 import { type GuardrailRun, spawnRunner } from './guardrails-port.ts';
 import { parseShellcheck, QUIET_LEVELS, shellcheckArgv } from './guardrails-shellcheck.ts';
-import { protoBin, repoDir } from './testkit.ts';
+import { protoBin, repoDir, testEnv } from './testkit.ts';
 
 const comment = (file: string, line: number, level: string, code: number) => ({
 	file,
@@ -93,7 +93,7 @@ test('parseShellcheck: незнакомый уровень — находка', 
 // Настоящий shellcheck, пиненный в корне стека.
 function check(files: Record<string, string>, list: string[]) {
 	const dir = repoDir(files);
-	const r = spawnRunner(dir)(protoBin('shellcheck'), shellcheckArgv(list));
+	const r = spawnRunner(dir, testEnv())(protoBin('shellcheck'), shellcheckArgv(list));
 	return parseShellcheck(r);
 }
 const pick = (v: ReturnType<typeof check>) =>

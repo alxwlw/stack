@@ -1,7 +1,6 @@
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { main } from '@alxwlw/repo-rules';
 import { afterAll, beforeAll, expect, test } from 'bun:test';
 
 import type { PrBase } from './pr-base.ts';
@@ -14,6 +13,7 @@ import {
 	repoRulesPart,
 	type RepoRulesRun,
 } from './repo-rules.ts';
+import { inProcessRepoRules } from './repo-rules-port.ts';
 import { fakeRepoRulesReader, git, gitRepo, isolateGitConfig, repoDir } from './testkit.ts';
 
 const V = { rule: 'max-lines', path: 'src/a.ts', line: 801, message: '812 lines' };
@@ -179,19 +179,6 @@ test('readRepoRules: сбой check не отменяет diff', () => {
 	});
 });
 
-// Настоящий вызов repo-rules в форме порта.
-const real = (argv: string[], env: NodeJS.ProcessEnv = {}): RepoRulesRun => {
-	const out: string[] = [];
-	const err: string[] = [];
-	const code = main(
-		argv,
-		env,
-		(s) => out.push(s),
-		(s) => err.push(s),
-	);
-	return { code, out: out.join('\n'), err: err.join('\n') };
-};
-
 let restore: () => void;
 beforeAll(() => {
 	restore = isolateGitConfig();
@@ -200,7 +187,7 @@ afterAll(() => restore());
 
 test('настоящий repo-rules: check --json читается как отчёт', () => {
 	const { dir } = gitRepo({ 'a.test.ts': "test.only('x', () => {});\n" });
-	expect(repoRulesPart(real(['-C', dir, 'check', '--json']))).toMatchObject({
+	expect(repoRulesPart(inProcessRepoRules(['-C', dir, 'check', '--json'], {}))).toMatchObject({
 		violations: [{ rule: 'focused-skipped-tests', path: 'a.test.ts', line: 1 }],
 		stale: [],
 	});
@@ -210,15 +197,15 @@ test('настоящий repo-rules: diff --json с базой читается 
 	const { dir } = gitRepo({ 'a.test.ts': 'expect(1).toBe(1);\nexpect(1).toBe(1);\n' });
 	writeFileSync(join(dir, 'a.test.ts'), 'expect(1).toBe(1);\n');
 	git(dir, 'commit', '-am', 'drop');
-	expect(repoRulesPart(real(['-C', dir, 'diff', '--json', '--base', 'origin/main']))).toMatchObject(
-		{
-			violations: [{ rule: 'removed-assertions', path: 'a.test.ts', line: 0 }],
-		},
-	);
+	expect(
+		repoRulesPart(inProcessRepoRules(['-C', dir, 'diff', '--json', '--base', 'origin/main'], {})),
+	).toMatchObject({
+		violations: [{ rule: 'removed-assertions', path: 'a.test.ts', line: 0 }],
+	});
 });
 
 test('настоящий repo-rules: каталог вне git — unavailable без префикса', () => {
-	const part = repoRulesPart(real(['-C', repoDir({}), 'check', '--json']));
+	const part = repoRulesPart(inProcessRepoRules(['-C', repoDir({}), 'check', '--json'], {}));
 	expect(part).toHaveProperty('unavailable');
 	expect((part as { unavailable: string }).unavailable.startsWith('git rev-parse failed')).toBe(
 		true,

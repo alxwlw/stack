@@ -3,8 +3,9 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { type Canon, loadCanon } from './canon.ts';
-import { syncOutput, syncRepo } from './check.ts';
+import { syncRepo } from './check.ts';
 import { readStackConfig, StackConfigError } from './config.ts';
+import { type Print, printLines, syncOutput } from './output.ts';
 import type { PeersReader } from './peers.ts';
 import { peersBaseline } from './peers-baseline.ts';
 import { type Registry, type WaitOptions, waitVisible } from './registry.ts';
@@ -33,8 +34,6 @@ export interface GitHub {
 	openPrs(): Promise<OpenPr[]>; // все открытые PR репозитория
 	closePr(number: number, comment: string): Promise<void>; // закрыть с комментарием; ветку не трогает
 }
-
-export type Print = (stream: 'out' | 'err', line: string) => void;
 
 export interface PublishOptions {
 	repoRoot: string;
@@ -311,9 +310,7 @@ export async function syncPr(opts: SyncPrOptions, ports: SyncPrPorts): Promise<0
 		try {
 			const cfg = readStackConfig(repoRoot);
 			canon = loadCanon(cfg);
-			const out = syncOutput(syncRepo(repoRoot, canon, cfg.exceptions));
-			for (const line of out.stderr) print('err', line);
-			for (const line of out.stdout) print('out', line);
+			printLines(print, syncOutput(syncRepo(repoRoot, canon, cfg.exceptions)));
 		} catch (error) {
 			if (error instanceof StackConfigError) {
 				print('err', error.message);

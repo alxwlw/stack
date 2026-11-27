@@ -14,7 +14,7 @@ import {
 	parseMarkdownlint,
 } from './guardrails-markdownlint.ts';
 import { type GuardrailRun, spawnRunner } from './guardrails-port.ts';
-import { canonFile, repoDir } from './testkit.ts';
+import { canonFile, repoDir, testEnv } from './testkit.ts';
 
 const DEPENDENCY = (
 	JSON.parse(readFileSync(join(import.meta.dir, '..', 'package.json'), 'utf8')) as {
@@ -187,7 +187,7 @@ describe('настоящий раннер', () => {
 	};
 	const runIn = (dir: string) => {
 		const { cmd, argv } = markdownlintCommand();
-		return spawnRunner(dir)(cmd, argv, dir);
+		return spawnRunner(dir, testEnv())(cmd, argv, dir);
 	};
 	const parsed = (dir: string) => {
 		const p = parseMarkdownlint(runIn(dir));
@@ -227,7 +227,7 @@ describe('настоящий раннер', () => {
 			writeFileSync(join(home, '.bunfig.toml'), 'preload = ["./missing.ts"]\n');
 			const dir = fixture(CANON_FILES);
 			const { cmd, argv } = markdownlintCommand();
-			const r = spawnRunner(dir)(cmd, argv, dir, { HOME: home, XDG_CONFIG_HOME: home });
+			const r = spawnRunner(dir, testEnv())(cmd, argv, dir, { HOME: home, XDG_CONFIG_HOME: home });
 			const p = parseMarkdownlint(r);
 			if ('unavailable' in p) throw new Error(p.unavailable);
 			expect(p.violations).toMatchObject(FINDING);

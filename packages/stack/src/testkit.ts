@@ -1,14 +1,24 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+	chmodSync,
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
 import { parse as parseYaml, stringify } from 'yaml';
 
 import { type Canon, canonDir, canonFor, loadCanon, readCanonSource } from './canon.ts';
+import { type CommandPorts, type ExitCode, runCommand } from './command.ts';
 import type { Profile } from './config.ts';
 import { STACK_RENOVATE_PRESET } from './deps.ts';
 import type { GuardrailRun, GuardrailRunner } from './guardrails-port.ts';
+import type { Line } from './output.ts';
 import { ownPackages } from './own-packages.ts';
 import type { PeersReader, PeersRun } from './peers.ts';
 import type { Served } from './registry.ts';
@@ -39,6 +49,23 @@ export function withPrivateTmpdir<T>(fn: (dir: string) => T): T {
 		else process.env.TMPDIR = saved;
 		rmSync(dir, { recursive: true, force: true });
 	}
+}
+
+/** Окружение для боевых adapter в тестах: окружение процесса без GITHUB_*, сверху — over. Читает
+ *  окружение в момент вызова: звать в тесте или beforeAll (после isolateGitConfig), не на верхнем уровне. */
+export function testEnv(over: Record<string, string> = {}): NodeJS.ProcessEnv {
+	const base = Object.entries(process.env).filter(([key]) => !key.startsWith('GITHUB_'));
+	return { ...Object.fromEntries(base), ...over };
+}
+
+/** Каталог с исполняемыми sh-скриптами и PATH, где он первый. */
+export function fakeBin(scripts: Record<string, string>): { path: string; env: { PATH: string } } {
+	const path = mkdtempSync(join(tmpdir(), 'stack-bin-'));
+	for (const [name, body] of Object.entries(scripts)) {
+		writeFileSync(join(path, name), `#!/bin/sh\n${body}\n`);
+		chmodSync(join(path, name), 0o755);
+	}
+	return { path, env: { PATH: `${path}:${process.env.PATH ?? ''}` } };
 }
 
 // Корень репозитория стека: тесты запускают proto и moon из него.
@@ -610,4 +637,87 @@ export async function runSyncPr(
 		},
 	);
 	return { code, journal, out, err, github: fake };
+}
+
+// Подставные порты функции команды. Печать копится в lines. journal: `peers <root>`,
+// `repo-rules <argv через пробел>`, `guardrails <root>` (вызов фабрики), `github <root>` (вызов фабрики),
+// `<cmd> <args>` и `<cmd> <args>|VERSION=<v>` (порт процессов), `served <name>@<version>` (реестр).
+// По умолчанию: peers — { status: 0, signal: null, stdout: '{}', stderr: '' }; repo-rules —
+// { code: 0, out: '', err: '' }; запуск инструмента Guardrails бросает; процесс — код 0; GitHub —
+// fakeGitHub(); реестр — виден и отдаётся. over заменяет порт целиком.
+export function fakeCommandPorts(over: Partial<CommandPorts> = {}): {
+	ports: CommandPorts;
+	lines: Line[];
+	journal: string[];
+	github: ReturnType<typeof fakeGitHub>;
+} {
+	const lines: Line[] = [];
+	const journal: string[] = [];
+	const github = fakeGitHub();
+	const ports: CommandPorts = {
+		print: (stream, text) => void lines.push({ stream, text }),
+		peers: (root) => {
+			journal.push(`peers ${root}`);
+			return { status: 0, signal: null, stdout: '{}', stderr: '' };
+		},
+		repoRules: (argv) => {
+			journal.push(`repo-rules ${argv.join(' ')}`);
+			return { code: 0, out: '', err: '' };
+		},
+		guardrails: (root) => {
+			journal.push(`guardrails ${root}`);
+			return (cmd, argv) => {
+				throw new Error(
+					`запуск инструмента Guardrails без подставного порта: ${cmd} ${argv.join(' ')}`,
+				);
+			};
+		},
+		run: (cmd, args, o) => {
+			const line = `${cmd} ${args.join(' ')}`;
+			journal.push(o.env?.VERSION ? `${line}|VERSION=${o.env.VERSION}` : line);
+			return 0;
+		},
+		github: (root) => {
+			journal.push(`github ${root}`);
+			return github.github;
+		},
+		registry: {
+			has: () => Promise.resolve(true),
+			served: (name, version) => {
+				journal.push(`served ${name}@${version}`);
+				return Promise.resolve('served');
+			},
+		},
+		...over,
+	};
+	return { ports, lines, journal, github };
+}
+
+// Команда в процессе на подставных портах: dir — cwd, окружение — только opts.env. out и err — строки
+// своего канала, каждая с переводом строки, как их увидел бы процесс.
+export async function runStack(
+	args: string[],
+	dir: string,
+	opts: { env?: Record<string, string>; ports?: Partial<CommandPorts> } = {},
+): Promise<{
+	code: ExitCode;
+	out: string;
+	err: string;
+	lines: Line[];
+	journal: string[];
+	github: ReturnType<typeof fakeGitHub>;
+}> {
+	const { ports, lines, journal, github } = fakeCommandPorts(opts.ports);
+	const code = await runCommand({ argv: args, env: opts.env ?? {}, cwd: dir }, ports);
+	return { code, ...channels(lines), lines, journal, github };
+}
+
+// Строки одного канала подряд, каждая с переводом строки, как их увидел бы процесс.
+export function channels(lines: readonly Line[]): { out: string; err: string } {
+	const channel = (stream: Line['stream']) =>
+		lines
+			.filter((l) => l.stream === stream)
+			.map((l) => `${l.text}\n`)
+			.join('');
+	return { out: channel('out'), err: channel('err') };
 }

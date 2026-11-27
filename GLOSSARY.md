@@ -63,7 +63,7 @@ A finding that `stack sync` can close, because it carries a `Change` (an edit of
 _Avoid_: diff, mismatch
 
 **Exception**:
-A recorded reason, in `.stack.jsonc`, why a consumer deliberately differs from the canon. It names an **address** (a `file`, or a `catalog` plus `name`) and covers the findings at that address; a covered finding is **held** (reported as suppressed, and left unapplied by `sync`). An exception that covers nothing any more is itself a `stale-exception` finding. An exception on a `catalog` plus `name` also holds the `inline-version` finding of the same package in any `package.json` (the knip case in `fixtures/node`). `Exception`, `EXCEPTION_SHAPES`, `EXCEPTION_KEYS`, `exceptionProblem`, `exceptionSchema`, `covers`, `resolve`, `allowedLine` in `packages/stack/src/exceptions.ts`; `held` in `SyncResult`, `packages/stack/src/check.ts`.
+A recorded reason, in `.stack.jsonc`, why a consumer deliberately differs from the canon. It names an **address** (a `file`, or a `catalog` plus `name`) and covers the findings at that address; a covered finding is **held** (reported as suppressed, and left unapplied by `sync`). An exception that covers nothing any more is itself a `stale-exception` finding. An exception on a `catalog` plus `name` also holds the `inline-version` finding of the same package in any `package.json` (the knip case in `fixtures/node`). `Exception`, `EXCEPTION_SHAPES`, `EXCEPTION_KEYS`, `exceptionProblem`, `exceptionSchema`, `covers`, `resolve` in `packages/stack/src/exceptions.ts`; `held` in `SyncResult`, `packages/stack/src/check.ts`.
 _Avoid_: ignore, override, waiver
 
 **Peer baseline**:
@@ -89,15 +89,15 @@ _Avoid_: workflow lint, CI policy
 ### Commands
 
 **Check**:
-Reports every finding of a consumer and fails when any is not held by an exception; it also returns notes (`CheckReport`), which do not change the exit code. The findings of the rule groups pass the same `resolve` as the others. `stack check`, `checkRepo` in `packages/stack/src/check.ts`.
+Reports every finding of a consumer and fails when any is not held by an exception; it also returns notes (`CheckReport`), which do not change the exit code. The findings of the rule groups pass the same `resolve` as the others. `stack check` is the `check` entry of `COMMANDS` in `packages/stack/src/command.ts`; it calls `checkRepo` in `packages/stack/src/check.ts`. Its lines and exit code are assembled by `checkOutput` in `packages/stack/src/output.ts`, the one module that turns a finding into a line.
 _Avoid_: lint, audit, verify
 
 **Sync**:
-Applies every drift the exceptions do not hold, so a following check has nothing left among the drifts. `stack sync`, `syncRepo` in `packages/stack/src/check.ts`.
+Applies every drift the exceptions do not hold, so a following check has nothing left among the drifts. `stack sync` is the `sync` entry of `COMMANDS` in `packages/stack/src/command.ts`; it calls `syncRepo` in `packages/stack/src/check.ts`. Its lines are assembled by `syncOutput` in `packages/stack/src/output.ts`.
 _Avoid_: update, apply, fix
 
 **Peer baseline update**:
-The only writer of the **Peer baseline**: `--init` records every current issue in a new file, no flag drops fixed records and refuses new ones, `--allow-grow` records the current set; `stack sync-pr` runs it as `drop-fixed`, which only drops fixed records and stays silent otherwise. A baseline that does not parse is never overwritten. `stack peers-baseline`, `peersBaseline` in `packages/stack/src/peers-baseline.ts`.
+The only writer of the **Peer baseline**: `--init` records every current issue in a new file, no flag drops fixed records and refuses new ones, `--allow-grow` records the current set; `stack sync-pr` runs it as `drop-fixed`, which only drops fixed records and stays silent otherwise. A baseline that does not parse is never overwritten. `stack peers-baseline` is the `peers-baseline` entry of `COMMANDS` in `packages/stack/src/command.ts`; it calls `peersBaseline` in `packages/stack/src/peers-baseline.ts`.
 _Avoid_: regenerate, refresh
 
 ### Releasing

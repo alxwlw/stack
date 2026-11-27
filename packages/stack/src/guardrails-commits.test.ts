@@ -20,6 +20,7 @@ import {
 	put,
 	repoDir,
 	ROOT,
+	testEnv,
 } from './testkit.ts';
 
 // 64 hex собираются во время выполнения, поэтому eth-правило канона не видит их в исходнике; в имени
@@ -435,13 +436,9 @@ describe('настоящий gitleaks: коммиты PR', () => {
 		return { dir, a };
 	}
 
-	function scan(dir: string, pr: PrBase) {
-		const out = readGuardrails(
-			dir,
-			prototools,
-			{ run: spawnRunner(dir), env: { ...process.env, GITLEAKS_BIN: bin } },
-			pr,
-		);
+	function scan(dir: string, pr: PrBase, over: Record<string, string> = {}) {
+		const env = testEnv({ GITLEAKS_BIN: bin, ...over });
+		const out = readGuardrails(dir, prototools, { run: spawnRunner(dir, env), env }, pr);
 		if ('unavailable' in out) throw new Error(out.unavailable);
 		return out;
 	}
@@ -504,16 +501,9 @@ describe('настоящий gitleaks: коммиты PR', () => {
 		'GIT_TRACE=1: трассировка git в stderr — commits недоступны с ERR, не ноль нарушений',
 		() => {
 			const { dir } = feature();
-			const saved = process.env.GIT_TRACE;
-			process.env.GIT_TRACE = '1';
-			try {
-				// Переменная должна дойти до дочернего процесса: окружение снимает spawnRunner при создании.
-				const out = scan(dir, { base: 'main' });
-				expect('unavailable' in out.commits && out.commits.unavailable).toStartWith('ERR ');
-			} finally {
-				if (saved === undefined) Reflect.deleteProperty(process.env, 'GIT_TRACE');
-				else process.env.GIT_TRACE = saved;
-			}
+			// Переменная должна дойти до дочернего процесса: окружение из параметра чистит spawnRunner.
+			const out = scan(dir, { base: 'main' }, { GIT_TRACE: '1' });
+			expect('unavailable' in out.commits && out.commits.unavailable).toStartWith('ERR ');
 		},
 		TIMEOUT,
 	);
@@ -531,18 +521,10 @@ describe('настоящий gitleaks: коммиты PR', () => {
 			const { dir, a } = feature();
 			const cfgDir = repoDir({ gitconfig: config });
 			dirs.push(cfgDir);
-			const saved = process.env.GIT_CONFIG_GLOBAL;
-			process.env.GIT_CONFIG_GLOBAL = join(cfgDir, 'gitconfig');
-			try {
-				// Переменная читается spawnRunner при создании порта, поэтому порт строится после неё.
-				const out = scan(dir, { base: 'main' });
-				expect(
-					'violations' in out.commits && out.commits.violations.map((v) => v.message),
-				).toStrictEqual([`${DESCRIPTION} (commit ${a.slice(0, 12)})`]);
-			} finally {
-				if (saved === undefined) Reflect.deleteProperty(process.env, 'GIT_CONFIG_GLOBAL');
-				else process.env.GIT_CONFIG_GLOBAL = saved;
-			}
+			const out = scan(dir, { base: 'main' }, { GIT_CONFIG_GLOBAL: join(cfgDir, 'gitconfig') });
+			expect(
+				'violations' in out.commits && out.commits.violations.map((v) => v.message),
+			).toStrictEqual([`${DESCRIPTION} (commit ${a.slice(0, 12)})`]);
 		},
 		TIMEOUT,
 	);

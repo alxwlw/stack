@@ -7,7 +7,7 @@ import { expect, test } from 'bun:test';
 import { parsePins } from './canon.ts';
 import { binVar, locateTool, protoBinPath, repoPins, toolVersion } from './guardrails-bin.ts';
 import { type GuardrailRun, type GuardrailsPort, spawnRunner } from './guardrails-port.ts';
-import { ROOT } from './testkit.ts';
+import { ROOT, testEnv } from './testkit.ts';
 
 type Call = [string, string[]];
 
@@ -180,8 +180,8 @@ test('настоящий proto: бинарники ровно версий пи�
 	const pins = repoPins(readFileSync(join(ROOT, '.prototools'), 'utf8'));
 	if ('unavailable' in pins) throw new Error(pins.unavailable);
 	const port: GuardrailsPort = {
-		run: spawnRunner(ROOT),
-		env: { ...process.env, ACTIONLINT_BIN: '', SHELLCHECK_BIN: '' },
+		run: spawnRunner(ROOT, testEnv()),
+		env: testEnv({ ACTIONLINT_BIN: '', SHELLCHECK_BIN: '' }),
 	};
 	const a = locateTool('actionlint', pins, port);
 	const s = locateTool('shellcheck', pins, port);
@@ -196,7 +196,7 @@ test('настоящий proto: бинарники ровно версий пи�
 
 test('spawnRunner: код 0, и -1 с причиной для несуществующей команды', () => {
 	const tmp = mkdtempSync(join(tmpdir(), 'guardrails-bin-'));
-	const run = spawnRunner(tmp);
+	const run = spawnRunner(tmp, testEnv());
 	expect(run('git', ['--version']).code).toBe(0);
 	const bad = run('no-such-cmd-guardrails', []);
 	expect(bad.code).toBe(-1);
@@ -229,8 +229,8 @@ test('locateTool gitleaks: проба — `version`, версия не пина 
 
 test('настоящий proto: gitleaks ровно версии пина корня репозитория', () => {
 	const port: GuardrailsPort = {
-		run: spawnRunner(ROOT),
-		env: { ...process.env, GITLEAKS_BIN: '' },
+		run: spawnRunner(ROOT, testEnv()),
+		env: testEnv({ GITLEAKS_BIN: '' }),
 	};
 	const g = locateTool('gitleaks', repoPins(readFileSync(join(ROOT, '.prototools'), 'utf8')), port);
 	if ('unavailable' in g) throw new Error(g.unavailable);
@@ -239,81 +239,83 @@ test('настоящий proto: gitleaks ровно версии пина кор
 }, 30_000);
 
 test('spawnRunner: окружение без SHELLCHECK_OPTS и конфигов gitleaks; cwd вызова важнее корня', () => {
-	const names = ['SHELLCHECK_OPTS', 'GITLEAKS_CONFIG', 'GITLEAKS_CONFIG_TOML'] as const;
-	const saved = names.map((n) => process.env[n]);
-	for (const n of names) process.env[n] = '/somewhere';
+	const env = testEnv({
+		SHELLCHECK_OPTS: '/somewhere',
+		GITLEAKS_CONFIG: '/somewhere',
+		GITLEAKS_CONFIG_TOML: '/somewhere',
+	});
+	const root = mkdtempSync(join(tmpdir(), 'guardrails-bin-'));
+	const other = mkdtempSync(join(tmpdir(), 'guardrails-bin-'));
+	const run = spawnRunner(root, env);
+	const echo = [
+		'-c',
+		'echo "${SHELLCHECK_OPTS-unset} ${GITLEAKS_CONFIG-unset} ${GITLEAKS_CONFIG_TOML-unset}"',
+	];
+	expect(run('sh', echo).out).toBe('unset unset unset\n');
+	expect(run('sh', ['-c', 'pwd -P']).out.trim()).toBe(realpathSync(root));
+	expect(run('sh', ['-c', 'pwd -P'], other).out.trim()).toBe(realpathSync(other));
+});
+
+test('testEnv: ключи GITHUB_* окружения процесса отброшены, явные над-значения остаются', () => {
+	const prior = process.env.GITHUB_ACTIONS;
+	process.env.GITHUB_ACTIONS = 'true';
 	try {
-		const root = mkdtempSync(join(tmpdir(), 'guardrails-bin-'));
-		const other = mkdtempSync(join(tmpdir(), 'guardrails-bin-'));
-		const run = spawnRunner(root);
-		const echo = [
-			'-c',
-			'echo "${SHELLCHECK_OPTS-unset} ${GITLEAKS_CONFIG-unset} ${GITLEAKS_CONFIG_TOML-unset}"',
-		];
-		expect(run('sh', echo).out).toBe('unset unset unset\n');
-		expect(run('sh', ['-c', 'pwd -P']).out.trim()).toBe(realpathSync(root));
-		expect(run('sh', ['-c', 'pwd -P'], other).out.trim()).toBe(realpathSync(other));
+		expect('GITHUB_ACTIONS' in testEnv()).toBe(false);
+		expect(testEnv({ GITHUB_X: '1' }).GITHUB_X).toBe('1');
 	} finally {
-		names.forEach((n, i) => {
-			const v = saved[i];
-			if (v === undefined) Reflect.deleteProperty(process.env, n);
-			else process.env[n] = v;
-		});
+		if (prior === undefined) Reflect.deleteProperty(process.env, 'GITHUB_ACTIONS');
+		else process.env.GITHUB_ACTIONS = prior;
 	}
 });
 
 test('spawnRunner: цвет и формат лога git нейтрализованы через GIT_CONFIG_*, уже заданные пары сохраняются', () => {
-	const names = ['GIT_CONFIG_COUNT', 'GIT_CONFIG_KEY_0', 'GIT_CONFIG_VALUE_0'] as const;
-	const saved = names.map((n) => process.env[n]);
 	const show = ['-c', 'env | grep "^GIT_CONFIG_" | sort'];
-	try {
-		for (const n of names) Reflect.deleteProperty(process.env, n);
-		const root = mkdtempSync(join(tmpdir(), 'guardrails-bin-'));
-		expect(spawnRunner(root)('sh', show).out).toBe(
-			[
-				'GIT_CONFIG_COUNT=5',
-				'GIT_CONFIG_KEY_0=color.ui',
-				'GIT_CONFIG_KEY_1=color.diff',
-				'GIT_CONFIG_KEY_2=format.pretty',
-				'GIT_CONFIG_KEY_3=log.date',
-				'GIT_CONFIG_KEY_4=log.abbrevCommit',
-				'GIT_CONFIG_VALUE_0=never',
-				'GIT_CONFIG_VALUE_1=never',
-				'GIT_CONFIG_VALUE_2=medium',
-				'GIT_CONFIG_VALUE_3=default',
-				'GIT_CONFIG_VALUE_4=false',
-				'',
-			].join('\n'),
-		);
-		process.env.GIT_CONFIG_COUNT = '1';
-		process.env.GIT_CONFIG_KEY_0 = 'acme.key';
-		process.env.GIT_CONFIG_VALUE_0 = 'x';
-		expect(spawnRunner(root)('sh', show).out).toBe(
-			[
-				'GIT_CONFIG_COUNT=6',
-				'GIT_CONFIG_KEY_0=acme.key',
-				'GIT_CONFIG_KEY_1=color.ui',
-				'GIT_CONFIG_KEY_2=color.diff',
-				'GIT_CONFIG_KEY_3=format.pretty',
-				'GIT_CONFIG_KEY_4=log.date',
-				'GIT_CONFIG_KEY_5=log.abbrevCommit',
-				'GIT_CONFIG_VALUE_0=x',
-				'GIT_CONFIG_VALUE_1=never',
-				'GIT_CONFIG_VALUE_2=never',
-				'GIT_CONFIG_VALUE_3=medium',
-				'GIT_CONFIG_VALUE_4=default',
-				'GIT_CONFIG_VALUE_5=false',
-				'',
-			].join('\n'),
-		);
-		// Мусор в счётчике не ломает прогон: отсчёт с нуля.
-		process.env.GIT_CONFIG_COUNT = 'abc';
-		expect(spawnRunner(root)('sh', show).out).toContain('GIT_CONFIG_COUNT=5\n');
-	} finally {
-		names.forEach((n, i) => {
-			const v = saved[i];
-			if (v === undefined) Reflect.deleteProperty(process.env, n);
-			else process.env[n] = v;
-		});
-	}
+	const root = mkdtempSync(join(tmpdir(), 'guardrails-bin-'));
+	// Окружение процесса тестов может нести свои пары: родитель для spawnRunner — без них.
+	const parent = (over: Record<string, string> = {}): NodeJS.ProcessEnv => {
+		const env = testEnv();
+		for (const n of ['GIT_CONFIG_COUNT', 'GIT_CONFIG_KEY_0', 'GIT_CONFIG_VALUE_0']) {
+			Reflect.deleteProperty(env, n);
+		}
+		return { ...env, ...over };
+	};
+	expect(spawnRunner(root, parent())('sh', show).out).toBe(
+		[
+			'GIT_CONFIG_COUNT=5',
+			'GIT_CONFIG_KEY_0=color.ui',
+			'GIT_CONFIG_KEY_1=color.diff',
+			'GIT_CONFIG_KEY_2=format.pretty',
+			'GIT_CONFIG_KEY_3=log.date',
+			'GIT_CONFIG_KEY_4=log.abbrevCommit',
+			'GIT_CONFIG_VALUE_0=never',
+			'GIT_CONFIG_VALUE_1=never',
+			'GIT_CONFIG_VALUE_2=medium',
+			'GIT_CONFIG_VALUE_3=default',
+			'GIT_CONFIG_VALUE_4=false',
+			'',
+		].join('\n'),
+	);
+	const acme = { GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'acme.key', GIT_CONFIG_VALUE_0: 'x' };
+	expect(spawnRunner(root, parent(acme))('sh', show).out).toBe(
+		[
+			'GIT_CONFIG_COUNT=6',
+			'GIT_CONFIG_KEY_0=acme.key',
+			'GIT_CONFIG_KEY_1=color.ui',
+			'GIT_CONFIG_KEY_2=color.diff',
+			'GIT_CONFIG_KEY_3=format.pretty',
+			'GIT_CONFIG_KEY_4=log.date',
+			'GIT_CONFIG_KEY_5=log.abbrevCommit',
+			'GIT_CONFIG_VALUE_0=x',
+			'GIT_CONFIG_VALUE_1=never',
+			'GIT_CONFIG_VALUE_2=never',
+			'GIT_CONFIG_VALUE_3=medium',
+			'GIT_CONFIG_VALUE_4=default',
+			'GIT_CONFIG_VALUE_5=false',
+			'',
+		].join('\n'),
+	);
+	// Мусор в счётчике не ломает прогон: отсчёт с нуля.
+	expect(spawnRunner(root, parent({ GIT_CONFIG_COUNT: 'abc' }))('sh', show).out).toContain(
+		'GIT_CONFIG_COUNT=5\n',
+	);
 });

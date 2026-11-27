@@ -1,13 +1,14 @@
-import { readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 
 import { parsePins } from './canon.ts';
-import { BARE, git, gitRepo, isolateGitConfig, protoBin, ROOT, runCli as run } from './testkit.ts';
+import { git, isolateGitConfig, protoBin, ROOT } from './testkit.ts';
+import { checkDir, guardRepos, syncDir } from './testkit-acceptance.ts';
 
-// Гигиена workflow в группе guardrails через настоящий cli на пиннутых actionlint и shellcheck.
-describe('гигиена workflow в check с группой guardrails через настоящий cli', () => {
+// Гигиена workflow в группе guardrails на настоящих инструментах: пиннутые actionlint и shellcheck.
+describe('гигиена workflow в check с группой guardrails на настоящих инструментах', () => {
 	const BUILD = '.github/workflows/build.yml';
 	const TIMEOUT = 60_000;
 	const NO_DRIFT = 'canon: no drift\n';
@@ -32,24 +33,16 @@ describe('гигиена workflow в check с группой guardrails чере
 		};
 	});
 	// Каталоги фикстур файла: убираются в afterAll, в том числе после упавшего теста.
-	const made: string[] = [];
+	const { guardRepo, clean } = guardRepos();
 	afterAll(() => {
 		restore();
-		for (const d of made) rmSync(d, { recursive: true, force: true });
+		clean();
 	});
 
-	// Репозиторий под git: init с группой (или без), sync, всё закоммичено; файл BUILD — после sync, чтобы
-	// чужой пин дожил до check.
-	async function guardRepo(build: string, opts: { group?: boolean } = {}): Promise<string> {
-		const { dir, remote } = gitRepo({ ...BARE });
-		made.push(dir, remote);
-		const withGroup = opts.group === false ? [] : ['--with', 'guardrails'];
-		expect((await run(['init', '--profile', 'node', ...withGroup], dir)).code).toBe(0);
-		expect((await run(['sync'], dir)).code).toBe(0);
-		const path = join(dir, BUILD);
-		git(dir, 'add', '-A');
-		git(dir, 'commit', '-m', 'canon');
-		writeFileSync(path, build);
+	// Репозиторий под git на общем guardRepo; файл BUILD — после sync, чтобы чужой пин дожил до check.
+	function buildRepo(build: string, opts: { group?: boolean } = {}): string {
+		const { dir } = guardRepo({}, opts);
+		writeFileSync(join(dir, BUILD), build);
 		git(dir, 'add', '-A');
 		git(dir, 'commit', '-m', 'build');
 		return dir;
@@ -57,9 +50,9 @@ describe('гигиена workflow в check с группой guardrails чере
 
 	test(
 		'check: находка гигиены, выход 1',
-		async () => {
-			const dir = await guardRepo(BARE_BUILD.replace(STALE_PIN, PINS.proto ?? ''));
-			const r = await run(['check'], dir, tools);
+		() => {
+			const dir = buildRepo(BARE_BUILD.replace(STALE_PIN, PINS.proto ?? ''));
+			const r = checkDir(dir, { env: tools });
 			expect(r.code).toBe(1);
 			expect(r.err).toContain(LINE);
 			expect(r.err).toContain('stack sync does not fix these');
@@ -69,9 +62,9 @@ describe('гигиена workflow в check с группой guardrails чере
 
 	test(
 		'check: ключи дописаны — no drift',
-		async () => {
-			const dir = await guardRepo(CLEAN_BUILD.replace(STALE_PIN, PINS.proto ?? ''));
-			const r = await run(['check'], dir, tools);
+		() => {
+			const dir = buildRepo(CLEAN_BUILD.replace(STALE_PIN, PINS.proto ?? ''));
+			const r = checkDir(dir, { env: tools });
 			expect(r.out).toBe(NO_DRIFT);
 			expect(r.code).toBe(0);
 		},
@@ -80,11 +73,11 @@ describe('гигиена workflow в check с группой guardrails чере
 
 	test(
 		'без группы вывод прежний',
-		async () => {
-			const dir = await guardRepo(BARE_BUILD.replace(STALE_PIN, PINS.proto ?? ''), {
+		() => {
+			const dir = buildRepo(BARE_BUILD.replace(STALE_PIN, PINS.proto ?? ''), {
 				group: false,
 			});
-			const r = await run(['check'], dir, tools);
+			const r = checkDir(dir, { env: tools });
 			expect(r.out).toBe(NO_DRIFT);
 			expect(r.err).not.toContain('workflow-hygiene');
 			expect(r.code).toBe(0);
@@ -94,13 +87,13 @@ describe('гигиена workflow в check с группой guardrails чере
 
 	test(
 		'sync правит копию пина в том же файле и не трогает гигиену',
-		async () => {
-			const dir = await guardRepo(BARE_BUILD);
-			const before = await run(['check'], dir, tools);
+		() => {
+			const dir = buildRepo(BARE_BUILD);
+			const before = checkDir(dir, { env: tools });
 			expect(before.code).toBe(1);
 			expect(before.err).toContain('toolchain-pin');
 			expect(before.err).toContain(LINE);
-			expect((await run(['sync'], dir, tools)).code).toBe(0);
+			syncDir(dir);
 			const text = readFileSync(join(dir, BUILD), 'utf8');
 			expect(text).toContain(`proto-version: ${PINS.proto}`);
 			expect(text).not.toContain(STALE_PIN);
@@ -108,7 +101,7 @@ describe('гигиена workflow в check с группой guardrails чере
 				expect(text).not.toContain(key);
 			git(dir, 'add', '-A');
 			git(dir, 'commit', '-m', 'synced');
-			const after = await run(['check'], dir, tools);
+			const after = checkDir(dir, { env: tools });
 			expect(after.code).toBe(1);
 			expect(after.err).toContain(LINE);
 			expect(after.err).not.toContain('toolchain-pin');

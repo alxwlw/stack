@@ -15,7 +15,7 @@ import {
 	yamllintArgv,
 	yamllintConfig,
 } from './guardrails-yamllint.ts';
-import { canonFile, protoBin, repoDir } from './testkit.ts';
+import { canonFile, protoBin, repoDir, testEnv } from './testkit.ts';
 
 const run = (out: string, over: Partial<GuardrailRun> = {}): GuardrailRun => ({
 	code: 0,
@@ -223,7 +223,7 @@ describe('настоящий uv и yamllint', () => {
 		'две находки: key-duplicates и truthy; игнор и не-YAML не попадают',
 		() => {
 			const dir = fixture();
-			const parsed = parseYamllint(spawnRunner(dir)(uv, yamllintArgv('.yamllint'), dir));
+			const parsed = parseYamllint(spawnRunner(dir, testEnv())(uv, yamllintArgv('.yamllint'), dir));
 			if (!Array.isArray(parsed)) throw new Error(JSON.stringify(parsed));
 			expect(parsed.map((v) => `${v.rule} ${v.path}:${v.line}`).sort()).toStrictEqual([
 				'key-duplicates dup.yml:2',
@@ -238,7 +238,7 @@ describe('настоящий uv и yamllint', () => {
 		() => {
 			const dir = fixture();
 			rmSync(join(dir, '.yamllint-ignores'));
-			const parsed = parseYamllint(spawnRunner(dir)(uv, yamllintArgv('.yamllint'), dir));
+			const parsed = parseYamllint(spawnRunner(dir, testEnv())(uv, yamllintArgv('.yamllint'), dir));
 			expect(parsed).toMatchObject({ unavailable: expect.stringMatching(/^FileNotFoundError/) });
 		},
 		TIMEOUT,
@@ -250,7 +250,7 @@ describe('настоящий uv и yamllint', () => {
 			const dir = fixture();
 			const cache = mkdtempSync(join(tmpdir(), 'stack-uv-cache-'));
 			dirs.push(cache);
-			const r = spawnRunner(dir)(uv, yamllintArgv('.yamllint'), dir, {
+			const r = spawnRunner(dir, testEnv())(uv, yamllintArgv('.yamllint'), dir, {
 				UV_OFFLINE: '1',
 				UV_CACHE_DIR: cache,
 			});
@@ -266,7 +266,11 @@ describe('настоящий uv и yamllint', () => {
 		() => {
 			const dir = fixture();
 			// argv — из yamllintArgv с хвостом `-f parsable -c <config> .`, заменённым на `--version`.
-			const r = spawnRunner(dir)(uv, [...yamllintArgv('.yamllint').slice(0, -5), '--version'], dir);
+			const r = spawnRunner(dir, testEnv())(
+				uv,
+				[...yamllintArgv('.yamllint').slice(0, -5), '--version'],
+				dir,
+			);
 			expect(r.out.trim()).toBe(`yamllint ${YAMLLINT_VERSION}`);
 		},
 		TIMEOUT,

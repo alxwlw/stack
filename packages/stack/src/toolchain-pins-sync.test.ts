@@ -6,7 +6,8 @@ import { expect, test } from 'bun:test';
 import { loadCanon } from './canon.ts';
 import { syncRepo } from './check.ts';
 import { readSnapshot } from './repo.ts';
-import { BARE, repoDir, runCli as run, testCanon } from './testkit.ts';
+import { BARE, repoDir, testCanon } from './testkit.ts';
+import { checkDir, initRepo, syncDir } from './testkit-acceptance.ts';
 
 const PINS = { node: '26.13.1', pnpm: '12.21.0', bun: '1.4.4', proto: '0.64.0' };
 const canon = testCanon({ pins: PINS });
@@ -116,34 +117,34 @@ const CLI_DOCKERFILE = `FROM node:1.0.0-slim AS deps\nRUN npm i -g pnpm@1.0.0\nF
 const CLI_SYNCED = `FROM node:${NODE_PINS.node}-slim AS deps\nRUN npm i -g pnpm@${NODE_PINS.pnpm}\nFROM oven/bun:${bunMinor}-alpine\n`;
 const pinLines = (err: string) => err.split('\n').filter((l) => l.startsWith('toolchain-pin: '));
 
-async function synced() {
+function synced() {
 	const dir = repoDir(BARE);
-	await run(['init', '--profile', 'node'], dir);
-	await run(['sync'], dir);
+	initRepo(dir);
+	syncDir(dir);
 	return dir;
 }
 
-test('CLI: check находит копии, sync переписывает, повторный check и sync чисты', async () => {
+test('приёмка: check находит копии, sync переписывает, повторный check и sync чисты', async () => {
 	expect(bunMinor).toMatch(/^\d+\.\d+$/);
-	const dir = await synced();
+	const dir = synced();
 	const path = join(dir, 'apps/api/Dockerfile');
 	await Bun.write(path, CLI_DOCKERFILE);
-	const checked = await run(['check'], dir);
+	const checked = checkDir(dir);
 	expect(checked.code).toBe(1);
 	expect(pinLines(checked.err)).toStrictEqual([
 		`toolchain-pin: apps/api/Dockerfile — node 1.0.0 instead of ${NODE_PINS.node} (line 1), pnpm 1.0.0 instead of ${NODE_PINS.pnpm} (line 2): pin copies follow .prototools`,
 	]);
-	const fixed = await run(['sync'], dir);
+	const fixed = syncDir(dir);
 	expect(fixed.out).toContain(
 		`apps/api/Dockerfile: node 1.0.0 → ${NODE_PINS.node}, pnpm 1.0.0 → ${NODE_PINS.pnpm}`,
 	);
 	expect(read(dir, 'apps/api/Dockerfile')).toBe(CLI_SYNCED);
-	expect((await run(['check'], dir)).code).toBe(0);
-	expect((await run(['sync'], dir)).out).toContain('canon already up to date');
+	expect(checkDir(dir).code).toBe(0);
+	expect(syncDir(dir).out).toContain('canon already up to date');
 });
 
-test('CLI: исключение на файл — check чист и сообщает allowed, sync файл не трогает', async () => {
-	const dir = await synced();
+test('приёмка: исключение на файл — check чист и сообщает allowed, sync файл не трогает', async () => {
+	const dir = synced();
 	const config = read(dir, '.stack.jsonc');
 	const hold = '{ "file": "apps/api/Dockerfile", "reason": "image is built elsewhere" }';
 	expect(config).toContain('"exceptions"');
@@ -152,26 +153,26 @@ test('CLI: исключение на файл — check чист и сообща
 		config.replace(/"exceptions"\s*:\s*\[/, (m) => `${m}${hold},`),
 	);
 	await Bun.write(join(dir, 'apps/api/Dockerfile'), CLI_DOCKERFILE);
-	const checked = await run(['check'], dir);
+	const checked = checkDir(dir);
 	expect(checked.code).toBe(0);
 	expect(
 		checked.err
 			.split('\n')
 			.filter((l) => l.startsWith('allowed (image is built elsewhere): apps/api/Dockerfile — ')),
 	).toHaveLength(1);
-	await run(['sync'], dir);
+	syncDir(dir);
 	expect(read(dir, 'apps/api/Dockerfile')).toBe(CLI_DOCKERFILE);
 });
 
-test('CLI: workflow с proto-version — check находит, sync правит только версию', async () => {
-	const dir = await synced();
+test('приёмка: workflow с proto-version — check находит, sync правит только версию', async () => {
+	const dir = synced();
 	const path = '.github/workflows/build.yml';
 	const text = WORKFLOW.replace('0.60.2', '0.0.1');
 	await Bun.write(join(dir, path), text);
-	const checked = await run(['check'], dir);
+	const checked = checkDir(dir);
 	expect(checked.code).toBe(1);
 	expect(pinLines(checked.err)).toHaveLength(1);
-	await run(['sync'], dir);
+	syncDir(dir);
 	expect(read(dir, path)).toBe(text.replace("'0.0.1'", `'${NODE_PINS.proto}'`));
-	expect((await run(['check'], dir)).code).toBe(0);
+	expect(checkDir(dir).code).toBe(0);
 });
