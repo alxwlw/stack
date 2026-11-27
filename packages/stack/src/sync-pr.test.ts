@@ -274,6 +274,15 @@ describe('publishChanges', () => {
 		expect(github.created[0]?.title).toBe('chore: acme canon 1.2.3');
 	});
 
+	test('syncPr с package.json передаёт тексты канона из source после шагов установки', async () => {
+		const { dir } = gitRepo({ '.acme.jsonc': '{ "profile": "web" }', 'package.json': NODE_PKG });
+		const { code, github } = await runSyncPr(dir, { source: acmeSource() });
+		expect(code).toBe(0);
+		expect(github.created).toHaveLength(1);
+		expect(github.created[0]?.title).toBe('chore: acme canon 1.2.3');
+		expect(github.created[0]?.body).toStartWith('Canon 1.2.3 applied.\n- ');
+	});
+
 	test('повторный запуск: ветка пересоздана от нового HEAD, открытый PR переиспользован', async () => {
 		const { dir, remote } = gitRepo({ 'a.txt': 'a' });
 		put(dir, 'b.txt', 'b');
