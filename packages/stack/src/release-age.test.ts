@@ -400,3 +400,14 @@ test('запись <scope>/* покрывает пакеты своего scope 
 		'minimumReleaseAgeExclude: acme-engine@2.0.0',
 	]);
 });
+
+test('запись <имя>* не покрывает пакет, образец которого — точное имя', () => {
+	const acme = testCanon({
+		settings: ACME_SETTINGS,
+		catalogs: { dev: { '@acme/lint': '1.0.0', 'acme-engine': '2.0.0' } },
+	});
+	const text = `packages:\n  - packages/*\n\n${AGE}${KEY}:\n  - '@acme/*'\n  - 'acme-engine*'\n`;
+	expect(drift(text, acme).map((d) => d.fix)).toStrictEqual([
+		'minimumReleaseAgeExclude: acme-engine@2.0.0',
+	]);
+});

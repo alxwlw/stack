@@ -16,11 +16,7 @@ function covers(
 ): boolean {
 	const e = entry.trim();
 	if (e === name) return true;
-	if (
-		e.endsWith('*') &&
-		patterns.some((p) => p.endsWith('/') && e === `${p}*` && name.startsWith(p))
-	)
-		return true;
+	if (patterns.some((p) => p.endsWith('/') && e === `${p}*` && name.startsWith(p))) return true;
 	if (!e.startsWith(`${name}@`)) return false;
 	return e
 		.slice(name.length + 1)
