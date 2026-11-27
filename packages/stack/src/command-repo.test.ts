@@ -185,7 +185,7 @@ test('sync с исключением на файл: файл не тронут, 
 	expect((await runStack(['check'], dir)).code).toBe(0);
 });
 
-// dependabot.yml в репо — находка dependabot-config: её правят руками (перенос в Renovate), sync файл не трогает.
+// конфиг dependabot в репо — находка dependabot-config: её правят руками (перенос в Renovate), sync файл не трогает.
 const DEPENDABOT_CONFIG =
 	"version: 2\nupdates:\n  - package-ecosystem: 'npm'\n    directory: '/'\n    schedule:\n      interval: 'weekly'\n";
 
