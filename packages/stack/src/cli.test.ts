@@ -621,15 +621,9 @@ test('вывод check длиннее 128 КиБ доходит до канал�
 	expect(bytes).toBeGreaterThan(200_000);
 	const rc = join(mkdtempSync(join(tmpdir(), 'stack-rc-')), 'rc');
 	// Читатель через shell-канал: Response().text() выбирает канал слишком быстро и обрезания не видит.
+	// Без --repo: корень репозитория берётся из cwd процесса, его задаёт spawnIn.
 	const piped = await spawnIn(
-		[
-			'sh',
-			'-c',
-			'{ bun "$0" check --repo "$1" 2>&1 >/dev/null; echo $? >"$2"; } | wc -c',
-			CLI,
-			dir,
-			rc,
-		],
+		['sh', '-c', '{ bun "$0" check 2>&1 >/dev/null; echo $? >"$1"; } | wc -c', CLI, rc],
 		dir,
 	);
 	expect(Number(piped.out.trim())).toBe(bytes);

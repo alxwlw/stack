@@ -201,6 +201,20 @@ describe('runCommand', () => {
 		expect(r.out).toContain(`opened PR ${PR_URL}\n`);
 	});
 
+	test('sync-pr: порты реестра, peers и repo-rules доходят до syncPr', async () => {
+		const { dir } = gitRepo({
+			'.stack.jsonc': '{ "profile": "node", "with": ["peers", "repo-rules"] }',
+			'package.json': NODE_PKG,
+			'pnpm-lock.yaml': 'lockfileVersion: x\n',
+			'.stack-peers-baseline.json': `${JSON.stringify({ version: 1, peers: [] }, null, '\t')}\n`,
+		});
+		const r = await runStack(['sync-pr'], dir, { env: TOKEN_ENV });
+		expect(r.code, r.err).toBe(0);
+		expect(r.journal.filter((l) => l.startsWith('served ')).length).toBeGreaterThan(0);
+		expect(r.journal).toContain(`peers ${dir}`);
+		expect(r.journal.some((l) => l.startsWith(`repo-rules -C ${dir} `))).toBe(true);
+	});
+
 	test('peers-baseline: --init и --allow-grow вместе — код 2 до чтения конфигурации', async () => {
 		const r = await runStack(['peers-baseline', '--init', '--allow-grow'], repoDir(BARE));
 		expect(r).toMatchObject({

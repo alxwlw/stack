@@ -93,7 +93,7 @@ Reports every finding of a consumer and fails when any is not held by an excepti
 _Avoid_: lint, audit, verify
 
 **Sync**:
-Applies every drift the exceptions do not hold, so a following check has nothing left among the drifts. `stack sync` is the `sync` entry of `COMMANDS` in `packages/stack/src/command.ts`; it calls `syncRepo` in `packages/stack/src/check.ts`. Its lines are assembled by `syncOutput` in the same module.
+Applies every drift the exceptions do not hold, so a following check has nothing left among the drifts. `stack sync` is the `sync` entry of `COMMANDS` in `packages/stack/src/command.ts`; it calls `syncRepo` in `packages/stack/src/check.ts`. Its lines are assembled by `syncOutput` in `packages/stack/src/output.ts`.
 _Avoid_: update, apply, fix
 
 **Peer baseline update**:
