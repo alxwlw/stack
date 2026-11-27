@@ -17,6 +17,7 @@ import {
 import { type Profile, PROFILES, type StackConfig, StackConfigError } from './config.ts';
 import { RENOVATE_CONFIGS } from './repo.ts';
 import { canonBundles, canonFile, matchesAny, parseBundles, repoDir } from './testkit.ts';
+import { TEST_SETTINGS } from './testkit-sources.ts';
 
 // Не канон-файл: README лежит рядом с пакетом, а не в canon/.
 const README_PATH = join(import.meta.dir, '..', '..', '..', 'README.md');
@@ -33,6 +34,7 @@ const PROTOTOOLS = 'node = "26.8.1"\npnpm = "11.15.0"\n\n[plugins]\nx = "file://
 // Источник-литерал: loadCanon не нужен, canonFor получает канон значением.
 function fixtureSource(): CanonSource {
 	return {
+		settings: TEST_SETTINGS,
 		entries: [
 			{
 				src: 'files/editorconfig',
@@ -69,7 +71,7 @@ function fixtureSource(): CanonSource {
 		],
 		catalogs: { dev: { oxlint: '1.83.0', typescript: '7.0.2' }, libs: { react: '19.2.7' } },
 		groups: { files: ['moon-tasks'], catalogs: ['libs'], deprecated: ['renovate'], rules: [] },
-		manifest: { version: '0.0.0' },
+		manifest: { name: '@alxwlw/stack', version: '0.0.0' },
 	};
 }
 
@@ -188,6 +190,7 @@ test('readCanonSource на настоящем canon/: все записи ман
 // Литеральный canon/ на диске: manifest из записей, каталог только dev, два src-файла.
 const literalCanon = (files: unknown): string =>
 	repoDir({
+		'settings.json': JSON.stringify(TEST_SETTINGS),
 		'manifest.json': JSON.stringify({ files }),
 		'catalogs.json': '{ "dev": {} }',
 		'files/a': 'A',
@@ -292,7 +295,11 @@ test.each(badManifests)('readCanonSource отклоняет manifest: %s', (_nam
 });
 
 test('manifest.json с текстом null — files не массив', () => {
-	const dir = repoDir({ 'manifest.json': 'null', 'catalogs.json': '{ "dev": {} }' });
+	const dir = repoDir({
+		'settings.json': JSON.stringify(TEST_SETTINGS),
+		'manifest.json': 'null',
+		'catalogs.json': '{ "dev": {} }',
+	});
 	expect(() => readCanonSource(dir)).toThrow(/^canon manifest: "files" must be an array$/);
 });
 

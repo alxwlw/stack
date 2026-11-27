@@ -24,6 +24,10 @@ _Avoid_: feature, module, flag
 
 ### What the canon holds
 
+**Canon settings**:
+The names and texts a canon declares as data: its profile names, the name of the consumer config file, the command name, the own-package patterns and the sync-PR texts. `canon/settings.json`, checked where it is read (`checkSettings`, `packages/stack/src/canon-settings.ts`); a violation is a defect of the canon package, not a finding.
+_Avoid_: canon config, canon options
+
 **Canon file**:
 A file the canon places at a path (`dest`) in a consumer, listed in `canon/manifest.json` and stored under `canon/files/`. Its strategy is either **verbatim** (the consumer's copy must equal the canon's byte for byte) or **seed** (`create-if-absent`: written once, then owned by the consumer, and only its absence is drift; not the seed of a **Fixture**, which holds no canon file). A seed may name `satisfiedBy` paths, other legitimate names that already close the seeding. Three seeds — the gitleaks seed, `.oxlintrc.json` and `tsconfig.options.json` — have to keep extending the canon file or preset they are created with: present without that link, such a seed is a `canon-not-extended` finding, which `sync` does not fix and an exception on the file holds (`SEED_CHECKS`, `checkSeedExtends` in `packages/stack/src/seed-extends.ts`). The Renovate seed is under its own rule, `renovate-preset`, which no exception holds. The manifest is checked where it is read (`readCanonSource`): a profile outside `PROFILES`, a strategy outside `SYNC_STRATEGIES`, `satisfiedBy` on a verbatim file, an unknown key of an entry, or a `dest` listed twice for one profile is an error of the package, not a finding. `CanonFile`, `SyncStrategy`, `SYNC_STRATEGIES` in `packages/stack/src/canon.ts`; `planFiles` in `packages/stack/src/files.ts`.
 _Avoid_: template (for a verbatim file), config file

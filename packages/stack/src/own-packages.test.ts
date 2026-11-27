@@ -8,6 +8,7 @@ import { PROFILES } from './config.ts';
 import { ownPackages, ownVersion } from './own-packages.ts';
 
 const manifest = {
+	name: '@alxwlw/stack',
 	version: '1.2.3',
 	dependencies: { '@alxwlw/repo-rules': '1.2.3', yaml: '^2.9.1' },
 };
@@ -22,7 +23,11 @@ test('ownPackages: записи @alxwlw/* каталога dev, затем за�
 });
 
 test('ownPackages: версия зависимости — версия пакета, а не строка из dependencies', () => {
-	const m = { version: '1.2.3', dependencies: { '@alxwlw/repo-rules': 'workspace:*' } };
+	const m = {
+		name: '@alxwlw/stack',
+		version: '1.2.3',
+		dependencies: { '@alxwlw/repo-rules': 'workspace:*' },
+	};
 	expect(ownPackages({}, m)).toStrictEqual([{ name: '@alxwlw/repo-rules', version: '1.2.3' }]);
 });
 
@@ -33,7 +38,7 @@ test('ownPackages: имя и в каталоге, и в зависимостях
 });
 
 test('ownPackages: нет каталога dev, нет dependencies', () => {
-	expect(ownPackages(undefined, { version: '1.2.3' })).toStrictEqual([]);
+	expect(ownPackages(undefined, { name: '@alxwlw/stack', version: '1.2.3' })).toStrictEqual([]);
 	expect(ownPackages(undefined, manifest)).toStrictEqual([
 		{ name: '@alxwlw/repo-rules', version: '1.2.3' },
 	]);

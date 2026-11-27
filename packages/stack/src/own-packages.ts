@@ -7,6 +7,7 @@ import type { Wanted } from './registry.ts';
 export const SCOPE = '@alxwlw/';
 
 export interface StackManifest {
+	name: string;
 	version: string;
 	dependencies?: Record<string, string>;
 }

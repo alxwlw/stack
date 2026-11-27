@@ -35,6 +35,7 @@ import {
 	syncPr,
 	type SyncPrOptions,
 } from './sync-pr.ts';
+import { TEST_SETTINGS } from './testkit-sources.ts';
 
 // Тест со своим TMPDIR: перечисление временных каталогов видит только каталоги этого теста, а не
 // соседние процессы на том же хосте (раннеры CI делят /tmp). Каталог удаляется, TMPDIR возвращается.
@@ -78,11 +79,12 @@ export const SCHEMA_PATH = join(import.meta.dir, '..', 'schema.json');
 // зашитая в правило, осталась бы незамеченной (engines-node в deps.ts, packageManager в package-manager.ts).
 export function testCanon(over: Partial<Canon> = {}): Canon {
 	return {
+		settings: TEST_SETTINGS,
 		files: [],
 		catalogs: {},
 		pins: { node: '25.4.1', pnpm: '10.99.0' },
 		rules: [],
-		ownPackages: ownPackages(over.catalogs?.dev, { version: '0.0.0' }),
+		ownPackages: ownPackages(over.catalogs?.dev, { name: '@alxwlw/stack', version: '0.0.0' }),
 		...over,
 	};
 }

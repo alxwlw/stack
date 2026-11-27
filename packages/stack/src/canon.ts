@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { type CanonSettings, checkSettings } from './canon-settings.ts';
 import { type Profile, PROFILES, type StackConfig, StackConfigError } from './config.ts';
 import { ownManifest, ownPackages, type StackManifest } from './own-packages.ts';
 import type { Wanted } from './registry.ts';
@@ -119,6 +120,8 @@ export type CanonCatalogs = Record<string, Record<string, string>>;
 // Канон одного прогона как значение: уже отфильтрован под профиль и группы, содержимое файлов
 // прочитано, пины node и pnpm вычислены. Правила и план принимают его и не знают, где лежит каталог.
 export interface Canon {
+	/** Имена и тексты канона: профили, файл настроек, команда, образцы своих пакетов, тексты sync-PR. */
+	settings: CanonSettings;
 	files: { dest: string; content: string; strategy?: SyncStrategy; satisfiedBy?: string[] }[];
 	catalogs: CanonCatalogs;
 	pins: Pins;
@@ -156,6 +159,7 @@ export interface CanonGroups {
 // canon/ как значение: все записи манифеста с содержимым, каталоги и имена групп. Читается один раз;
 // выбор под профиль и with — чистый шаг canonFor.
 export interface CanonSource {
+	settings: CanonSettings;
 	entries: readonly (CanonFile & { content: string })[];
 	catalogs: CanonCatalogs;
 	groups: CanonGroups;
@@ -163,11 +167,26 @@ export interface CanonSource {
 	manifest: StackManifest;
 }
 
+// settings.json читается и проверяется первым: ошибка разбора называет файл, а не голый SyntaxError.
+function readSettings(dir: string): CanonSettings {
+	let raw: unknown;
+	try {
+		raw = JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8'));
+	} catch (error) {
+		if (error instanceof SyntaxError) {
+			throw new Error(`canon settings: settings.json does not parse as JSON: ${error.message}`);
+		}
+		throw error;
+	}
+	return checkSettings(raw);
+}
+
 // Единственное место, где canon/ и package.json пакета читаются с диска: manifest.json и catalogs.json
 // по разу, каждый src по разу, package.json пакета один раз (не зависит от dir).
 // Имена групп: файловые — поле group манифеста, каталожные — ключи catalogs.json кроме dev, устаревшие и
 // группы правил — константы этого модуля.
 export function readCanonSource(dir: string = canonDir()): CanonSource {
+	const settings = readSettings(dir);
 	const manifest = checkManifest(JSON.parse(readFileSync(join(dir, 'manifest.json'), 'utf8')));
 	const catalogs = JSON.parse(readFileSync(join(dir, 'catalogs.json'), 'utf8')) as CanonCatalogs;
 	const entries = manifest.map((f) => ({
@@ -180,7 +199,7 @@ export function readCanonSource(dir: string = canonDir()): CanonSource {
 		deprecated: DEPRECATED_GROUPS,
 		rules: RULE_GROUPS,
 	};
-	return { entries, catalogs, groups, manifest: ownManifest() };
+	return { settings, entries, catalogs, groups, manifest: ownManifest() };
 }
 
 // Все имена, допустимые в `with`: файловые, каталожные, устаревшие и группы правил — без повторов,
@@ -235,6 +254,7 @@ export function canonFor(source: CanonSource, cfg: StackConfig): Canon {
 	if (!pnpm) throw new Error('canon .prototools has no pnpm pin');
 	const rules = RULE_GROUPS.filter((g) => cfg.with.includes(g));
 	return {
+		settings: source.settings,
 		files,
 		catalogs,
 		pins: { ...rest, node, pnpm },
