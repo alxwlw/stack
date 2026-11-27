@@ -787,6 +787,23 @@ export function baselineDir(
 	};
 }
 
+// Один репозиторий приёмки: тело guardRepos().guardRepo; made копит каталоги для clean.
+function guardRepo(
+	made: string[],
+	files: Record<string, string>,
+	opts: { group?: boolean; profile?: Profile } = {},
+): { dir: string; remote: string } {
+	const profile = opts.profile ?? 'node';
+	const repo = gitRepo(profile === 'node' ? { ...BARE, ...files } : files);
+	made.push(repo.dir, repo.remote);
+	initRepo(repo.dir, { profile, with: opts.group === false ? [] : ['guardrails'] });
+	syncDir(repo.dir);
+	git(repo.dir, 'add', '-A');
+	git(repo.dir, 'commit', '-m', 'canon');
+	git(repo.dir, 'push', 'origin', 'main');
+	return repo;
+}
+
 /** Репозитории под git для приёмки групп правил. guardRepo: gitRepo из files (для профиля node — поверх
  *  BARE), initRepo с группой guardrails (group: false — без неё), syncDir, коммит `canon`, push в
  *  origin/main. clean удаляет все созданные каталоги: его зовёт afterAll файла. */
@@ -798,22 +815,10 @@ export function guardRepos(): {
 	clean(): void;
 } {
 	const made: string[] = [];
-	function guardRepo(
-		files: Record<string, string>,
-		opts: { group?: boolean; profile?: Profile } = {},
-	): { dir: string; remote: string } {
-		const profile = opts.profile ?? 'node';
-		const repo = gitRepo(profile === 'node' ? { ...BARE, ...files } : files);
-		made.push(repo.dir, repo.remote);
-		initRepo(repo.dir, { profile, with: opts.group === false ? [] : ['guardrails'] });
-		syncDir(repo.dir);
-		git(repo.dir, 'add', '-A');
-		git(repo.dir, 'commit', '-m', 'canon');
-		git(repo.dir, 'push', 'origin', 'main');
-		return repo;
-	}
-	function clean(): void {
-		for (const d of made) rmSync(d, { recursive: true, force: true });
-	}
-	return { guardRepo, clean };
+	return {
+		guardRepo: (files, opts) => guardRepo(made, files, opts),
+		clean: () => {
+			for (const d of made) rmSync(d, { recursive: true, force: true });
+		},
+	};
 }
