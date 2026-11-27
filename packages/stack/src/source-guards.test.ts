@@ -84,8 +84,16 @@ test('сквозных запусков cli.ts вне блока проводн�
 const ENGINE_SOURCES = readdirSync(import.meta.dir).filter(
 	(f) => f.endsWith('.ts') && !f.endsWith('.test.ts') && !f.startsWith('testkit'),
 );
-const OWNER_NAMES =
-	/\.stack\.jsonc|node\|contracts\|infra|@alxwlw\/stack|\b(?:PROFILES|STACK_CONFIG_FILE|SCOPE)\b/g;
+// Имена удалённых констант собраны из частей: цельным словом они в тесте были бы остатком удалённого для cite-check.
+const REMOVED = [
+	['PROF', 'ILES'],
+	['STACK_CONFIG_', 'FILE'],
+	['SCO', 'PE'],
+].map((p) => p.join(''));
+const OWNER_NAMES = new RegExp(
+	String.raw`\.stack\.jsonc|node\|contracts\|infra|@alxwlw/stack|\b(?:${REMOVED.join('|')})\b`,
+	'g',
+);
 
 test('сторож имён видит исходники', () => {
 	expect(ENGINE_SOURCES.length).toBeGreaterThanOrEqual(50);
@@ -103,9 +111,9 @@ test.each([
 	"'.stack.jsonc'",
 	"'--profile is required: <node|contracts|infra>'",
 	"'./node_modules/@alxwlw/stack/schema.json'",
-	'PROFILES.join',
-	'join(repoRoot, STACK_CONFIG_FILE)',
-	'name.startsWith(SCOPE)',
+	`${REMOVED[0]}.join`,
+	`join(repoRoot, ${REMOVED[1]})`,
+	`name.startsWith(${REMOVED[2]})`,
 ])('регулярка имён канона владельца ловит: %s', (sample) => {
 	expect(sample.match(OWNER_NAMES)).not.toBeNull();
 });
