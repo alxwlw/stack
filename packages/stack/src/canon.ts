@@ -261,7 +261,7 @@ export function canonFor(source: CanonSource, cfg: StackConfig): Canon {
 		catalogs,
 		pins: { ...rest, node, pnpm },
 		rules,
-		ownPackages: ownPackages(source.catalogs.dev, source.manifest),
+		ownPackages: ownPackages(source.catalogs.dev, source.manifest, source.settings.ownPackages),
 	};
 }
 

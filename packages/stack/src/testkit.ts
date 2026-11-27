@@ -84,7 +84,11 @@ export function testCanon(over: Partial<Canon> = {}): Canon {
 		catalogs: {},
 		pins: { node: '25.4.1', pnpm: '10.99.0' },
 		rules: [],
-		ownPackages: ownPackages(over.catalogs?.dev, { name: '@alxwlw/stack', version: '0.0.0' }),
+		ownPackages: ownPackages(
+			over.catalogs?.dev,
+			{ name: '@alxwlw/stack', version: '0.0.0' },
+			(over.settings ?? TEST_SETTINGS).ownPackages,
+		),
 		...over,
 	};
 }

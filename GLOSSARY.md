@@ -53,7 +53,7 @@ A version of a pinned tool (node, bun, pnpm, proto) repeated outside `.prototool
 _Avoid_: duplicate pin, hardcoded version, pin site
 
 **Own package**:
-A package this repository publishes that reaches a Consumer with the Canon: an `@alxwlw/*` Catalog entry of the dev Catalog, or an `@alxwlw/*` dependency of `@alxwlw/stack`. Sync keeps each in `minimumReleaseAgeExclude`, and `stack sync-pr` waits for each in the registry. `ownPackages` in `packages/stack/src/own-packages.ts`.
+A package that reaches a Consumer with the Canon and matches an own-package pattern of the Canon settings (`@alxwlw/` in the owner's canon): a Catalog entry of the dev Catalog, or a dependency of the canon package. Sync keeps each in `minimumReleaseAgeExclude`, and `stack sync-pr` waits for each in the registry. `ownPackages` in `packages/stack/src/own-packages.ts`.
 _Avoid_: internal package, scoped package
 
 ### Verdicts
