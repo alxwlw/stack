@@ -29,6 +29,7 @@ test.each([
 	['configFile', 'a/b.jsonc'],
 	['configFile', 'a\\b.jsonc'],
 	['configFile', '..'],
+	['configFile', '.'],
 	['configFile', 7],
 	['command', ''],
 	['command', 'my stack'],

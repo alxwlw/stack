@@ -30,7 +30,7 @@ import {
 	runSyncPr,
 	SERVED,
 } from './testkit.ts';
-import { testSource } from './testkit-sources.ts';
+import { acmeSource, testSource } from './testkit-sources.ts';
 
 let restore: () => void;
 beforeAll(() => {
@@ -375,6 +375,15 @@ describe('syncPr', () => {
 		const r = await runSyncPr(dir);
 		expect(r.err.join('\n')).toContain('allowed (свой отступ): .editorconfig');
 		expect(r.out.join('\n')).not.toContain('allowed (');
+	});
+
+	test('syncPr ищет файл настроек канона из опций', async () => {
+		const dir = repoDir({ '.stack.jsonc': '{ "profile": "node" }' });
+		const r = await runSyncPr(dir, { source: acmeSource() });
+		expect(r.code).toBe(2);
+		expect(r.err).toStrictEqual([
+			'.acme.jsonc not found. Create it: acme init --profile <profile>',
+		]);
 	});
 
 	test('SYNC_PR_WAIT — те же ATTEMPTS и INTERVAL, что у шага ожидания sync.yml', () => {

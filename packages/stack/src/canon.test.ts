@@ -14,10 +14,17 @@ import {
 	loadCanon,
 	readCanonSource,
 } from './canon.ts';
-import { type Profile, PROFILES, type StackConfig, StackConfigError } from './config.ts';
+import { type Profile, type StackConfig, StackConfigError } from './config.ts';
 import { RENOVATE_CONFIGS } from './repo.ts';
-import { canonBundles, canonFile, matchesAny, parseBundles, repoDir } from './testkit.ts';
-import { TEST_SETTINGS } from './testkit-sources.ts';
+import {
+	canonBundles,
+	canonFile,
+	matchesAny,
+	OWNER_SOURCE,
+	parseBundles,
+	repoDir,
+} from './testkit.ts';
+import { ACME_SETTINGS, TEST_SETTINGS } from './testkit-sources.ts';
 
 // Не канон-файл: README лежит рядом с пакетом, а не в canon/.
 const README_PATH = join(import.meta.dir, '..', '..', '..', 'README.md');
@@ -362,7 +369,7 @@ test('канон markdownlint: опция gitignore указывает на .mar
 // засевается один раз (create-if-absent) и дальше принадлежит репо.
 test('канон засевает .markdownlintignore как create-if-absent в каждом профиле', () => {
 	const source = readCanonSource();
-	for (const profile of PROFILES) {
+	for (const profile of OWNER_SOURCE.settings.profiles) {
 		const entry = canonFor(source, {
 			profile,
 			with: source.groups.files,
@@ -376,7 +383,7 @@ test('канон засевает .markdownlintignore как create-if-absent в
 // осталась допустимым значением для старых .stack.jsonc и ничего не меняет.
 test('canonFor: dependabot.yml не засевается; with renovate не меняет набор файлов', () => {
 	const source = readCanonSource();
-	for (const profile of PROFILES) {
+	for (const profile of OWNER_SOURCE.settings.profiles) {
 		const plain = canonFor(source, { profile, with: [], exceptions: [] }).files.map((f) => f.dest);
 		expect(plain).not.toContain('.github/dependabot.yml');
 		const renovate = canonFor(source, { profile, with: ['renovate'], exceptions: [] }).files.map(
@@ -388,7 +395,7 @@ test('canonFor: dependabot.yml не засевается; with renovate не м�
 
 test('канон Renovate: workflow и засев конфига — в каждом профиле', () => {
 	const source = readCanonSource();
-	for (const profile of PROFILES) {
+	for (const profile of OWNER_SOURCE.settings.profiles) {
 		const files = canonFor(source, { profile, with: [], exceptions: [] }).files;
 		const wf = files.find((f) => f.dest === '.github/workflows/renovate.yml');
 		// Файл обязан быть в наборе профиля и быть verbatim (strategy не задан).
@@ -422,7 +429,7 @@ test('knownGroups: файловые, каталожные, устаревшие 
 test('группа правила peers: известна, попадает в Canon.rules, файлов и каталогов не добавляет', () => {
 	const source = readCanonSource();
 	expect(knownGroups(source.groups)).toContain('peers');
-	for (const profile of PROFILES) {
+	for (const profile of OWNER_SOURCE.settings.profiles) {
 		const plain = canonFor(source, { profile, with: [], exceptions: [] });
 		const peers = canonFor(source, { profile, with: ['peers'], exceptions: [] });
 		expect(plain.rules, profile).toStrictEqual([]);
@@ -522,15 +529,15 @@ const STACK_CHECK: Record<Profile, { command: string; inputs: string[] }> = {
 };
 
 test('moon-tasks: stack.yml запускается из корня воркспейса', () => {
-	for (const profile of PROFILES) {
+	for (const profile of OWNER_SOURCE.settings.profiles) {
 		const content = canonFile('.moon/tasks/stack.yml', profile);
 		const task = (parseYaml(content) as { tasks: Record<string, Record<string, unknown>> }).tasks[
 			'stack-check'
 		];
 		expect([profile, task?.command, task?.inputs]).toEqual([
 			profile,
-			STACK_CHECK[profile].command,
-			STACK_CHECK[profile].inputs,
+			STACK_CHECK[profile]?.command,
+			STACK_CHECK[profile]?.inputs,
 		]);
 		expect([profile, task?.options]).toEqual([
 			profile,
@@ -646,4 +653,23 @@ describe('связки canon/bundles.json в каталогах канона', (
 		}
 		expect(bad).toStrictEqual([]);
 	});
+});
+
+const acmeDir = (files: unknown): string =>
+	repoDir({
+		'settings.json': JSON.stringify(ACME_SETTINGS),
+		'manifest.json': JSON.stringify({ files }),
+		'catalogs.json': '{ "dev": {} }',
+		'files/a': 'A',
+	});
+
+test('appliesTo манифеста проверяется по профилям настроек', () => {
+	const a = (appliesTo: string[]) => ({ src: 'files/a', dest: 'a', appliesTo });
+	expect(readCanonSource(acmeDir([a(['web'])])).entries).toHaveLength(1);
+	expect(() => readCanonSource(acmeDir([a(['node'])]))).toThrow(
+		'canon manifest: entry 0 (a): "appliesTo" has "node": expected each of web, chain at most once',
+	);
+	expect(() => readCanonSource(acmeDir([a(['chain']), a(['web', 'chain'])]))).toThrow(
+		'canon manifest: dest "a" is listed twice for profile chain',
+	);
 });

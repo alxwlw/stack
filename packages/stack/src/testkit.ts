@@ -128,10 +128,11 @@ snapshots:
   peer@1.0.0: {}
 `;
 
-// Содержимое канон-файла по его dest, как его видит loadCanon: все группы включены. Тесты, сверяющие
-// канон с корнем репозитория или с самим собой, берут файл здесь, а не по пути в canon/files.
 // Настоящий канон, прочитанный один раз на загрузку модуля.
 export const OWNER_SOURCE: CanonSource = readCanonSource();
+
+// Содержимое канон-файла по его dest, как его видит loadCanon: все группы включены. Тесты, сверяющие
+// канон с корнем репозитория или с самим собой, берут файл здесь, а не по пути в canon/files.
 
 export function canonFile(dest: string, profile: Profile = 'node'): string {
 	const g = OWNER_SOURCE.groups;

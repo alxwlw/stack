@@ -3,7 +3,7 @@ import { join } from 'node:path';
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 
-import { COMMANDS, PASS_THROUGH } from './command.ts';
+import { type CommandContext, COMMANDS, PASS_THROUGH } from './command.ts';
 import { ownVersion } from './own-packages.ts';
 import {
 	BARE,
@@ -17,7 +17,7 @@ import {
 	runStack,
 	UNMET_PEER_LOCK,
 } from './testkit.ts';
-import { testSource } from './testkit-sources.ts';
+import { acmeSource, testSource } from './testkit-sources.ts';
 
 // Функция команды на подставных портах: argv, флаги, проводка портов, печать и коды выхода — без процесса.
 describe('runCommand', () => {
@@ -285,4 +285,31 @@ describe('runCommand', () => {
 		expect(readFileSync(join(dir, 'x.txt'), 'utf8')).toBe('X\n');
 		expect(existsSync(join(dir, '.editorconfig'))).toBe(false); // файл настоящего канона не пришёл
 	});
+});
+
+const acmeCtx = (dir: string, flags: CommandContext['flags'] = {}) => {
+	const { ports, lines } = fakeCommandPorts();
+	return { ctx: { repoRoot: dir, flags, env: {}, ports, source: acmeSource() }, lines };
+};
+
+test('init называет профили канона', () => {
+	const dir = repoDir({});
+	expect(() => COMMANDS.init.run(acmeCtx(dir).ctx)).toThrow('--profile is required: <web|chain>');
+	expect(() => COMMANDS.init.run(acmeCtx(dir, { profile: 'node' }).ctx)).toThrow(
+		'unknown --profile "node", expected one of: web, chain',
+	);
+});
+
+test('init создаёт файл настроек канона', () => {
+	const dir = repoDir({});
+	const { ctx, lines } = acmeCtx(dir, { profile: 'chain' });
+	expect(COMMANDS.init.run(ctx)).toBe(0);
+	expect(lines).toStrictEqual([{ stream: 'out', text: `created ${join(dir, '.acme.jsonc')}` }]);
+});
+
+test.each(['sync', 'check', 'peers-baseline'] as const)('%s ищет файл настроек канона', (name) => {
+	const { ctx } = acmeCtx(repoDir({ '.stack.jsonc': '{ "profile": "node" }' }));
+	expect(() => COMMANDS[name].run(ctx)).toThrow(
+		'.acme.jsonc not found. Create it: acme init --profile <profile>',
+	);
 });

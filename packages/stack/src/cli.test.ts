@@ -15,6 +15,7 @@ import {
 	fakeBin,
 	gitRepo,
 	isolateGitConfig,
+	OWNER_SOURCE,
 	repoDir,
 	runCli,
 	spawnIn,
@@ -144,7 +145,7 @@ test('вывод check длиннее 128 КиБ доходит до канал�
 		reason: 'r'.repeat(80),
 	}));
 	const dir = repoDir({ ...BARE, '.stack.jsonc': JSON.stringify({ profile: 'node', exceptions }) });
-	const cfg = readStackConfig(dir);
+	const cfg = readStackConfig(dir, OWNER_SOURCE.settings);
 	const expected = checkOutput(checkRepo(dir, loadCanon(cfg), cfg.exceptions));
 	expect(expected.code).toBe(1);
 	const bytes = expected.lines

@@ -2,8 +2,7 @@ import { expect, test } from 'bun:test';
 
 import { loadCanon } from './canon.ts';
 import { check, plan } from './check.ts';
-import { PROFILES } from './config.ts';
-import { testCanon, testRepo } from './testkit.ts';
+import { OWNER_SOURCE, testCanon, testRepo } from './testkit.ts';
 import { pinCopies, pinSiteKind } from './toolchain-pins.ts';
 import { planToolchainPins } from './toolchain-pins-rule.ts';
 
@@ -119,7 +118,7 @@ test('check передаёт исключения в план: при удерж
 // Канон-файлы workflow ни в одну группу не входят, поэтому with пуст.
 test('в канон-файлах копий пинов нет — правило вправе их не смотреть', () => {
 	let seen = 0;
-	for (const profile of PROFILES) {
+	for (const profile of OWNER_SOURCE.settings.profiles) {
 		for (const f of loadCanon({ profile, with: [], exceptions: [] }).files) {
 			const kind = pinSiteKind(f.dest);
 			if (kind === undefined) continue;

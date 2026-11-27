@@ -309,7 +309,7 @@ export async function syncPr(opts: SyncPrOptions, ports: SyncPrPorts): Promise<0
 	try {
 		let canon: Canon;
 		try {
-			const cfg = readStackConfig(repoRoot);
+			const cfg = readStackConfig(repoRoot, opts.source.settings);
 			canon = canonFor(opts.source, cfg);
 			printLines(print, syncOutput(syncRepo(repoRoot, canon, cfg.exceptions)));
 		} catch (error) {

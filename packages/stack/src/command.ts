@@ -3,7 +3,7 @@ import { parseArgs } from 'node:util';
 
 import { assertKnownGroups, canonFor, type CanonSource, readCanonSource } from './canon.ts';
 import { checkRepo, syncRepo } from './check.ts';
-import { type Profile, PROFILES, readStackConfig, StackConfigError } from './config.ts';
+import { readStackConfig, StackConfigError } from './config.ts';
 import type { GuardrailRunner } from './guardrails-port.ts';
 import { initConfig } from './init.ts';
 import { checkOutput, type Print, printLines, syncOutput } from './output.ts';
@@ -88,12 +88,13 @@ export const COMMANDS: Record<'init' | 'sync' | 'check' | 'sync-pr' | 'peers-bas
 		run({ repoRoot, flags, ports, source }) {
 			if (!existsSync(repoRoot)) usage(`--repo does not exist: ${repoRoot}`);
 			const profile = flags.profile;
-			if (!profile) usage('--profile is required: <node|contracts|infra>');
-			if (!PROFILES.includes(profile as Profile)) {
-				usage(`unknown --profile "${profile}", expected one of: ${PROFILES.join(', ')}`);
+			const { profiles } = source.settings;
+			if (!profile) usage(`--profile is required: <${profiles.join('|')}>`);
+			if (!profiles.includes(profile)) {
+				usage(`unknown --profile "${profile}", expected one of: ${profiles.join(', ')}`);
 			}
 			assertKnownGroups(flags.with ?? [], source);
-			const path = initConfig(repoRoot, { profile: profile as Profile, with: flags.with ?? [] });
+			const path = initConfig(repoRoot, source, { profile, with: flags.with ?? [] });
 			ports.print('out', `created ${path}`);
 			return 0;
 		},
@@ -101,7 +102,7 @@ export const COMMANDS: Record<'init' | 'sync' | 'check' | 'sync-pr' | 'peers-bas
 	sync: {
 		flags: [],
 		run({ repoRoot, ports, source }) {
-			const cfg = readStackConfig(repoRoot);
+			const cfg = readStackConfig(repoRoot, source.settings);
 			printLines(
 				ports.print,
 				syncOutput(syncRepo(repoRoot, canonFor(source, cfg), cfg.exceptions)),
@@ -112,7 +113,7 @@ export const COMMANDS: Record<'init' | 'sync' | 'check' | 'sync-pr' | 'peers-bas
 	check: {
 		flags: ['base'],
 		run({ repoRoot, flags, env, ports, source }) {
-			const cfg = readStackConfig(repoRoot);
+			const cfg = readStackConfig(repoRoot, source.settings);
 			const { lines, code } = checkOutput(
 				checkRepo(repoRoot, canonFor(source, cfg), cfg.exceptions, {
 					ports: {
@@ -160,7 +161,7 @@ export const COMMANDS: Record<'init' | 'sync' | 'check' | 'sync-pr' | 'peers-bas
 		flags: ['init', 'allow-grow'],
 		run({ repoRoot, flags, ports, source }) {
 			if (flags.init && flags['allow-grow']) usage('--init and --allow-grow do not go together');
-			const cfg = readStackConfig(repoRoot);
+			const cfg = readStackConfig(repoRoot, source.settings);
 			const mode = flags.init ? 'init' : flags['allow-grow'] ? 'grow' : 'lower';
 			const r = peersBaseline(repoRoot, canonFor(source, cfg), mode, ports.peers);
 			for (const line of r.out) ports.print('out', line);
@@ -170,15 +171,16 @@ export const COMMANDS: Record<'init' | 'sync' | 'check' | 'sync-pr' | 'peers-bas
 	},
 };
 
-/** Порядок ошибок: разбор всех флагов, отказ `repo-rules` среди позиционных, неизвестная команда, флаги
- *  выбранной команды. Ошибка использования и StackConfigError — строка в err и код 2; прочее вылетает. */
+/** Порядок ошибок: чтение канона первым (его сбой вылетает как есть, до разбора argv), разбор всех флагов,
+ *  отказ `repo-rules` среди позиционных, неизвестная команда, флаги выбранной команды. Ошибка использования
+ *  и StackConfigError — строка в err и код 2; прочее вылетает. */
 export async function runCommand(input: CommandInput, ports: CommandPorts): Promise<ExitCode> {
 	try {
 		const source = readCanonSource();
 		const { positionals } = parse(input.argv, FLAGS);
 		if (positionals.includes(PASS_THROUGH)) {
 			usage(
-				`${PASS_THROUGH} takes its own arguments and must come first: stack ${PASS_THROUGH} [-C <dir>] <command>`,
+				`${PASS_THROUGH} takes its own arguments and must come first: ${source.settings.command} ${PASS_THROUGH} [-C <dir>] <command>`,
 			);
 		}
 		const name = positionals[0];

@@ -52,3 +52,22 @@ export function testSource(over: Partial<CanonSource> = {}): CanonSource {
 		...over,
 	};
 }
+
+// Чужой канон целиком: настройки и манифест acme, одна запись .prototools для web и chain.
+export function acmeSource(over: Partial<CanonSource> = {}): CanonSource {
+	return {
+		settings: ACME_SETTINGS,
+		entries: [
+			{
+				src: 'files/prototools',
+				dest: '.prototools',
+				appliesTo: ['web', 'chain'],
+				content: 'node = "25.4.1"\npnpm = "10.99.0"\n',
+			},
+		],
+		catalogs: { dev: {} },
+		groups: { files: [], catalogs: [], deprecated: [], rules: [] },
+		manifest: ACME_MANIFEST,
+		...over,
+	};
+}

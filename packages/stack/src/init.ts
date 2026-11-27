@@ -1,7 +1,8 @@
 import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { type Profile, STACK_CONFIG_FILE, StackConfigError } from './config.ts';
+import type { CanonSource } from './canon.ts';
+import { type Profile, StackConfigError } from './config.ts';
 
 // oxfmt (canon .oxfmtrc.jsonc, printWidth 100) collapses a short JSON array onto one line;
 // plain `JSON.stringify(…, null, '\t')` never does. Without this, the file `stack init` just
@@ -14,12 +15,17 @@ function jsonArrayLine(items: readonly string[]): string {
 	return `[${items.map((s) => JSON.stringify(s)).join(', ')}]`;
 }
 
-export function initConfig(repoRoot: string, opts: { profile: Profile; with?: string[] }): string {
-	const path = join(repoRoot, STACK_CONFIG_FILE);
-	if (existsSync(path)) throw new StackConfigError(`${STACK_CONFIG_FILE} already exists`);
+export function initConfig(
+	repoRoot: string,
+	source: Pick<CanonSource, 'settings' | 'manifest'>,
+	opts: { profile: Profile; with?: string[] },
+): string {
+	const { configFile } = source.settings;
+	const path = join(repoRoot, configFile);
+	if (existsSync(path)) throw new StackConfigError(`${configFile} already exists`);
 	const body =
 		'{\n' +
-		'\t"$schema": "./node_modules/@alxwlw/stack/schema.json",\n' +
+		`\t"$schema": "./node_modules/${source.manifest.name}/schema.json",\n` +
 		`\t"profile": ${JSON.stringify(opts.profile)},\n` +
 		`\t"with": ${jsonArrayLine(opts.with ?? [])},\n` +
 		'\t"exceptions": [],\n' +

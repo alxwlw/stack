@@ -8,7 +8,7 @@ import { syncRepo } from './check.ts';
 import { readStackConfig } from './config.ts';
 import { initConfig } from './init.ts';
 import { MOON_WORKSPACE } from './repo.ts';
-import { git, gitRepo, isolateGitConfig, protoBin, runTool } from './testkit.ts';
+import { git, gitRepo, isolateGitConfig, OWNER_SOURCE, protoBin, runTool } from './testkit.ts';
 
 let restore: () => void;
 beforeAll(() => {
@@ -41,8 +41,8 @@ test('stack init с moon-tasks и свой moon-воркспейс без vcs: �
 		[MOON_WORKSPACE]: USER_WS,
 		'app/moon.yml': "tasks:\n  noop:\n    command: 'echo ok'\n",
 	});
-	initConfig(dir, { profile: 'node', with: ['moon-tasks'] });
-	const cfg = readStackConfig(dir);
+	initConfig(dir, OWNER_SOURCE, { profile: 'node', with: ['moon-tasks'] });
+	const cfg = readStackConfig(dir, OWNER_SOURCE.settings);
 	syncRepo(dir, loadCanon(cfg), cfg.exceptions);
 	git(dir, 'add', '-A');
 	git(dir, 'commit', '-m', 'sync');

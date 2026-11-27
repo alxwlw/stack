@@ -6,7 +6,6 @@ import { parse as parseJsonc } from 'jsonc-parser';
 
 import { canonFor, readCanonSource } from './canon.ts';
 import { check, plan, syncRepo } from './check.ts';
-import { PROFILES } from './config.ts';
 import type { Exception } from './exceptions.ts';
 import { loadRepo } from './repo.ts';
 import { checkSeedExtends, GITLEAKS_CANON, SEED_CHECKS } from './seed-extends.ts';
@@ -15,6 +14,7 @@ import {
 	canonFile,
 	canonRepoFiles,
 	ioError,
+	OWNER_SOURCE,
 	protoBin,
 	repoDir,
 	runTool,
@@ -377,7 +377,7 @@ test('ключи таблицы — засевы настоящего канон
 		contracts: ['.gitleaks.toml', '.oxlintrc.json', 'tsconfig.options.json'],
 		infra: ['.gitleaks.toml'],
 	};
-	for (const profile of PROFILES) {
+	for (const profile of OWNER_SOURCE.settings.profiles) {
 		const real = canonFor(source, { profile, with: [], exceptions: [] });
 		const seedsOf = real.files
 			.filter((f) => f.strategy === 'create-if-absent' && SEED_CHECKS.has(f.dest))
