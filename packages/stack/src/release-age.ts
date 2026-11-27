@@ -8,10 +8,18 @@ const KEY = 'minimumReleaseAgeExclude';
 
 // Покрывает ли строка исключения версию пакета: голое имя, `<образец>*` (образец канона — префикс,
 // с которого начинается имя) или `<имя>@<список через ||>`.
-function covers(entry: string, name: string, version: string, patterns: readonly string[]): boolean {
+function covers(
+	entry: string,
+	name: string,
+	version: string,
+	patterns: readonly string[],
+): boolean {
 	const e = entry.trim();
 	if (e === name) return true;
-	if (e.endsWith('*') && patterns.some((p) => p.endsWith('/') && e === `${p}*` && name.startsWith(p)))
+	if (
+		e.endsWith('*') &&
+		patterns.some((p) => p.endsWith('/') && e === `${p}*` && name.startsWith(p))
+	)
 		return true;
 	if (!e.startsWith(`${name}@`)) return false;
 	return e
@@ -40,7 +48,8 @@ export function planReleaseAgeExcludes(repo: Repo, canon: Canon): Drift[] {
 	);
 	const plan: Drift[] = [];
 	for (const { name, version } of canon.ownPackages) {
-		if (items.some((s) => s !== undefined && covers(s, name, version, canon.settings.ownPackages))) continue;
+		if (items.some((s) => s !== undefined && covers(s, name, version, canon.settings.ownPackages)))
+			continue;
 		// Существующие элементы не сдвигаются, новые идут в конец: индекс своей записи верен при любом
 		// подмножестве применённых правок.
 		const own = items.findIndex((s) => s !== undefined && s.trim().startsWith(`${name}@`));

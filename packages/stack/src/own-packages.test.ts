@@ -29,17 +29,21 @@ test('ownPackages: версия зависимости — версия паке
 		version: '1.2.3',
 		dependencies: { '@alxwlw/repo-rules': 'workspace:*' },
 	};
-	expect(ownPackages({}, m, TEST_SETTINGS.ownPackages)).toStrictEqual([{ name: '@alxwlw/repo-rules', version: '1.2.3' }]);
-});
-
-test('ownPackages: имя и в каталоге, и в зависимостях — одна запись с версией каталога', () => {
-	expect(ownPackages({ '@alxwlw/repo-rules': '1.0.0' }, manifest, TEST_SETTINGS.ownPackages)).toStrictEqual([
-		{ name: '@alxwlw/repo-rules', version: '1.0.0' },
+	expect(ownPackages({}, m, TEST_SETTINGS.ownPackages)).toStrictEqual([
+		{ name: '@alxwlw/repo-rules', version: '1.2.3' },
 	]);
 });
 
+test('ownPackages: имя и в каталоге, и в зависимостях — одна запись с версией каталога', () => {
+	expect(
+		ownPackages({ '@alxwlw/repo-rules': '1.0.0' }, manifest, TEST_SETTINGS.ownPackages),
+	).toStrictEqual([{ name: '@alxwlw/repo-rules', version: '1.0.0' }]);
+});
+
 test('ownPackages: нет каталога dev, нет dependencies', () => {
-	expect(ownPackages(undefined, { name: '@alxwlw/stack', version: '1.2.3' }, TEST_SETTINGS.ownPackages)).toStrictEqual([]);
+	expect(
+		ownPackages(undefined, { name: '@alxwlw/stack', version: '1.2.3' }, TEST_SETTINGS.ownPackages),
+	).toStrictEqual([]);
 	expect(ownPackages(undefined, manifest, TEST_SETTINGS.ownPackages)).toStrictEqual([
 		{ name: '@alxwlw/repo-rules', version: '1.2.3' },
 	]);
