@@ -89,15 +89,15 @@ _Avoid_: workflow lint, CI policy
 ### Commands
 
 **Check**:
-Reports every finding of a consumer and fails when any is not held by an exception; it also returns notes (`CheckReport`), which do not change the exit code. The findings of the rule groups pass the same `resolve` as the others. `stack check`, `checkRepo` in `packages/stack/src/check.ts`. Its lines and exit code are assembled by `checkOutput` in `packages/stack/src/output.ts`, the one module that turns a finding into a line.
+Reports every finding of a consumer and fails when any is not held by an exception; it also returns notes (`CheckReport`), which do not change the exit code. The findings of the rule groups pass the same `resolve` as the others. `stack check` is the `check` entry of `COMMANDS` in `packages/stack/src/command.ts`; it calls `checkRepo` in `packages/stack/src/check.ts`. Its lines and exit code are assembled by `checkOutput` in `packages/stack/src/output.ts`, the one module that turns a finding into a line.
 _Avoid_: lint, audit, verify
 
 **Sync**:
-Applies every drift the exceptions do not hold, so a following check has nothing left among the drifts. `stack sync`, `syncRepo` in `packages/stack/src/check.ts`. Its lines are assembled by `syncOutput` in the same module.
+Applies every drift the exceptions do not hold, so a following check has nothing left among the drifts. `stack sync` is the `sync` entry of `COMMANDS` in `packages/stack/src/command.ts`; it calls `syncRepo` in `packages/stack/src/check.ts`. Its lines are assembled by `syncOutput` in the same module.
 _Avoid_: update, apply, fix
 
 **Peer baseline update**:
-The only writer of the **Peer baseline**: `--init` records every current issue in a new file, no flag drops fixed records and refuses new ones, `--allow-grow` records the current set; `stack sync-pr` runs it as `drop-fixed`, which only drops fixed records and stays silent otherwise. A baseline that does not parse is never overwritten. `stack peers-baseline`, `peersBaseline` in `packages/stack/src/peers-baseline.ts`.
+The only writer of the **Peer baseline**: `--init` records every current issue in a new file, no flag drops fixed records and refuses new ones, `--allow-grow` records the current set; `stack sync-pr` runs it as `drop-fixed`, which only drops fixed records and stays silent otherwise. A baseline that does not parse is never overwritten. `stack peers-baseline` is the `peers-baseline` entry of `COMMANDS` in `packages/stack/src/command.ts`; it calls `peersBaseline` in `packages/stack/src/peers-baseline.ts`.
 _Avoid_: regenerate, refresh
 
 ### Releasing

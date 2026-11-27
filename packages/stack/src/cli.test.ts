@@ -14,8 +14,8 @@ import { dirname, join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { parse as parseJsonc } from 'jsonc-parser';
 
-import { checkRepo } from './check.ts';
 import { loadCanon } from './canon.ts';
+import { checkRepo } from './check.ts';
 import { readStackConfig } from './config.ts';
 import { checkOutput } from './output.ts';
 import { ownVersion } from './own-packages.ts';
