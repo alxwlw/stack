@@ -256,6 +256,18 @@ test('spawnRunner: окружение без SHELLCHECK_OPTS и конфигов
 	expect(run('sh', ['-c', 'pwd -P'], other).out.trim()).toBe(realpathSync(other));
 });
 
+test('testEnv: ключи GITHUB_* окружения процесса отброшены, явные над-значения остаются', () => {
+	const prior = process.env.GITHUB_ACTIONS;
+	process.env.GITHUB_ACTIONS = 'true';
+	try {
+		expect('GITHUB_ACTIONS' in testEnv()).toBe(false);
+		expect(testEnv({ GITHUB_X: '1' }).GITHUB_X).toBe('1');
+	} finally {
+		if (prior === undefined) Reflect.deleteProperty(process.env, 'GITHUB_ACTIONS');
+		else process.env.GITHUB_ACTIONS = prior;
+	}
+});
+
 test('spawnRunner: цвет и формат лога git нейтрализованы через GIT_CONFIG_*, уже заданные пары сохраняются', () => {
 	const show = ['-c', 'env | grep "^GIT_CONFIG_" | sort'];
 	const root = mkdtempSync(join(tmpdir(), 'guardrails-bin-'));
@@ -267,45 +279,43 @@ test('spawnRunner: цвет и формат лога git нейтрализов�
 		}
 		return { ...env, ...over };
 	};
-	{
-		expect(spawnRunner(root, parent())('sh', show).out).toBe(
-			[
-				'GIT_CONFIG_COUNT=5',
-				'GIT_CONFIG_KEY_0=color.ui',
-				'GIT_CONFIG_KEY_1=color.diff',
-				'GIT_CONFIG_KEY_2=format.pretty',
-				'GIT_CONFIG_KEY_3=log.date',
-				'GIT_CONFIG_KEY_4=log.abbrevCommit',
-				'GIT_CONFIG_VALUE_0=never',
-				'GIT_CONFIG_VALUE_1=never',
-				'GIT_CONFIG_VALUE_2=medium',
-				'GIT_CONFIG_VALUE_3=default',
-				'GIT_CONFIG_VALUE_4=false',
-				'',
-			].join('\n'),
-		);
-		const acme = { GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'acme.key', GIT_CONFIG_VALUE_0: 'x' };
-		expect(spawnRunner(root, parent(acme))('sh', show).out).toBe(
-			[
-				'GIT_CONFIG_COUNT=6',
-				'GIT_CONFIG_KEY_0=acme.key',
-				'GIT_CONFIG_KEY_1=color.ui',
-				'GIT_CONFIG_KEY_2=color.diff',
-				'GIT_CONFIG_KEY_3=format.pretty',
-				'GIT_CONFIG_KEY_4=log.date',
-				'GIT_CONFIG_KEY_5=log.abbrevCommit',
-				'GIT_CONFIG_VALUE_0=x',
-				'GIT_CONFIG_VALUE_1=never',
-				'GIT_CONFIG_VALUE_2=never',
-				'GIT_CONFIG_VALUE_3=medium',
-				'GIT_CONFIG_VALUE_4=default',
-				'GIT_CONFIG_VALUE_5=false',
-				'',
-			].join('\n'),
-		);
-		// Мусор в счётчике не ломает прогон: отсчёт с нуля.
-		expect(spawnRunner(root, parent({ GIT_CONFIG_COUNT: 'abc' }))('sh', show).out).toContain(
-			'GIT_CONFIG_COUNT=5\n',
-		);
-	}
+	expect(spawnRunner(root, parent())('sh', show).out).toBe(
+		[
+			'GIT_CONFIG_COUNT=5',
+			'GIT_CONFIG_KEY_0=color.ui',
+			'GIT_CONFIG_KEY_1=color.diff',
+			'GIT_CONFIG_KEY_2=format.pretty',
+			'GIT_CONFIG_KEY_3=log.date',
+			'GIT_CONFIG_KEY_4=log.abbrevCommit',
+			'GIT_CONFIG_VALUE_0=never',
+			'GIT_CONFIG_VALUE_1=never',
+			'GIT_CONFIG_VALUE_2=medium',
+			'GIT_CONFIG_VALUE_3=default',
+			'GIT_CONFIG_VALUE_4=false',
+			'',
+		].join('\n'),
+	);
+	const acme = { GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'acme.key', GIT_CONFIG_VALUE_0: 'x' };
+	expect(spawnRunner(root, parent(acme))('sh', show).out).toBe(
+		[
+			'GIT_CONFIG_COUNT=6',
+			'GIT_CONFIG_KEY_0=acme.key',
+			'GIT_CONFIG_KEY_1=color.ui',
+			'GIT_CONFIG_KEY_2=color.diff',
+			'GIT_CONFIG_KEY_3=format.pretty',
+			'GIT_CONFIG_KEY_4=log.date',
+			'GIT_CONFIG_KEY_5=log.abbrevCommit',
+			'GIT_CONFIG_VALUE_0=x',
+			'GIT_CONFIG_VALUE_1=never',
+			'GIT_CONFIG_VALUE_2=never',
+			'GIT_CONFIG_VALUE_3=medium',
+			'GIT_CONFIG_VALUE_4=default',
+			'GIT_CONFIG_VALUE_5=false',
+			'',
+		].join('\n'),
+	);
+	// Мусор в счётчике не ломает прогон: отсчёт с нуля.
+	expect(spawnRunner(root, parent({ GIT_CONFIG_COUNT: 'abc' }))('sh', show).out).toContain(
+		'GIT_CONFIG_COUNT=5\n',
+	);
 });

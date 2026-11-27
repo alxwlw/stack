@@ -11,9 +11,13 @@ const imports = (file: string, kind?: string): string[] =>
 		.scanImports(readFileSync(join(import.meta.dir, file), 'utf8').replace(/^#!.*\n/, ''))
 		.filter((i) => kind === undefined || i.kind === kind)
 		.map((i) => i.path);
+const isKit = (f: string): boolean => /^testkit[^/]*\.ts$/.test(f);
+// Исходники без помощников тестов; тесты — вместе с помощниками (testkit*.ts): обёртка над main там же тест.
 const sources = (test: boolean): string[] =>
 	[...new Bun.Glob('*.ts').scanSync(import.meta.dir)]
-		.filter((f) => f.endsWith('.test.ts') === test && f !== 'testkit.ts')
+		.filter((f) =>
+			test ? f.endsWith('.test.ts') || isKit(f) : !f.endsWith('.test.ts') && !isKit(f),
+		)
 		.toSorted();
 
 test('inProcessRepoRules: настоящий repo-rules в процессе, вывод — строками в ответе', () => {

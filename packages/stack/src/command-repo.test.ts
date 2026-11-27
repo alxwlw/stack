@@ -155,9 +155,10 @@ test('неизвестный флаг — код 2, без необработа�
 });
 
 test('init с несуществующим --repo — код 2, без стектрейса', async () => {
-	const dir = join(repoDir(BARE), 'nope');
-	const r = await runStack(['init', '--profile', 'node'], dir);
+	const missing = join(repoDir(BARE), 'nope');
+	const r = await runStack(['init', '--profile', 'node', '--repo', missing], repoDir(BARE));
 	expect(r.code).toBe(2);
+	expect(r.err).toBe(`--repo does not exist: ${missing}\n`);
 	expect(r.err).not.toContain('cli.ts');
 	expect(r.err).not.toContain('ENOENT');
 });

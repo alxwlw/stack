@@ -40,8 +40,17 @@ test('cli.ts после проводника печатает только че�
 	const entry = text.slice(text.indexOf('const print'));
 	expect(entry).toContain('console.log(');
 	expect(entry).toContain('console.error(');
-	expect(entry.match(/\.write\(/g) ?? []).toStrictEqual([]);
+	expect(entry.match(STREAM_WRITE) ?? []).toStrictEqual([]);
 });
+
+// Сторож шире одного `.write(`: writeSync, Bun.stdout.writer() и любое упоминание stdout/stderr.
+const STREAM_WRITE = /\.write\w*\(|\bstd(?:out|err)\b/g;
+test.each(['fs.writeSync(1, s)', 'Bun.stdout.writer()', 'process.stdout.write(s)'])(
+	'регулярка печати входа ловит запись в поток: %s',
+	(line) => {
+		expect(line.match(STREAM_WRITE)).not.toBeNull();
+	},
+);
 
 // Строка 5 приёмки: сквозных запусков cli.ts мало и они в двух файлах; остальное идёт в процессе.
 test('сквозных запусков cli.ts вне блока проводника — не больше пятнадцати, в двух файлах', () => {
