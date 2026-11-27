@@ -18,6 +18,7 @@ import {
 	put,
 	repoDir,
 	ROOT,
+	testEnv,
 	withPrivateTmpdir,
 } from './testkit.ts';
 
@@ -317,12 +318,8 @@ describe('настоящий gitleaks через читатель', () => {
 	}
 
 	function scan(dir: string) {
-		const out = readGuardrails(
-			dir,
-			prototools,
-			{ run: spawnRunner(dir), env: { ...process.env, GITLEAKS_BIN: bin } },
-			NO_PR,
-		);
+		const env = testEnv({ GITLEAKS_BIN: bin });
+		const out = readGuardrails(dir, prototools, { run: spawnRunner(dir, env), env }, NO_PR);
 		if ('unavailable' in out) throw new Error(out.unavailable);
 		return { out, part: out.tools.gitleaks };
 	}

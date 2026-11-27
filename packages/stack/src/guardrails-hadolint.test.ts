@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { toolVersion } from './guardrails-bin.ts';
 import { hadolintArgv, parseHadolint, shortReason } from './guardrails-hadolint.ts';
 import { type GuardrailRun, spawnRunner } from './guardrails-port.ts';
-import { protoBin, repoDir } from './testkit.ts';
+import { protoBin, repoDir, testEnv } from './testkit.ts';
 
 const run = (out: string, over: Partial<GuardrailRun> = {}): GuardrailRun => ({
 	code: 0,
@@ -155,7 +155,7 @@ describe('настоящий hadolint', () => {
 		const dir = repoDir(files);
 		const home = mkdtempSync(join(tmpdir(), 'stack-home-test-'));
 		dirs.push(dir, home);
-		const r = spawnRunner(dir)(bin, hadolintArgv(names), dir, {
+		const r = spawnRunner(dir, testEnv())(bin, hadolintArgv(names), dir, {
 			HOME: home,
 			XDG_CONFIG_HOME: home,
 		});

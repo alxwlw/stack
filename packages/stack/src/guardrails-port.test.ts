@@ -1,8 +1,8 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 
 import { spawnRunner } from './guardrails-port.ts';
 
-// Переменные, которые тест выставляет в process.env и возвращает как были.
+// Окружение, которое тест передаёт spawnRunner параметром.
 const SET = {
 	HADOLINT_IGNORE: 'DL3025',
 	HADOLINT_FORMAT: 'tty',
@@ -15,7 +15,12 @@ const SET = {
 } as const;
 
 function envOf(extra?: Record<string, string>): Map<string, string> {
-	const r = spawnRunner(process.cwd())('env', [], undefined, extra);
+	const r = spawnRunner(process.cwd(), { PATH: process.env.PATH ?? '', ...SET })(
+		'env',
+		[],
+		undefined,
+		extra,
+	);
 	expect(r.code).toBe(0);
 	const out = new Map<string, string>();
 	for (const line of r.out.split('\n')) {
@@ -26,21 +31,6 @@ function envOf(extra?: Record<string, string>): Map<string, string> {
 }
 
 describe('spawnRunner: окружение процесса', () => {
-	const saved = new Map<string, string | undefined>();
-	beforeEach(() => {
-		for (const [k, v] of Object.entries(SET)) {
-			saved.set(k, process.env[k]);
-			process.env[k] = v;
-		}
-	});
-	afterEach(() => {
-		for (const [k, v] of saved) {
-			if (v === undefined) Reflect.deleteProperty(process.env, k);
-			else process.env[k] = v;
-		}
-		saved.clear();
-	});
-
 	test('HADOLINT_*, YAMLLINT_CONFIG_FILE и прежние три убраны, UV_* и прочее остались', () => {
 		const env = envOf();
 		for (const gone of [
@@ -71,5 +61,14 @@ describe('spawnRunner: окружение процесса', () => {
 		expect(Number(env.get('GIT_CONFIG_COUNT'))).toBeGreaterThanOrEqual(5);
 		const over = envOf({ GIT_CONFIG_COUNT: '0' });
 		expect(over.get('GIT_CONFIG_COUNT')).toBe('0');
+	});
+
+	test('переменная окружения процесса, которой нет в параметре, до дочернего процесса не доходит', () => {
+		process.env.STACK_TEST_LEAK = 'from-process';
+		try {
+			expect(envOf().has('STACK_TEST_LEAK')).toBe(false);
+		} finally {
+			Reflect.deleteProperty(process.env, 'STACK_TEST_LEAK');
+		}
 	});
 });

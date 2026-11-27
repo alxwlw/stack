@@ -1,5 +1,4 @@
 import {
-	chmodSync,
 	existsSync,
 	mkdirSync,
 	mkdtempSync,
@@ -19,6 +18,7 @@ import { ownVersion } from './own-packages.ts';
 import {
 	BARE,
 	CLI,
+	fakeBin,
 	gitRepo,
 	isolateGitConfig,
 	protoBin,
@@ -81,15 +81,6 @@ test('sync-pr --base без значения — код 2, сообщение pa
 
 // Фальшивые бинари на PATH: адаптеры процессов и gh проверяются настоящим cli.ts без сети.
 const TOKEN_ENV = { GH_TOKEN: 'secret-token', STACK_APP_SLUG: 'acme-bot' };
-
-function fakeBin(scripts: Record<string, string>): { path: string; env: Record<string, string> } {
-	const path = mkdtempSync(join(tmpdir(), 'stack-bin-'));
-	for (const [name, body] of Object.entries(scripts)) {
-		writeFileSync(join(path, name), `#!/bin/sh\n${body}\n`);
-		chmodSync(join(path, name), 0o755);
-	}
-	return { path, env: { PATH: `${path}:${process.env.PATH ?? ''}` } };
-}
 
 const NODE_REPO_NO_PKG = { '.stack.jsonc': '{ "profile": "node" }' };
 const NODE_REPO = { ...BARE, '.stack.jsonc': '{ "profile": "node" }' };

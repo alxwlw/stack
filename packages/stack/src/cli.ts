@@ -1,5 +1,4 @@
 #!/usr/bin/env bun
-import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 
@@ -13,11 +12,12 @@ import { spawnRunner } from './guardrails-port.ts';
 import { initConfig } from './init.ts';
 import { checkOutput, type Print, printLines, syncOutput } from './output.ts';
 import { ownVersion } from './own-packages.ts';
-import type { PeersReader } from './peers.ts';
 import { peersBaseline } from './peers-baseline.ts';
+import { pnpmPeers } from './peers-port.ts';
 import { npmRegistryReader } from './registry.ts';
-import type { RepoRulesReader } from './repo-rules.ts';
-import { type RunProcess, SYNC_PR_WAIT, syncPr, withoutGhToken } from './sync-pr.ts';
+import { inProcessRepoRules } from './repo-rules-port.ts';
+import { SYNC_PR_WAIT, syncPr } from './sync-pr.ts';
+import { runProcess } from './sync-pr-port.ts';
 
 function fail(message: string): never {
 	console.error(message);
@@ -47,51 +47,6 @@ function parseCliArgs() {
 
 // Порт печати входа: строка сразу в свой канал.
 const print: Print = (stream, line) => (stream === 'out' ? console.log(line) : console.error(line));
-
-// Боевой adapter порта процессов: stdio наследуется, вывод идёт в лог job.
-const runProcess: RunProcess = (cmd, args, { cwd, env }) => {
-	// GH_TOKEN нужен только gh: установка и хук его не получают (скрипты зависимостей читают окружение).
-	const r = spawnSync(cmd, [...args], {
-		cwd,
-		stdio: 'inherit',
-		env: { ...withoutGhToken(process.env), ...env },
-	});
-	if (r.error) {
-		console.error(`sync-pr: ${cmd}: ${r.error.message}`);
-		return 127;
-	}
-	if (r.signal) {
-		console.error(`sync-pr: ${cmd} killed by ${r.signal}`);
-		return 1;
-	}
-	return r.status ?? 1;
-};
-
-// Боевой adapter порта pnpm для группы peers: вывод захватывается, разбор — peersOutcome. Проверка
-// идёт по локу, без установки; GH_TOKEN не нужен pnpm, как и установке в sync-pr.
-const pnpmPeers: PeersReader = (cwd) => {
-	const r = spawnSync('pnpm', ['peers', 'check', '--lockfile-only', '--json'], {
-		cwd,
-		encoding: 'utf8',
-		maxBuffer: 1 << 30,
-		env: withoutGhToken(process.env),
-	});
-	if (r.error) return { error: r.error.message };
-	return { status: r.status, signal: r.signal, stdout: r.stdout, stderr: r.stderr };
-};
-
-// Боевой adapter порта repo-rules: main не бросает, вывод собирается в строки без записи в поток.
-const inProcessRepoRules: RepoRulesReader = (argv, env) => {
-	const out: string[] = [];
-	const err: string[] = [];
-	const code = repoRulesMain(
-		argv,
-		env,
-		(s) => void out.push(s),
-		(s) => void err.push(s),
-	);
-	return { code, out: out.join('\n'), err: err.join('\n') };
-};
 
 // Проводник: аргументы после `repo-rules` уходят в repo-rules как есть, флаги stack здесь не разбираются.
 // Версия правил — версия самого stack: пакет берётся из зависимостей stack, не из репозитория потребителя.
@@ -153,9 +108,9 @@ try {
 		const { lines, code } = checkOutput(
 			checkRepo(repoRoot, loadCanon(cfg), cfg.exceptions, {
 				ports: {
-					peers: pnpmPeers,
+					peers: pnpmPeers(process.env),
 					'repo-rules': inProcessRepoRules,
-					guardrails: spawnRunner(repoRoot),
+					guardrails: spawnRunner(repoRoot, process.env),
 				},
 				env: process.env,
 				base: values.base,
@@ -179,11 +134,11 @@ try {
 					wait: SYNC_PR_WAIT,
 				},
 				{
-					run: runProcess,
+					run: runProcess(process.env, print),
 					github: ghGitHub(repoRoot),
 					registry: npmRegistryReader(),
-					print: (stream, line) => (stream === 'out' ? console.log(line) : console.error(line)),
-					peers: pnpmPeers,
+					print,
+					peers: pnpmPeers(process.env),
 					repoRules: inProcessRepoRules,
 				},
 			),
@@ -192,7 +147,7 @@ try {
 		if (values.init && values['allow-grow']) fail('--init and --allow-grow do not go together');
 		const cfg = readStackConfig(repoRoot);
 		const mode = values.init ? 'init' : values['allow-grow'] ? 'grow' : 'lower';
-		const r = peersBaseline(repoRoot, loadCanon(cfg), mode, pnpmPeers);
+		const r = peersBaseline(repoRoot, loadCanon(cfg), mode, pnpmPeers(process.env));
 		for (const line of r.out) console.log(line);
 		for (const line of r.err) console.error(line);
 		process.exit(r.code);

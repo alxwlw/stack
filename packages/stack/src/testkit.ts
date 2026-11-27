@@ -1,5 +1,13 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+	chmodSync,
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
@@ -39,6 +47,23 @@ export function withPrivateTmpdir<T>(fn: (dir: string) => T): T {
 		else process.env.TMPDIR = saved;
 		rmSync(dir, { recursive: true, force: true });
 	}
+}
+
+/** Окружение для боевых adapter в тестах: окружение процесса без GITHUB_*, сверху — over. Читает
+ *  окружение в момент вызова: звать в тесте или beforeAll (после isolateGitConfig), не на верхнем уровне. */
+export function testEnv(over: Record<string, string> = {}): NodeJS.ProcessEnv {
+	const base = Object.entries(process.env).filter(([key]) => !key.startsWith('GITHUB_'));
+	return { ...Object.fromEntries(base), ...over };
+}
+
+/** Каталог с исполняемыми sh-скриптами и PATH, где он первый. */
+export function fakeBin(scripts: Record<string, string>): { path: string; env: { PATH: string } } {
+	const path = mkdtempSync(join(tmpdir(), 'stack-bin-'));
+	for (const [name, body] of Object.entries(scripts)) {
+		writeFileSync(join(path, name), `#!/bin/sh\n${body}\n`);
+		chmodSync(join(path, name), 0o755);
+	}
+	return { path, env: { PATH: `${path}:${process.env.PATH ?? ''}` } };
 }
 
 // Корень репозитория стека: тесты запускают proto и moon из него.

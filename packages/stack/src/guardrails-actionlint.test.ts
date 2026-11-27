@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from 'bun:test';
 
 import { actionlintArgv, parseActionlint } from './guardrails-actionlint.ts';
 import { type GuardrailRun, spawnRunner } from './guardrails-port.ts';
-import { gitRepo, isolateGitConfig, protoBin, put } from './testkit.ts';
+import { gitRepo, isolateGitConfig, protoBin, put, testEnv } from './testkit.ts';
 
 let restore = (): void => {};
 beforeAll(() => {
@@ -177,7 +177,7 @@ const A = '.github/workflows/a.yml';
 function lint(files: Record<string, string>, list: string[], shellcheck = true) {
 	const { dir } = gitRepo(files);
 	const argv = actionlintArgv(shellcheck ? protoBin('shellcheck') : undefined, list);
-	return parseActionlint(spawnRunner(dir)(protoBin('actionlint'), argv));
+	return parseActionlint(spawnRunner(dir, testEnv())(protoBin('actionlint'), argv));
 }
 const pick = (v: ReturnType<typeof lint>) =>
 	Array.isArray(v) ? v.map(({ rule, path, line }) => ({ rule, path, line })) : v;
@@ -230,6 +230,6 @@ test('actionlint: имя с пробелом — один аргумент, св
 	const { dir } = gitRepo({ 'seed.txt': 'seed\n' });
 	put(dir, spaced, WORKFLOW);
 	const argv = actionlintArgv(protoBin('shellcheck'), [spaced]);
-	const v = parseActionlint(spawnRunner(dir)(protoBin('actionlint'), argv));
+	const v = parseActionlint(spawnRunner(dir, testEnv())(protoBin('actionlint'), argv));
 	expect(Array.isArray(v) ? v.map((x) => x.path) : v).toEqual([spaced, spaced, spaced]);
 }, 30_000);

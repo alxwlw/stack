@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
 
-// Общие типы группы guardrails. Внешние вызовы идут через один порт: адаптер — в cli.ts, тесты
-// подставляют значения.
+// Общие типы группы guardrails. Внешние вызовы идут через один порт: боевой адаптер — spawnRunner
+// ниже, окружение ему передаёт вход, тесты подставляют значения.
 
 export interface GuardrailRun {
 	code: number;
@@ -10,7 +10,7 @@ export interface GuardrailRun {
 }
 
 // cwd — каталог процесса; без него корень репозитория (spawnRunner). env дописывается поверх
-// окружения процесса, очищенного spawnRunner.
+// окружения из параметра spawnRunner, очищенного им.
 export type GuardrailRunner = (
 	cmd: string,
 	argv: string[],
@@ -58,16 +58,16 @@ export function failureReason(run: GuardrailRun): string {
 	return first ?? `exited with ${run.code}`;
 }
 
-// Адаптер порта: процесс в корне репозитория (или в cwd вызова), окружение родителя без
+// Адаптер порта: процесс в корне репозитория (или в cwd вызова), окружение из параметра без
 // SHELLCHECK_OPTS, GITLEAKS_CONFIG, GITLEAKS_CONFIG_TOML, всеми HADOLINT_* и YAMLLINT_CONFIG_FILE:
 // первая подменяет порог shellcheck, две следующие — конфиг gitleaks целиком (в обход конфига
 // засева репозитория и его `[extend]`), HADOLINT_* меняют уровни, игнор и формат вывода hadolint,
 // последняя — конфиг yamllint, и чужая настройка из окружения сделала бы прогон другим, чем у
 // соседа. UV_* не трогаются: прокси, зеркала и кэш uv нужны в CI. Не запустился — код -1 и причина
 // в stderr.
-export function spawnRunner(root: string): GuardrailRunner {
+export function spawnRunner(root: string, parent: NodeJS.ProcessEnv): GuardrailRunner {
 	const env: NodeJS.ProcessEnv = Object.fromEntries(
-		Object.entries(process.env).filter(([key]) => !key.startsWith('HADOLINT_')),
+		Object.entries(parent).filter(([key]) => !key.startsWith('HADOLINT_')),
 	);
 	delete env.SHELLCHECK_OPTS;
 	delete env.GITLEAKS_CONFIG;
@@ -97,7 +97,7 @@ export function spawnRunner(root: string): GuardrailRunner {
 		env[`GIT_CONFIG_VALUE_${n + i}`] = value;
 	});
 	return (cmd, argv, cwd, extra) => {
-		// extra последним: бьёт и process.env, и пары GIT_CONFIG_*.
+		// extra последним: бьёт и окружение из параметра, и пары GIT_CONFIG_*.
 		const r = spawnSync(cmd, argv, {
 			cwd: cwd ?? root,
 			env: { ...env, ...extra },
