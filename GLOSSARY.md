@@ -7,7 +7,7 @@ The vocabulary of the toolchain canon and its `stack` CLI: what a repo adopts, w
 ### Canon and consumers
 
 **Canon**:
-The one shared set of toolchain files and pinned dependency versions, shipped inside `@alxwlw/stack`. Loaded per repo as a value by `loadCanon` (`packages/stack/src/canon.ts`: `readCanonSource` reads `canon/` once, `canonFor` is the pure step of profile and `with` selection, group check and pins); its sources are `packages/stack/canon/`.
+The one shared set of toolchain files and pinned dependency versions, shipped inside `@alxwlw/stack`. Read from disk once per run, in `runCommand` (`packages/stack/src/command.ts`), by `readCanonSource` (`packages/stack/src/canon.ts`); each command then narrows that value per repo with `canonFor`, the pure step of profile and `with` selection, group check and pins; its sources are `packages/stack/canon/`.
 _Avoid_: template, boilerplate, preset
 
 **Consumer**:

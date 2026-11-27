@@ -180,8 +180,8 @@ function readSettings(dir: string): CanonSettings {
 	return checkSettings(raw);
 }
 
-// Единственное место, где canon/ и package.json пакета читаются с диска: manifest.json и catalogs.json
-// по разу, каждый src по разу, package.json пакета один раз (не зависит от dir).
+// Единственное место, где canon/ и package.json пакета читаются с диска: manifest.json, settings.json и
+// catalogs.json по разу, каждый src по разу, package.json пакета один раз (не зависит от dir).
 // Имена групп: файловые — поле group манифеста, каталожные — ключи catalogs.json кроме dev, устаревшие и
 // группы правил — константы этого модуля.
 export function readCanonSource(dir: string = canonDir()): CanonSource {
