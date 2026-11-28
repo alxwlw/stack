@@ -3,6 +3,8 @@
 	"configFile": ".stack.jsonc",
 	"command": "stack",
 	"ownPackages": ["@alxwlw/"],
+	"groups": ["peers", "repo-rules", "guardrails"],
+	"deprecatedGroups": { "renovate": "Renovate is the canon's dependency bot for every profile." },
 	"syncPr": {
 		"title": "chore(stack): канон {version}",
 		"body": "Канон `@alxwlw/stack@{version}` применён к репозиторию.\n\nИзменённые файлы:\n{files}\nРелиз: https://github.com/alxwlw/stack/releases/tag/v{version}\n",

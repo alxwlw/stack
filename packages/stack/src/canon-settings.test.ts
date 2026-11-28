@@ -44,13 +44,18 @@ test.each([
 	expect(() => checkSettings({ ...valid(), [key]: value })).toThrow(`canon settings: "${key}"`);
 });
 
-test.each(['profiles', 'configFile', 'command', 'ownPackages', 'syncPr'])(
-	'нет ключа %s — та же ошибка',
-	(key) => {
-		const raw = Object.fromEntries(Object.entries(valid()).filter(([k]) => k !== key));
-		expect(() => checkSettings(raw)).toThrow(`canon settings: "${key}"`);
-	},
-);
+test.each([
+	'profiles',
+	'configFile',
+	'command',
+	'ownPackages',
+	'syncPr',
+	'groups',
+	'deprecatedGroups',
+])('нет ключа %s — та же ошибка', (key) => {
+	const raw = Object.fromEntries(Object.entries(valid()).filter(([k]) => k !== key));
+	expect(() => checkSettings(raw)).toThrow(`canon settings: "${key}"`);
+});
 
 test.each(['title', 'body', 'closeComment', 'upToDateComment'])(
 	'syncPr.%s: не строка, пусто, нет ключа',

@@ -1,5 +1,5 @@
 import { applyChanges } from './apply.ts';
-import type { Canon, RuleGroup } from './canon.ts';
+import type { Canon } from './canon.ts';
 import { planCatalogs } from './catalogs.ts';
 import {
 	checkDependabot,
@@ -20,6 +20,7 @@ import { planReleaseAgeExcludes } from './release-age.ts';
 import { loadRepo, type Repo } from './repo.ts';
 import { repoRulesGroup } from './repo-rules-rule.ts';
 import { type GroupPorts, type RuleGroupModule, runGroups } from './rule-group.ts';
+import type { RuleGroup } from './rule-settings.ts';
 import { checkSeedExtends } from './seed-extends.ts';
 import { planToolchainPins } from './toolchain-pins-rule.ts';
 

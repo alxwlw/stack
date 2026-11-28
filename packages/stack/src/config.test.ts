@@ -5,7 +5,7 @@ import { expect, test } from 'bun:test';
 import { knownGroups } from './canon.ts';
 import { readStackConfig, StackConfigError, stackConfigSchema } from './config.ts';
 import { OWNER_SOURCE, repoDir, SCHEMA_PATH } from './testkit.ts';
-import { ACME_SETTINGS } from './testkit-sources.ts';
+import { ACME_SETTINGS, TEST_SETTINGS } from './testkit-sources.ts';
 
 test('читает профиль, группы и исключения, не спотыкаясь о комментарии', () => {
 	const dir = repoDir({
@@ -245,7 +245,7 @@ test('$schema-строка принимается и в конфигурацию
 // schema.json читает редактор по `$schema`, который пишет init; CLI его не читает. Файл — производный:
 // форму заявляют профили настроек канона, CONFIG_KEYS, EXCEPTION_SHAPES и группы канона, схема строится из них.
 test('schema.json равен схеме, построенной из констант читателя и групп канона', () => {
-	const built = stackConfigSchema(OWNER_SOURCE.settings, knownGroups(OWNER_SOURCE.groups));
+	const built = stackConfigSchema(OWNER_SOURCE.settings, knownGroups(OWNER_SOURCE));
 	expect(JSON.parse(readFileSync(SCHEMA_PATH, 'utf8'))).toEqual(built);
 });
 
@@ -288,4 +288,17 @@ test('схема строится из настроек канона', () => {
 	expect(props.exceptions?.description).toContain('`acme check`');
 	expect(props.exceptions?.description).toContain('`acme sync`');
 	expect(props.exceptions?.description).not.toContain('stack');
+});
+
+test.each([
+	[{}, 'Opt-in canon groups.'],
+	[
+		{ a: 'A.', b: 'B.' },
+		'Opt-in canon groups. "a" is deprecated and does nothing: A. "b" is deprecated and does nothing: B.',
+	],
+])('схема: описание with строится из deprecatedGroups %j', (deprecatedGroups, text) => {
+	const schema = stackConfigSchema({ ...TEST_SETTINGS, deprecatedGroups }, ['peers']) as {
+		properties: { with: { description: string } };
+	};
+	expect(schema.properties.with.description).toBe(text);
 });

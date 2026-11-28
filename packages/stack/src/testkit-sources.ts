@@ -15,6 +15,8 @@ export const TEST_SETTINGS: CanonSettings = {
 		closeComment: 'Superseded by {url} ({version}).',
 		upToDateComment: 'Canon {version} is already in {base}.',
 	},
+	groups: ['peers', 'repo-rules', 'guardrails'],
+	deprecatedGroups: { renovate: "Renovate is the canon's dependency bot for every profile." },
 };
 
 // Чужой канон: доказывает, что настройки действуют.
@@ -29,6 +31,8 @@ export const ACME_SETTINGS: CanonSettings = {
 		closeComment: 'Superseded by {url} ({version}).',
 		upToDateComment: 'Canon {version} is already in {base}.',
 	},
+	groups: ['repo-rules'],
+	deprecatedGroups: {},
 };
 
 export const ACME_MANIFEST: StackManifest = {
@@ -49,7 +53,7 @@ export function testSource(over: Partial<CanonSource> = {}): CanonSource {
 			},
 		],
 		catalogs: { dev: {} },
-		groups: { files: [], catalogs: [], deprecated: [], rules: [] },
+		groups: { files: [], catalogs: [] },
 		manifest: { name: '@alxwlw/stack', version: '0.0.0' },
 		...over,
 	};
@@ -68,7 +72,7 @@ export function acmeSource(over: Partial<CanonSource> = {}): CanonSource {
 			},
 		],
 		catalogs: { dev: {} },
-		groups: { files: [], catalogs: [], deprecated: [], rules: [] },
+		groups: { files: [], catalogs: [] },
 		manifest: ACME_MANIFEST,
 		...over,
 	};

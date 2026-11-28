@@ -101,8 +101,12 @@ export function stackConfigSchema(
 		},
 		with: {
 			type: 'array',
-			description:
-				'Opt-in canon groups. "renovate" is deprecated and does nothing: Renovate is the canon\'s dependency bot for every profile.',
+			description: [
+				'Opt-in canon groups.',
+				...Object.entries(settings.deprecatedGroups).map(
+					([name, reason]) => `"${name}" is deprecated and does nothing: ${reason}`,
+				),
+			].join(' '),
 			items: { type: 'string', enum: [...groups] },
 		},
 		exceptions: {
