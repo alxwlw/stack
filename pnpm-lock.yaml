@@ -187,8 +187,8 @@ catalogs:
       specifier: 1.4.5
       version: 1.4.5
     '@types/node':
-      specifier: 26.6.6
-      version: 26.6.6
+      specifier: 26.6.10
+      version: 26.6.10
     dependency-cruiser:
       specifier: 18.9.0
       version: 18.9.0
@@ -217,7 +217,7 @@ importers:
         version: 1.4.5
       '@types/node':
         specifier: catalog:dev
-        version: 26.6.6
+        version: 26.6.10
       dependency-cruiser:
         specifier: catalog:dev
         version: 18.9.0
@@ -280,7 +280,7 @@ importers:
         version: 1.4.5
       '@types/node':
         specifier: catalog:dev
-        version: 26.6.6
+        version: 26.6.10
       typescript:
         specifier: catalog:dev
         version: 7.1.0-beta
@@ -842,8 +842,8 @@ packages:
   '@types/ms@2.1.0':
     resolution: {integrity: sha512-GsCCIZDE/p3i96vtEqx+7dBUGXrc7zeSK3wwPHIaRThS+9OhWIXRqzs4d6k1SVU8g91DrNRWxWUGhp5KXQb2VA==}
 
-  '@types/node@26.6.6':
-    resolution: {integrity: sha512-MzQj+8Kx3XI40OmUAE6Qoh58ZMNstNNMwn2nfd3qWsfe7nDNSqJNzes4njhz6AHwrSHOffSLwXU6yb474Q4aog==}
+  '@types/node@26.6.10':
+    resolution: {integrity: sha512-WJuPHoGB8WNQuTksNF7SOQpnH02PXeDYz4iueWbBT6/hTWnShY5F3T/hoJA3fY9+uYReDZ7pyTKKx83jQa7aGg==}
 
   '@types/unist@2.0.11':
     resolution: {integrity: sha512-CmBKiL6NNo/OqgmMn95Fk9Whlp2mtvIv+KNpQKN2F4SjvrEesubTRWGYSg+BnWZOnlCaSTU1sMpsBOzgbYhnsA==}
@@ -1873,7 +1873,7 @@ snapshots:
 
   '@types/ms@2.1.0': {}
 
-  '@types/node@26.6.6':
+  '@types/node@26.6.10':
     dependencies:
       undici-types: 8.9.0
 
@@ -1979,7 +1979,7 @@ snapshots:
 
   bun-types@1.4.5:
     dependencies:
-      '@types/node': 26.6.6
+      '@types/node': 26.6.10
       undici-types: 8.9.0
 
   chalk@4.1.2:
