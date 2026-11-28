@@ -120,12 +120,12 @@ export type CanonCatalogs = Record<string, Record<string, string>>;
 // Канон одного прогона как значение: уже отфильтрован под профиль и группы, содержимое файлов
 // прочитано, пины node и pnpm вычислены. Правила и план принимают его и не знают, где лежит каталог.
 export interface Canon {
-	/** Имена и тексты канона: профили, файл настроек, команда, образцы своих пакетов, тексты sync-PR. */
+	/** Имена и тексты канона: профили, файл настроек, команда, образцы своих пакетов, тексты sync-PR, группы правил (`groups`, `deprecatedGroups`) и включённые правила с параметрами (`rules`). */
 	settings: CanonSettings;
 	files: { dest: string; content: string; strategy?: SyncStrategy; satisfiedBy?: string[] }[];
 	catalogs: CanonCatalogs;
 	pins: Pins;
-	/** Включённые через with группы правил, в порядке RULE_GROUPS. */
+	/** Группы правил, которые канон предлагает (`settings.groups`) и потребитель включил через with, в порядке RULE_GROUPS. */
 	rules: RuleGroup[];
 	/** Свои пакеты: приходят потребителю с каналом, прямо или зависимостью stack. */
 	ownPackages: readonly Wanted[];

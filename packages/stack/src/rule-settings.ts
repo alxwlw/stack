@@ -1,5 +1,5 @@
 // Имена и параметры правил, которые канон называет в своих настройках (canon/settings.json).
-// Лист: ничего не импортирует (canon-settings.ts импортирует его, а модули правил — canon.ts).
+// Лист: импортирует только тип FindingCode (canon-settings.ts импортирует его, а модули правил — canon.ts).
 // Нарушение — дефект пакета канона: обычная Error с тем же префиксом, что у canon-settings.ts.
 import type { FindingCode } from './findings.ts';
 
@@ -38,7 +38,7 @@ export function checkDeprecatedGroups(
 	offered: readonly RuleGroup[],
 ): Readonly<Record<string, string>> {
 	if (!isRecord(raw)) return bad('"deprecatedGroups" must be an object of group name → reason');
-	const out: Record<string, string> = {};
+	const out: [string, string][] = [];
 	for (const [name, reason] of Object.entries(raw)) {
 		if (typeof reason !== 'string' || reason === '') {
 			bad(`"deprecatedGroups.${name}" must be a non-empty string`);
@@ -46,9 +46,10 @@ export function checkDeprecatedGroups(
 		if ((offered as readonly string[]).includes(name)) {
 			bad(`"deprecatedGroups" names ${JSON.stringify(name)}, which the canon also offers`);
 		}
-		out[name] = reason;
+		out.push([name, reason]);
 	}
-	return out;
+	// fromEntries определяет собственное свойство: имя __proto__ из JSON не подменяет прототип.
+	return Object.fromEntries(out);
 }
 
 // Правило вне групп: имя — код его находок. Канон включает правило ключом `rules` своих настроек;

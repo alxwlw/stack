@@ -115,7 +115,8 @@ export function checkSeedExtends(
 	const { command } = canon.settings;
 	const findings: Finding[] = [];
 	for (const { dest } of canon.files) {
-		const spec = seeds[dest];
+		// dest — имя из канона: читается только собственное свойство, не ключ прототипа.
+		const spec = Object.hasOwn(seeds, dest) ? seeds[dest] : undefined;
 		if (!spec || !repo.paths.has(dest)) continue;
 		const read = seedCheck(spec);
 		const text = repo.files.get(dest);

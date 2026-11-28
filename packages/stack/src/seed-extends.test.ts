@@ -514,3 +514,15 @@ test('checkRepo: засевы идут из настроек канона, а н
 	).toStrictEqual(['extend @acme/lint']);
 	expect(run('@acme/lint/base.json')).toStrictEqual([]);
 });
+
+test.each(['constructor', 'toString', '__proto__'])(
+	'checkSeedExtends: файл канона с именем прототипа %s не читается как засев',
+	(dest) => {
+		const c = testCanon({
+			files: [{ dest, content: 'x', strategy: 'create-if-absent' }],
+		});
+		const repo = testRepo(c);
+		expect(repo.paths.has(dest)).toBe(true);
+		expect(checkSeedExtends(repo, c, { '.gitleaks.toml': { kind: 'gitleaks' } })).toStrictEqual([]);
+	},
+);

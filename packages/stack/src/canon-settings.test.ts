@@ -152,3 +152,10 @@ test('нарушение настроек — ошибка пакета, не St
 	expect(caught).toBeInstanceOf(Error);
 	expect(caught).not.toBeInstanceOf(StackConfigError);
 });
+
+test('checkSettings передаёт предлагаемые группы в проверку устаревших', () => {
+	const raw = { ...valid(), groups: ['repo-rules'], deprecatedGroups: { 'repo-rules': 'x' } };
+	expect(() => checkSettings(raw)).toThrow(
+		'canon settings: "deprecatedGroups" names "repo-rules", which the canon also offers',
+	);
+});

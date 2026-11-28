@@ -108,6 +108,10 @@ test.each([
 		`${AT} entry "a" needs a non-empty "message"`,
 	],
 	[
+		{ a: { kind: 'json-extends', package: '@acme/lint', message: '' } },
+		`${AT} entry "a" needs a non-empty "message"`,
+	],
+	[
 		{ a: { kind: 'json-extends', package: '@acme/lint', message: 'm', x: 1 } },
 		`${AT} entry "a" has unknown key "x"`,
 	],
@@ -122,4 +126,10 @@ test('canon-not-extended без seeds или с лишним ключом — о
 	expect(() => checkRules({ 'canon-not-extended': { seeds: {}, x: 1 } })).toThrow(
 		'canon settings: "rules.canon-not-extended" has unknown key "x"',
 	);
+});
+
+test('deprecatedGroups: имя __proto__ из JSON остаётся собственным ключом, не теряется', () => {
+	const out = checkDeprecatedGroups(JSON.parse('{"__proto__": "x"}'), []);
+	expect(Object.hasOwn(out, '__proto__')).toBe(true);
+	expect(Object.getOwnPropertyDescriptor(out, '__proto__')?.value).toBe('x');
 });
