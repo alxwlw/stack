@@ -259,3 +259,18 @@ test('renovate-preset: имя команды в сообщениях идёт и
 	).find((f) => f.code === 'renovate-preset');
 	expect(bare?.message).toEndWith('the bot fights acme sync');
 });
+
+// Адрес пресета — параметр правила: у чужого канона свой, и пресет владельца у него не подходит.
+test('renovate-preset: пресет берётся из параметра правила канона, а не из константы', () => {
+	const ACME_PRESET = 'github>acme/canon//renovate/canon.json5#v3';
+	const acme = testCanon({ settings: ACME_WITH_PRESET });
+	const presets = (renovateText: string | null) =>
+		check(testRepo(acme, { 'renovate.json5': renovateText }), acme, []).filter(
+			(f) => f.code === 'renovate-preset',
+		);
+	expect(presets(null)[0]?.message).toContain(`"${ACME_PRESET}"`);
+	expect(presets(`{ extends: ['${ACME_PRESET}'] }\n`)).toStrictEqual([]);
+	const owner = presets(`{ extends: ['${TEST_RENOVATE_PRESET}'] }\n`);
+	expect(owner).toHaveLength(1);
+	expect(owner[0]?.message).toContain(`"${ACME_PRESET}"`);
+});
