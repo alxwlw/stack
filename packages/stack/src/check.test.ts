@@ -6,7 +6,6 @@ import { expect, spyOn, test } from 'bun:test';
 
 import type { Canon } from './canon.ts';
 import { check, checkRepo, syncRepo } from './check.ts';
-import { STACK_RENOVATE_PRESET } from './deps.ts';
 import {
 	fakePeersReader,
 	fakeRepoRulesReader,
@@ -15,10 +14,10 @@ import {
 	testCanon,
 	testRepo,
 } from './testkit.ts';
-import { ACME_SETTINGS } from './testkit-sources.ts';
+import { ACME_SETTINGS, TEST_RENOVATE_PRESET } from './testkit-sources.ts';
 
 // Конфиг Renovate на пресете канона: тесты исключений и каталогов не про бота.
-const RENOVATE = { 'renovate.json5': `{ extends: ['${STACK_RENOVATE_PRESET}'] }\n` };
+const RENOVATE = { 'renovate.json5': `{ extends: ['${TEST_RENOVATE_PRESET}'] }\n` };
 
 const realWrite = fs.writeFileSync;
 
@@ -41,13 +40,13 @@ test('стенд: конфиг Renovate из канона вытесняет с�
 		files: [
 			{
 				dest: 'renovate.json5',
-				content: `{ extends: ['${STACK_RENOVATE_PRESET}', 'из канона'] }\n`,
+				content: `{ extends: ['${TEST_RENOVATE_PRESET}', 'из канона'] }\n`,
 				strategy: 'create-if-absent',
 			},
 		],
 	});
 	const repo = testRepo(seeded);
-	expect(repo.renovate?.config).toEqual({ extends: [STACK_RENOVATE_PRESET, 'из канона'] });
+	expect(repo.renovate?.config).toEqual({ extends: [TEST_RENOVATE_PRESET, 'из канона'] });
 	expect(check(repo, seeded, [])).toEqual([]);
 });
 
@@ -152,6 +151,34 @@ test('check: порядок находок — план, unreadable-file, пра
 		'renovate-preset',
 		'dependabot-config',
 		'stale-exception',
+	]);
+});
+
+test('check: порядок находок — порядок RULE_NAMES, а не порядок ключей rules в настройках', () => {
+	const repo = {
+		'.editorconfig': 'сломали\n',
+		'package.json': '{ "packageManager": "pnpm@1.0.0", "engines": { "node": "^24" } }',
+		'renovate.json5': null,
+		'.github/dependabot.yml': 'version: 2\n',
+		'.moon/toolchain.yml': 'node: {}\n',
+	};
+	const reversed = {
+		...canon,
+		settings: {
+			...canon.settings,
+			rules: Object.fromEntries(Object.entries(canon.settings.rules).reverse()),
+		},
+	};
+	expect(Object.keys(reversed.settings.rules)).not.toStrictEqual(Object.keys(canon.settings.rules));
+	const codes = (c: Canon) => check(testRepo(c, repo), c, []).map((f) => f.code);
+	expect(codes(reversed)).toStrictEqual(codes(canon));
+	expect(codes(canon)).toStrictEqual([
+		'file-drift',
+		'package-manager',
+		'engines-node',
+		'renovate-preset',
+		'dependabot-config',
+		'moon-v1-toolchain',
 	]);
 });
 
@@ -323,7 +350,7 @@ test('checkRepo: подсказки stale групп peers и repo-rules наз�
 	const repo = repoDir({
 		...CLEAN_REPO,
 		'pnpm-lock.yaml': 'lockfileVersion: x\n',
-		'.stack-peers-baseline.json': JSON.stringify({ version: 1, peers: [stalePeer] }),
+		'.acme-peers-baseline.json': JSON.stringify({ version: 1, peers: [stalePeer] }),
 	});
 	const peers = fakePeersReader({ status: 0, signal: null, stdout: '{}', stderr: '' });
 	const rr = fakeRepoRulesReader(

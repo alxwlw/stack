@@ -16,6 +16,7 @@ import {
 } from './canon.ts';
 import { type Profile, type StackConfig, StackConfigError } from './config.ts';
 import { RENOVATE_CONFIGS } from './repo.ts';
+import { RULE_NAMES } from './rule-settings.ts';
 import {
 	canonBundles,
 	canonFile,
@@ -24,7 +25,7 @@ import {
 	parseBundles,
 	repoDir,
 } from './testkit.ts';
-import { ACME_SETTINGS, TEST_SETTINGS } from './testkit-sources.ts';
+import { ACME_SETTINGS, acmeSource, rulesWithout, TEST_SETTINGS } from './testkit-sources.ts';
 
 // Не канон-файл: README лежит рядом с пакетом, а не в canon/.
 const README_PATH = join(import.meta.dir, '..', '..', '..', 'README.md');
@@ -41,7 +42,7 @@ const PROTOTOOLS = 'node = "26.8.1"\npnpm = "11.15.0"\n\n[plugins]\nx = "file://
 // Источник-литерал: loadCanon не нужен, canonFor получает канон значением.
 function fixtureSource(): CanonSource {
 	return {
-		settings: TEST_SETTINGS,
+		settings: { ...TEST_SETTINGS, groups: [] },
 		entries: [
 			{
 				src: 'files/editorconfig',
@@ -77,7 +78,7 @@ function fixtureSource(): CanonSource {
 			},
 		],
 		catalogs: { dev: { oxlint: '1.83.0', typescript: '7.0.2' }, libs: { react: '19.2.7' } },
-		groups: { files: ['moon-tasks'], catalogs: ['libs'], deprecated: ['renovate'], rules: [] },
+		groups: { files: ['moon-tasks'], catalogs: ['libs'] },
 		manifest: { name: '@alxwlw/stack', version: '0.0.0' },
 	};
 }
@@ -197,7 +198,10 @@ test('readCanonSource на настоящем canon/: все записи ман
 // Литеральный canon/ на диске: manifest из записей, каталог только dev, два src-файла.
 const literalCanon = (files: unknown): string =>
 	repoDir({
-		'settings.json': JSON.stringify(TEST_SETTINGS),
+		'settings.json': JSON.stringify({
+			...TEST_SETTINGS,
+			rules: rulesWithout('canon-not-extended'),
+		}),
 		'manifest.json': JSON.stringify({ files }),
 		'catalogs.json': '{ "dev": {} }',
 		'files/a': 'A',
@@ -299,6 +303,24 @@ const badManifests: [string, unknown, RegExp][] = [
 
 test.each(badManifests)('readCanonSource отклоняет manifest: %s', (_name, files, message) => {
 	expect(() => readCanonSource(literalCanon(files))).toThrow(message);
+});
+
+test('readCanonSource: засев называет dest, которого не пишет ни одна запись манифеста', () => {
+	const dir = repoDir({
+		'settings.json': JSON.stringify({
+			...TEST_SETTINGS,
+			rules: {
+				...TEST_SETTINGS.rules,
+				'canon-not-extended': { seeds: { '.nope.json': { kind: 'gitleaks' } } },
+			},
+		}),
+		'manifest.json': JSON.stringify({ files: [entry()] }),
+		'catalogs.json': '{ "dev": {} }',
+		'files/a': 'A',
+	});
+	expect(() => readCanonSource(dir)).toThrow(
+		'canon settings: "rules.canon-not-extended.seeds" names ".nope.json", which no manifest entry writes',
+	);
 });
 
 test('manifest.json с текстом null — files не массив', () => {
@@ -418,17 +440,86 @@ test('канон Renovate: засев конфига подключает пре
 test('knownGroups: файловые, каталожные, устаревшие группы и группы правил — без повторов, по алфавиту', () => {
 	expect(
 		knownGroups({
-			files: ['knip', 'moon-tasks'],
-			catalogs: ['libs', 'knip'],
-			deprecated: ['renovate'],
-			rules: ['peers'],
+			groups: { files: ['knip', 'moon-tasks'], catalogs: ['libs', 'knip'] },
+			settings: { ...TEST_SETTINGS, groups: ['peers'], deprecatedGroups: { renovate: 'why' } },
 		}),
 	).toEqual(['knip', 'libs', 'moon-tasks', 'peers', 'renovate']);
 });
 
+const deprecatedDir = (name: string): string =>
+	repoDir({
+		'settings.json': JSON.stringify({ ...TEST_SETTINGS, deprecatedGroups: { [name]: 'why' } }),
+		'manifest.json': JSON.stringify({ files: [entry({ group: 'knip' })] }),
+		'catalogs.json': '{ "dev": {}, "libs": {} }',
+		'files/a': 'A',
+	});
+
+test.each(['knip', 'libs'])(
+	'устаревшее имя %s совпадает с файловой или каталожной группой — ошибка пакета канона',
+	(name) => {
+		let error: unknown;
+		try {
+			readCanonSource(deprecatedDir(name));
+		} catch (caught) {
+			error = caught;
+		}
+		expect(error).toBeInstanceOf(Error);
+		expect(error).not.toBeInstanceOf(StackConfigError);
+		expect((error as Error).message).toBe(
+			`canon settings: "deprecatedGroups" names "${name}", which the canon also offers`,
+		);
+	},
+);
+
+test('canonFor: группа правил, которой канон не предлагает, — неизвестная группа в with', () => {
+	const source = fixtureSource();
+	const only = { ...source, settings: { ...source.settings, groups: ['repo-rules' as const] } };
+	expect(() => canonFor(only, cfg({ with: ['peers'] }))).toThrow(StackConfigError);
+	expect(() => canonFor(only, cfg({ with: ['peers'] }))).toThrow(
+		'unknown group "peers" in "with", expected one of: libs, moon-tasks, renovate, repo-rules',
+	);
+});
+
+test('canonFor: файловая группа с именем группы правил приезжает, правило не включено', () => {
+	const source = fixtureSource();
+	const peersFile = {
+		src: 'files/peers',
+		dest: 'peers.txt',
+		appliesTo: ['node'],
+		group: 'peers',
+		content: 'P',
+	};
+	const s = {
+		...source,
+		entries: [...source.entries, peersFile],
+		groups: { ...source.groups, files: [...source.groups.files, 'peers'] },
+	};
+	const canon = canonFor(s, cfg({ with: ['peers'] }));
+	expect(canon.rules).toStrictEqual([]);
+	expect(canon.files.map((f) => f.dest)).toContain('peers.txt');
+});
+
+test('canonFor: порядок Canon.rules — RULE_GROUPS, а не порядок groups настроек', () => {
+	const source = fixtureSource();
+	const s = {
+		...source,
+		settings: { ...source.settings, groups: ['guardrails', 'repo-rules', 'peers'] as const },
+	};
+	expect(canonFor(s, cfg({ with: ['guardrails', 'peers'] })).rules).toStrictEqual([
+		'peers',
+		'guardrails',
+	]);
+});
+
+test('canonFor: чужой канон предлагает свои группы — peers в with отклонён', () => {
+	expect(() => canonFor(acmeSource(), { profile: 'web', with: ['peers'], exceptions: [] })).toThrow(
+		'unknown group "peers" in "with", expected one of: repo-rules',
+	);
+});
+
 test('группа правила peers: известна, попадает в Canon.rules, файлов и каталогов не добавляет', () => {
 	const source = readCanonSource();
-	expect(knownGroups(source.groups)).toContain('peers');
+	expect(knownGroups(source)).toContain('peers');
 	for (const profile of OWNER_SOURCE.settings.profiles) {
 		const plain = canonFor(source, { profile, with: [], exceptions: [] });
 		const peers = canonFor(source, { profile, with: ['peers'], exceptions: [] });
@@ -460,8 +551,7 @@ function readmeGroupRows(): Map<string, string> {
 }
 
 test('README: таблица групп перечисляет ровно группы канона', () => {
-	const g = readCanonSource().groups;
-	expect([...readmeGroupRows().keys()].sort()).toEqual(knownGroups(g));
+	expect([...readmeGroupRows().keys()].sort()).toEqual(knownGroups(readCanonSource()));
 });
 
 // «Seeds» в README обещает засев: файл принадлежит репозиторию, sync его не перезаписывает.
@@ -657,7 +747,10 @@ describe('связки canon/bundles.json в каталогах канона', (
 
 const acmeDir = (files: unknown): string =>
 	repoDir({
-		'settings.json': JSON.stringify(ACME_SETTINGS),
+		'settings.json': JSON.stringify({
+			...ACME_SETTINGS,
+			rules: rulesWithout('canon-not-extended'),
+		}),
 		'manifest.json': JSON.stringify({ files }),
 		'catalogs.json': '{ "dev": {} }',
 		'files/a': 'A',
@@ -672,4 +765,23 @@ test('appliesTo манифеста проверяется по профилям 
 	expect(() => readCanonSource(acmeDir([a(['chain']), a(['web', 'chain'])]))).toThrow(
 		'canon manifest: dest "a" is listed twice for profile chain',
 	);
+});
+
+test('канон владельца включает все правила, пресет Renovate — с тегом мажора', () => {
+	const { rules } = OWNER_SOURCE.settings;
+	expect(Object.keys(rules).sort()).toStrictEqual([...RULE_NAMES].sort());
+	// Без тега или с #main потребитель получал бы неопубликованный канон, а пресет — тот же источник,
+	// что и rollout (плавающий v1).
+	expect(rules['renovate-preset']?.preset).toMatch(/#v\d+$/);
+});
+
+// Тексты правил живут в двух местах — в settings.json и в литерале тестов; без этого теста тесты на
+// testCanon прошли бы на тексте, которого у канона владельца уже нет. Тест снимает фаза 4 вместе с литералом.
+test('TEST_SETTINGS — зеркало канона владельца: правила, группы, устаревшие группы', () => {
+	const mirror = (s: typeof TEST_SETTINGS) => ({
+		rules: s.rules,
+		groups: s.groups,
+		deprecatedGroups: s.deprecatedGroups,
+	});
+	expect(mirror(TEST_SETTINGS)).toStrictEqual(mirror(OWNER_SOURCE.settings));
 });

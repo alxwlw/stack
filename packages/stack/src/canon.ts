@@ -6,6 +6,7 @@ import { type CanonSettings, checkSettings } from './canon-settings.ts';
 import { type Profile, type StackConfig, StackConfigError } from './config.ts';
 import { ownManifest, ownPackages, type StackManifest } from './own-packages.ts';
 import type { Wanted } from './registry.ts';
+import { RULE_GROUPS, type RuleGroup } from './rule-settings.ts';
 
 export const SYNC_STRATEGIES = ['verbatim', 'create-if-absent'] as const;
 export type SyncStrategy = (typeof SYNC_STRATEGIES)[number];
@@ -119,12 +120,12 @@ export type CanonCatalogs = Record<string, Record<string, string>>;
 // Канон одного прогона как значение: уже отфильтрован под профиль и группы, содержимое файлов
 // прочитано, пины node и pnpm вычислены. Правила и план принимают его и не знают, где лежит каталог.
 export interface Canon {
-	/** Имена и тексты канона: профили, файл настроек, команда, образцы своих пакетов, тексты sync-PR. */
+	/** Имена и тексты канона: профили, файл настроек, команда, образцы своих пакетов, тексты sync-PR, группы правил (`groups`, `deprecatedGroups`) и включённые правила с параметрами (`rules`). */
 	settings: CanonSettings;
 	files: { dest: string; content: string; strategy?: SyncStrategy; satisfiedBy?: string[] }[];
 	catalogs: CanonCatalogs;
 	pins: Pins;
-	/** Включённые через with группы правил, в порядке RULE_GROUPS. */
+	/** Группы правил, которые канон предлагает (`settings.groups`) и потребитель включил через with, в порядке RULE_GROUPS. */
 	rules: RuleGroup[];
 	/** Свои пакеты: приходят потребителю с каналом, прямо или зависимостью stack. */
 	ownPackages: readonly Wanted[];
@@ -141,18 +142,10 @@ export function canonDir(): string {
 	return join(dirname(fileURLToPath(import.meta.url)), '..', 'canon');
 }
 
-// Устаревшие группы принимаются ради старых файлов настроек потребителя и ничего не включают.
-const DEPRECATED_GROUPS: readonly string[] = ['renovate'];
-
-// Группа правила включает правило `stack check`, файлов и каталогов не даёт.
-export const RULE_GROUPS = ['peers', 'repo-rules', 'guardrails'] as const;
-export type RuleGroup = (typeof RULE_GROUPS)[number];
-
+// Файловые и каталожные группы канона; устаревшие и предлагаемые группы правил — в его настройках.
 export interface CanonGroups {
 	files: string[];
 	catalogs: string[];
-	deprecated: readonly string[];
-	rules: readonly string[];
 }
 
 // canon/ как значение: все записи манифеста с содержимым, каталоги и имена групп. Читается один раз;
@@ -182,8 +175,8 @@ function readSettings(dir: string): CanonSettings {
 
 // Единственное место, где canon/ и package.json пакета читаются с диска: manifest.json, settings.json и
 // catalogs.json по разу, каждый src по разу, package.json пакета один раз (не зависит от dir).
-// Имена групп: файловые — поле group манифеста, каталожные — ключи catalogs.json кроме dev, устаревшие и
-// группы правил — константы этого модуля.
+// Имена групп: файловые — поле group манифеста, каталожные — ключи catalogs.json кроме dev; устаревшие и
+// предлагаемые группы правил — `deprecatedGroups` и `groups` настроек.
 export function readCanonSource(dir: string = canonDir()): CanonSource {
 	const settings = readSettings(dir);
 	const manifest = checkManifest(
@@ -198,20 +191,35 @@ export function readCanonSource(dir: string = canonDir()): CanonSource {
 	const groups: CanonGroups = {
 		files: [...new Set(entries.flatMap((f) => (f.group == null ? [] : [f.group])))],
 		catalogs: Object.keys(catalogs).filter((g) => g !== 'dev'),
-		deprecated: DEPRECATED_GROUPS,
-		rules: RULE_GROUPS,
 	};
+	for (const name of Object.keys(settings.deprecatedGroups)) {
+		if (groups.files.includes(name) || groups.catalogs.includes(name)) {
+			throw new Error(
+				`canon settings: "deprecatedGroups" names ${JSON.stringify(name)}, which the canon also offers`,
+			);
+		}
+	}
+	const seeds = settings.rules['canon-not-extended']?.seeds ?? {};
+	for (const dest of Object.keys(seeds)) {
+		if (!entries.some((e) => e.dest === dest)) {
+			throw new Error(
+				`canon settings: "rules.canon-not-extended.seeds" names ${JSON.stringify(dest)}, which no manifest entry writes`,
+			);
+		}
+	}
 	return { settings, entries, catalogs, groups, manifest: ownManifest() };
 }
 
 // Все имена, допустимые в `with`: файловые, каталожные, устаревшие и группы правил — без повторов,
 // по алфавиту.
-export function knownGroups(g: CanonGroups): string[] {
-	return [...new Set([...g.files, ...g.catalogs, ...g.deprecated, ...g.rules])].sort();
+export function knownGroups(source: Pick<CanonSource, 'groups' | 'settings'>): string[] {
+	const { files, catalogs } = source.groups;
+	const { deprecatedGroups, groups } = source.settings;
+	return [...new Set([...files, ...catalogs, ...Object.keys(deprecatedGroups), ...groups])].sort();
 }
 
 export function assertKnownGroups(groups: readonly string[], source: CanonSource): void {
-	const known = knownGroups(source.groups);
+	const known = knownGroups(source);
 	for (const name of groups) {
 		if (!known.includes(name)) {
 			throw new StackConfigError(
@@ -254,7 +262,10 @@ export function canonFor(source: CanonSource, cfg: StackConfig): Canon {
 	if (!node) throw new Error('canon .prototools has no node pin');
 	// Пин pnpm нужен правилу package-manager: поле packageManager — второй источник версии pnpm.
 	if (!pnpm) throw new Error('canon .prototools has no pnpm pin');
-	const rules = RULE_GROUPS.filter((g) => cfg.with.includes(g));
+	// Группа правил включена, если канон её предлагает и потребитель назвал в with.
+	const rules = RULE_GROUPS.filter(
+		(g) => source.settings.groups.includes(g) && cfg.with.includes(g),
+	);
 	return {
 		settings: source.settings,
 		files,

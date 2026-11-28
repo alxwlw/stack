@@ -5,7 +5,7 @@ import { describe, expect, test } from 'bun:test';
 import JSON5 from 'json5';
 import { parse as parseYaml } from 'yaml';
 
-import { STACK_RENOVATE_PRESET } from './deps.ts';
+import { OWNER_SOURCE } from './testkit.ts';
 
 // Пресет автослива живёт в корне репо рядом с каноном и подключается как
 // github>alxwlw/stack//renovate/automerge.json5#v1 (строку берут тесты шаблона и своего конфига).
@@ -135,7 +135,7 @@ describe('подключение', () => {
 		);
 		expect(t.extends).toStrictEqual([
 			'config:recommended',
-			STACK_RENOVATE_PRESET,
+			OWNER_SOURCE.settings.rules['renovate-preset']?.preset,
 			AUTOMERGE_PRESET,
 		]);
 	});

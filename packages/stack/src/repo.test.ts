@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { expect, test } from 'bun:test';
 
 import { check, plan, syncRepo } from './check.ts';
-import { type PeerEntry, PEERS_BASELINE } from './peers.ts';
+import { type PeerEntry, peersBaselineFile } from './peers.ts';
 import {
 	DEPENDABOT_CONFIGS,
 	loadRepo,
@@ -20,11 +20,14 @@ import {
 	WORKSPACE_FILE,
 } from './repo.ts';
 import { ioError, repoDir, testCanon, testRepo } from './testkit.ts';
+import { TEST_SETTINGS } from './testkit-sources.ts';
+
+const PEERS_FILE = peersBaselineFile(TEST_SETTINGS.command);
 
 // Снимок, в котором все файлы прочитаны.
 const texts = (files: Map<string, string>) =>
 	new Map<string, Read>([...files].map(([path, text]) => [path, { text }]));
-const fromTexts = (files: Map<string, string>) => repoFromSnapshot(texts(files));
+const fromTexts = (files: Map<string, string>) => repoFromSnapshot(texts(files), PEERS_FILE);
 
 const byTarget = (r: { unreadable: { target: string }[] }) => r.unreadable.map((f) => f.target);
 
@@ -347,6 +350,7 @@ test('paths: ключи files и существующие нечитаемые �
 				['dir', { failed: ioError('EISDIR', "illegal operation on a directory, read 'dir'") }],
 				['gone', { missing: true }],
 			]),
+			PEERS_FILE,
 		).paths,
 	).toEqual(new Set(['a.txt', 'dir']));
 });
@@ -383,6 +387,7 @@ test('вложенные package.json без pnpm-workspace.yaml среди пу
 			...texts(files),
 			['pnpm-workspace.yaml', { failed: ioError('EISDIR', 'illegal operation on a directory') }],
 		]),
+		PEERS_FILE,
 	);
 	expect(byTarget(unreadableWorkspace)).toEqual(['pnpm-workspace.yaml', 'packages/a/package.json']);
 });
@@ -481,7 +486,7 @@ const baselineText = (peers: unknown[]): string => JSON.stringify({ version: 1, 
 test('baseline peers: разобранный — в peersBaseline, pnpm-lock.yaml — в paths', () => {
 	const repo = fromTexts(
 		new Map([
-			[PEERS_BASELINE, baselineText(PEER_ENTRIES)],
+			[PEERS_FILE, baselineText(PEER_ENTRIES)],
 			[LOCKFILE, 'lockfileVersion: x\n'],
 		]),
 	);
@@ -502,9 +507,9 @@ test('baseline peers: битый — ровно одна unreadable-file с пр
 		[baselineText([conflictWithFound]), 'peers[0] is not a valid entry'],
 		[baselineText([PEER_ENTRIES[0], PEER_ENTRIES[0]]), 'peers[1] repeats an earlier entry'],
 	] as const) {
-		const repo = fromTexts(new Map([[PEERS_BASELINE, text]]));
+		const repo = fromTexts(new Map([[PEERS_FILE, text]]));
 		expect(triple(repo), text).toStrictEqual([
-			['unreadable-file', PEERS_BASELINE, `${PEERS_BASELINE} does not parse: ${reason}`],
+			['unreadable-file', PEERS_FILE, `${PEERS_FILE} does not parse: ${reason}`],
 		]);
 		expect(
 			repo.unreadable[0]?.message.startsWith('.stack-peers-baseline.json does not parse: '),
@@ -514,7 +519,10 @@ test('baseline peers: битый — ровно одна unreadable-file с пр
 });
 
 test('baseline peers: сбой чтения — unreadable-file', () => {
-	const repo = repoFromSnapshot(new Map([[PEERS_BASELINE, { failed: new Error('EACCES') }]]));
+	const repo = repoFromSnapshot(
+		new Map([[PEERS_FILE, { failed: new Error('EACCES') }]]),
+		PEERS_FILE,
+	);
 	expect(triple(repo)).toStrictEqual([
 		[
 			'unreadable-file',
@@ -523,7 +531,7 @@ test('baseline peers: сбой чтения — unreadable-file', () => {
 		],
 	]);
 	expect('peersBaseline' in repo).toBe(false);
-	expect(repo.paths.has(PEERS_BASELINE)).toBe(true);
+	expect(repo.paths.has(PEERS_FILE)).toBe(true);
 });
 
 // Адаптер диска: сверяем значения снимка, а не находки.
@@ -616,7 +624,7 @@ test('readSnapshot: кандидаты — package.json, pnpm-workspace.yaml, de
 			MOON_TOOLCHAINS,
 			MOON_TOOLCHAIN_V1,
 			...MOON_WORKSPACES,
-			PEERS_BASELINE,
+			PEERS_FILE,
 			LOCKFILE,
 		]
 			.filter((p, i, all) => all.indexOf(p) === i)

@@ -6,6 +6,7 @@ import {
 	parsePeersBaseline,
 	type PeerEntry,
 	type PeerIssue,
+	peersBaselineFile,
 	peersOutcome,
 	type PeersRun,
 	serializePeersBaseline,
@@ -587,4 +588,9 @@ test('lowerPeersBaseline: остаётся только то, что ещё ес
 			[issue(unmetZod4), issue(conflictEthers), issue(unmetViem)],
 		),
 	).toStrictEqual([unmetZod4, unmetViem]);
+});
+
+test('peersBaselineFile: файл baseline — по имени команды', () => {
+	expect(peersBaselineFile('stack')).toBe('.stack-peers-baseline.json');
+	expect(peersBaselineFile('acme')).toBe('.acme-peers-baseline.json');
 });

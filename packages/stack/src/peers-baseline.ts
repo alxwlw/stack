@@ -9,7 +9,7 @@ import type { Canon } from './canon.ts';
 import {
 	comparePeers,
 	lowerPeersBaseline,
-	PEERS_BASELINE,
+	peersBaselineFile,
 	type PeersReader,
 	serializePeersBaseline,
 } from './peers.ts';
@@ -41,16 +41,17 @@ export function peersBaseline(
 			? quiet()
 			: failed(2, `peers-baseline needs "peers" in "with" of ${canon.settings.configFile}`);
 	}
+	const file = peersBaselineFile(canon.settings.command);
 	const repo = loadRepo(repoRoot, canon);
 	// Неразобранный файл не перезаписывается: в нём могли быть записи, которых больше нигде нет.
-	const broken = repo.unreadable.find((f) => f.target === PEERS_BASELINE);
+	const broken = repo.unreadable.find((f) => f.target === file);
 	if (broken !== undefined) return failed(2, broken.message);
-	const exists = repo.paths.has(PEERS_BASELINE);
-	if (mode === 'init' && exists) return failed(2, `${PEERS_BASELINE} already exists`);
+	const exists = repo.paths.has(file);
+	if (mode === 'init' && exists) return failed(2, `${file} already exists`);
 	if (mode !== 'init' && !exists) {
 		return dropFixed
 			? quiet()
-			: failed(2, `no ${PEERS_BASELINE}: run ${canon.settings.command} peers-baseline --init`);
+			: failed(2, `no ${file}: run ${canon.settings.command} peers-baseline --init`);
 	}
 	const outcome = readPeers(repo, repoRoot, read);
 	if ('unavailable' in outcome) return failed(1, outcome.unavailable);
@@ -74,16 +75,13 @@ export function peersBaseline(
 		mode === 'init' || mode === 'grow'
 			? current.map((i) => i.entry)
 			: lowerPeersBaseline(baseline, current);
-	writeFileSync(
-		join(repoRoot, PEERS_BASELINE),
-		serializePeersBaseline(next, repo.files.get(PEERS_BASELINE)),
-	);
-	const wrote = `wrote ${PEERS_BASELINE}: ${next.length} entr(ies)`;
+	writeFileSync(join(repoRoot, file), serializePeersBaseline(next, repo.files.get(file)));
+	const wrote = `wrote ${file}: ${next.length} entr(ies)`;
 	const line =
 		mode === 'init'
 			? wrote
 			: dropFixed
-				? `dropped ${stale.length} fixed entr(ies) from ${PEERS_BASELINE}`
+				? `dropped ${stale.length} fixed entr(ies) from ${file}`
 				: `${wrote} (-${stale.length} fixed, +${added.length} new)`;
 	return { code: 0, out: [line], err: [] };
 }

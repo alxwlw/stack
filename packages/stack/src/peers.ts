@@ -1,7 +1,8 @@
 // Ядро гейта `pnpm peers check`: разбор ответа pnpm, ключ проблемы, файл baseline и сравнение.
 // Только чистые функции: процесс pnpm и диск — у вызывающих.
 
-export const PEERS_BASELINE = '.stack-peers-baseline.json';
+// Файл baseline канона: по имени его команды из настроек.
+export const peersBaselineFile = (command: string): string => `.${command}-peers-baseline.json`;
 
 // Устойчивый ключ одной проблемы и запись baseline — одно и то же значение.
 // Сырой JSON pnpm недетерминирован, поэтому в ключе нет версии объявившего пакета, wantedRange

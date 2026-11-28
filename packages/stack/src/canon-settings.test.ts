@@ -7,9 +7,12 @@ import { repoDir } from './testkit.ts';
 import { ACME_SETTINGS, TEST_SETTINGS, testSource } from './testkit-sources.ts';
 
 const valid = (): Record<string, unknown> => ({ ...structuredClone(ACME_SETTINGS) });
+// Манифест пишет .oxlintrc.json — засев чужого канона называет его, и без записи настройки не читаются.
 const dirWith = (settings: string | null): string =>
 	repoDir({
-		'manifest.json': '{ "files": [] }',
+		'manifest.json':
+			'{ "files": [{ "src": "files/o", "dest": ".oxlintrc.json", "appliesTo": ["web"] }] }',
+		'files/o': '{}',
 		'catalogs.json': '{ "dev": {} }',
 		...(settings === null ? {} : { 'settings.json': settings }),
 	});
@@ -44,13 +47,19 @@ test.each([
 	expect(() => checkSettings({ ...valid(), [key]: value })).toThrow(`canon settings: "${key}"`);
 });
 
-test.each(['profiles', 'configFile', 'command', 'ownPackages', 'syncPr'])(
-	'нет ключа %s — та же ошибка',
-	(key) => {
-		const raw = Object.fromEntries(Object.entries(valid()).filter(([k]) => k !== key));
-		expect(() => checkSettings(raw)).toThrow(`canon settings: "${key}"`);
-	},
-);
+test.each([
+	'profiles',
+	'configFile',
+	'command',
+	'ownPackages',
+	'syncPr',
+	'groups',
+	'deprecatedGroups',
+	'rules',
+])('нет ключа %s — та же ошибка', (key) => {
+	const raw = Object.fromEntries(Object.entries(valid()).filter(([k]) => k !== key));
+	expect(() => checkSettings(raw)).toThrow(`canon settings: "${key}"`);
+});
 
 test.each(['title', 'body', 'closeComment', 'upToDateComment'])(
 	'syncPr.%s: не строка, пусто, нет ключа',
@@ -142,4 +151,11 @@ test('нарушение настроек — ошибка пакета, не St
 	}
 	expect(caught).toBeInstanceOf(Error);
 	expect(caught).not.toBeInstanceOf(StackConfigError);
+});
+
+test('checkSettings передаёт предлагаемые группы в проверку устаревших', () => {
+	const raw = { ...valid(), groups: ['repo-rules'], deprecatedGroups: { 'repo-rules': 'x' } };
+	expect(() => checkSettings(raw)).toThrow(
+		'canon settings: "deprecatedGroups" names "repo-rules", which the canon also offers',
+	);
 });

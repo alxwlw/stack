@@ -122,7 +122,7 @@ previous `sync.yml`: the rollout runs before the tag moves.
 ## A new major
 
 A new major gets its own floating tag (`v2`) and a new literal wherever `v1` is written. Find the places
-with `git grep -n '@v1\|#v1'`: the Renovate preset constant in the CLI, the canon workflow files,
+with `git grep -n '@v1\|#v1'`: the Renovate preset in `packages/stack/canon/settings.json` (`rules.renovate-preset.preset`), the canon workflow files,
 `check.yml` and `sync.yml`, the Renovate seed, the tests that pin the literal, and the README. Move the
 literal and the tag in the same release.
 

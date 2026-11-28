@@ -4,13 +4,13 @@ import { join } from 'node:path';
 import { expect, test } from 'bun:test';
 
 import { parsePins } from './canon.ts';
-import { STACK_RENOVATE_PRESET } from './deps.ts';
 import type { GuardrailsOutcome } from './guardrails.ts';
 import { gitleaksDirArgv } from './guardrails-gitleaks.ts';
 import type { GuardrailViolation } from './guardrails-port.ts';
 import { checkGuardrails, guardrailsGroup, guardrailsNotes } from './guardrails-rule.ts';
 import { loadRepo } from './repo.ts';
 import { fakeGuardrailRunner, groupContext, repoDir, ROOT, testCanon } from './testkit.ts';
+import { TEST_RENOVATE_PRESET } from './testkit-sources.ts';
 
 const viol = (
 	tool: GuardrailViolation['tool'],
@@ -261,7 +261,7 @@ test('guardrailsGroup: .prototools репозитория доходит до ч
 		files: [{ dest: '.prototools', content: prototools }],
 	});
 	const root = repoDir({
-		'renovate.json5': `{ extends: ['${STACK_RENOVATE_PRESET}'] }\n`,
+		'renovate.json5': `{ extends: ['${TEST_RENOVATE_PRESET}'] }\n`,
 		'.prototools': prototools,
 		'a.sh': 'echo $x\n',
 	});

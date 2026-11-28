@@ -43,13 +43,9 @@ export function checkEnginesNode(repo: Repo, canon: Canon): Finding[] {
 	];
 }
 
-// Строка подключения пресета канона. Ровно с тегом мажора: без тега или с #main потребитель
-// получал бы неопубликованный канон, а пресет — тот же источник, что и rollout (плавающий v1).
-export const STACK_RENOVATE_PRESET = 'github>alxwlw/stack//renovate/canon.json5#v1';
-
-// Пресет выключает Renovate для всего, что двигает stack sync (proto, каталоги канона dev и libs, @alxwlw/*,
-// ссылки alxwlw/stack) — без него бот и rollout перетягивают одни версии. Профиль не важен.
-export function checkRenovatePreset(repo: Repo, canon: Canon): Finding[] {
+// Пресет канона выключает Renovate для всего, что двигает sync — без него бот и rollout перетягивают одни
+// версии. Строку подключения называет канон параметром правила. Профиль не важен.
+export function checkRenovatePreset(repo: Repo, canon: Canon, preset: string): Finding[] {
 	const { renovate } = repo;
 	const { command } = canon.settings;
 	if (!renovate) {
@@ -57,7 +53,7 @@ export function checkRenovatePreset(repo: Repo, canon: Canon): Finding[] {
 			{
 				code: 'renovate-preset',
 				target: 'renovate.json5',
-				message: `no Renovate config found — ${command} sync seeds renovate.json5; an own config must extend "${STACK_RENOVATE_PRESET}"`,
+				message: `no Renovate config found — ${command} sync seeds renovate.json5; an own config must extend "${preset}"`,
 			},
 		];
 	}
@@ -68,13 +64,13 @@ export function checkRenovatePreset(repo: Repo, canon: Canon): Finding[] {
 		typeof config === 'object' && config !== null && 'extends' in config
 			? config.extends
 			: undefined;
-	return Array.isArray(ext) && ext.includes(STACK_RENOVATE_PRESET)
+	return Array.isArray(ext) && ext.includes(preset)
 		? []
 		: [
 				{
 					code: 'renovate-preset',
 					target: renovate.path,
-					message: `"extends" must include "${STACK_RENOVATE_PRESET}" — without the canon preset the bot fights ${command} sync`,
+					message: `"extends" must include "${preset}" — without the canon preset the bot fights ${command} sync`,
 				},
 			];
 }

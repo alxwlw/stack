@@ -3,6 +3,38 @@
 	"configFile": ".stack.jsonc",
 	"command": "stack",
 	"ownPackages": ["@alxwlw/"],
+	"groups": ["peers", "repo-rules", "guardrails"],
+	"deprecatedGroups": { "renovate": "Renovate is the canon's dependency bot for every profile." },
+	"rules": {
+		"release-age-exclude": {},
+		"package-manager": {},
+		"inline-version": {},
+		"engines-node": {},
+		"renovate-preset": { "preset": "github>alxwlw/stack//renovate/canon.json5#v1" },
+		"dependabot-config": {},
+		"canon-not-extended": {
+			"seeds": {
+				".gitleaks.toml": { "kind": "gitleaks" },
+				".oxlintrc.json": {
+					"kind": "json-extends",
+					"package": "@alxwlw/oxlint-config",
+					"message": "\"extends\" must include a preset of @alxwlw/oxlint-config, such as \"./node_modules/@alxwlw/oxlint-config/node.jsonc\" — without it the canon lint rules do not apply"
+				},
+				"tsconfig.options.json": {
+					"kind": "json-extends",
+					"package": "@alxwlw/tsconfig",
+					"message": "\"extends\" must name a preset of @alxwlw/tsconfig, such as \"@alxwlw/tsconfig/node.json\" — without it the canon compiler options do not apply"
+				}
+			}
+		},
+		"moon-toolchain-version": {},
+		"moon-v1-toolchain": {},
+		"moon-default-branch": {
+			"branch": "main",
+			"reason": "the branch the canon's stack workflow runs on"
+		},
+		"toolchain-pin": {}
+	},
 	"syncPr": {
 		"title": "chore(stack): канон {version}",
 		"body": "Канон `@alxwlw/stack@{version}` применён к репозиторию.\n\nИзменённые файлы:\n{files}\nРелиз: https://github.com/alxwlw/stack/releases/tag/v{version}\n",

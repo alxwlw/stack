@@ -1,9 +1,9 @@
 import { expect, test } from 'bun:test';
 
-import { RULE_GROUPS, type RuleGroup } from './canon.ts';
 import { type CheckPorts, checkRepo, RULE_GROUP_MODULES } from './check.ts';
 import type { FindingCode } from './findings.ts';
 import type { RuleGroupModule } from './rule-group.ts';
+import { RULE_GROUPS, type RuleGroup } from './rule-settings.ts';
 import {
 	fakeGuardrailRunner,
 	fakePeersReader,

@@ -1,5 +1,13 @@
 // Настройки канона: имена и тексты, которые канон объявляет данными (canon/settings.json).
 // Нарушение — дефект пакета канона, а не потребителя: обычная Error, не StackConfigError.
+import {
+	checkDeprecatedGroups,
+	checkGroups,
+	checkRules,
+	PACKAGE_NAME,
+	type RuleGroup,
+	type RuleSettings,
+} from './rule-settings.ts';
 
 export interface SyncPrTexts {
 	title: string;
@@ -14,6 +22,12 @@ export interface CanonSettings {
 	command: string;
 	ownPackages: readonly string[];
 	syncPr: SyncPrTexts;
+	/** Предлагаемые группы правил: из них `with` включает правила. */
+	groups: readonly RuleGroup[];
+	/** Устаревшие группы: имя → причина; принимаются, ничего не включают. */
+	deprecatedGroups: Readonly<Record<string, string>>;
+	/** Включённые правила вне групп: имя → параметры; чего нет, то выключено. */
+	rules: RuleSettings;
 }
 
 // Подстановки шаблонов: у каждого шаблона свой список.
@@ -36,11 +50,13 @@ const SETTINGS_KEYS: Record<keyof CanonSettings, true> = {
 	command: true,
 	ownPackages: true,
 	syncPr: true,
+	groups: true,
+	deprecatedGroups: true,
+	rules: true,
 };
 
 const PLACEHOLDER = /\{([A-Za-z]+)\}/g;
 const SCOPE_PATTERN = /^@[a-z0-9][a-z0-9._-]*\/$/;
-const PACKAGE_NAME = /^(@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/;
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
 	typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -118,12 +134,16 @@ export function checkSettings(raw: unknown): CanonSettings {
 	for (const key of Object.keys(raw)) {
 		if (!Object.hasOwn(SETTINGS_KEYS, key)) bad(`unknown key ${JSON.stringify(key)}`);
 	}
+	const groups = checkGroups(raw.groups);
 	return {
 		profiles: checkProfiles(raw.profiles),
 		configFile: checkConfigFile(raw.configFile),
 		command: checkCommand(raw.command),
 		ownPackages: checkOwnPackages(raw.ownPackages),
 		syncPr: checkSyncPr(raw.syncPr),
+		groups,
+		deprecatedGroups: checkDeprecatedGroups(raw.deprecatedGroups, groups),
+		rules: checkRules(raw.rules),
 	};
 }
 

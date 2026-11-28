@@ -17,11 +17,11 @@ import { type Canon, canonDir, canonFor, type CanonSource, readCanonSource } fro
 import type { SyncPrTexts } from './canon-settings.ts';
 import { type CommandPorts, type ExitCode, runCommand } from './command.ts';
 import type { Profile } from './config.ts';
-import { STACK_RENOVATE_PRESET } from './deps.ts';
 import type { GuardrailRun, GuardrailRunner } from './guardrails-port.ts';
 import type { Line } from './output.ts';
 import { ownPackages } from './own-packages.ts';
 import type { PeersReader, PeersRun } from './peers.ts';
+import { peersBaselineFile } from './peers.ts';
 import type { Served } from './registry.ts';
 import { type Read, RENOVATE_CONFIGS, type Repo, repoFromSnapshot } from './repo.ts';
 import type { RepoRulesReader, RepoRulesRun } from './repo-rules.ts';
@@ -229,8 +229,10 @@ export function canonRepoFiles(canon: Canon): Map<string, string> {
 		'package.json',
 		JSON.stringify({ name: 'repo', packageManager: `pnpm@${canon.pins.pnpm}` }),
 	);
-	if (!canon.files.some((f) => RENOVATE_CONFIGS.includes(f.dest))) {
-		files.set('renovate.json5', `{ extends: ['${STACK_RENOVATE_PRESET}'] }\n`);
+	// Правило выключено у канона — конфиг Renovate не пишется: проверять нечего.
+	const preset = canon.settings.rules['renovate-preset']?.preset;
+	if (preset !== undefined && !canon.files.some((f) => RENOVATE_CONFIGS.includes(f.dest))) {
+		files.set('renovate.json5', `{ extends: ['${preset}'] }\n`);
 	}
 	return files;
 }
@@ -248,7 +250,7 @@ export function testRepo(canon: Canon, over: Record<string, string | Read | null
 		if (value === null) snapshot.delete(path);
 		else snapshot.set(path, typeof value === 'string' ? { text: value } : value);
 	}
-	return repoFromSnapshot(snapshot);
+	return repoFromSnapshot(snapshot, peersBaselineFile(canon.settings.command));
 }
 
 // Контекст группы правил для тестов: корень '/r', пустое окружение, база PR пропущена.

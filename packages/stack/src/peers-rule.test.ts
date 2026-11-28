@@ -1,11 +1,13 @@
 import { expect, test } from 'bun:test';
 
 import type { Finding } from './findings.ts';
-import { type PeerEntry, type PeerIssue, PEERS_BASELINE, type PeersRun } from './peers.ts';
+import { type PeerEntry, type PeerIssue, peersBaselineFile, type PeersRun } from './peers.ts';
 import { checkPeers, peersGroup, readPeers } from './peers-rule.ts';
-import { LOCKFILE, type Read, type Repo, repoFromSnapshot } from './repo.ts';
-import { fakePeersReader, groupContext, testCanon } from './testkit.ts';
-import { ACME_SETTINGS } from './testkit-sources.ts';
+import { loadRepo, LOCKFILE, type Read, type Repo, repoFromSnapshot } from './repo.ts';
+import { fakePeersReader, groupContext, repoDir, testCanon } from './testkit.ts';
+import { ACME_SETTINGS, TEST_SETTINGS } from './testkit-sources.ts';
+
+const PEERS_FILE = peersBaselineFile(TEST_SETTINGS.command);
 
 // Repo из снимка: pnpm-lock.yaml есть, если не сказано иное; baseline — записи или сырой текст.
 function repoWith(
@@ -17,9 +19,9 @@ function repoWith(
 	if (baseline !== undefined) {
 		const text =
 			typeof baseline === 'string' ? baseline : JSON.stringify({ version: 1, peers: baseline });
-		snapshot.set(PEERS_BASELINE, { text });
+		snapshot.set(PEERS_FILE, { text });
 	}
-	return repoFromSnapshot(snapshot);
+	return repoFromSnapshot(snapshot, PEERS_FILE);
 }
 
 const UNMET: PeerIssue = {
@@ -173,8 +175,9 @@ test('baseline не разобрался — сравнения нет, нахо
 	const unread = repoFromSnapshot(
 		new Map<string, Read>([
 			[LOCKFILE, { text: 'lockfileVersion: x\n' }],
-			[PEERS_BASELINE, { failed: new Error('EACCES') }],
+			[PEERS_FILE, { failed: new Error('EACCES') }],
 		]),
+		PEERS_FILE,
 	);
 	expect(checkPeers(unread, { issues: [UNMET] }, 'stack')).toStrictEqual([]);
 	expect(unread.unreadable).toHaveLength(1);
@@ -197,4 +200,27 @@ test('checkPeers и peersGroup: команда в подсказке stale — �
 	expect(peersGroup(acme, port.read).findings.at(-1)?.message).toEndWith(
 		'drop it with: acme peers-baseline',
 	);
+});
+
+test('чужой канон: loadRepo читает .acme-peers-baseline.json, находка называет его, .stack-peers-baseline.json — обычный файл', () => {
+	const acme = testCanon({ rules: ['peers'], settings: ACME_SETTINGS });
+	const entries = JSON.stringify({ version: 1, peers: [MISSING.entry] });
+	const own = loadRepo(
+		repoDir({ 'package.json': '{}', '.acme-peers-baseline.json': entries }),
+		acme,
+	);
+	expect(own.peersBaseline).toStrictEqual([MISSING.entry]);
+	expect(checkPeers(own, { issues: [UNMET, MISSING] }, 'acme').map((f) => f.message)).toStrictEqual(
+		['decl@1.0.0 wants ^2.0.0, found 1.0.0; not in .acme-peers-baseline.json'],
+	);
+	// Файл с именем стека у чужого канона — просто файл: базы нет, находки называют acme-файл.
+	const foreign = loadRepo(
+		repoDir({ 'package.json': '{}', '.stack-peers-baseline.json': entries }),
+		acme,
+	);
+	expect(foreign.peersBaseline).toBeUndefined();
+	expect(foreign.unreadable).toStrictEqual([]);
+	expect(checkPeers(foreign, { issues: [MISSING] }, 'acme').map((f) => f.message)).toStrictEqual([
+		'ui-kit@3.1.0 wants ^19.0.0, none installed (optional); not in .acme-peers-baseline.json',
+	]);
 });

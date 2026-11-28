@@ -1,5 +1,5 @@
 import { applyChanges } from './apply.ts';
-import type { Canon, RuleGroup } from './canon.ts';
+import type { Canon } from './canon.ts';
 import { planCatalogs } from './catalogs.ts';
 import {
 	checkDependabot,
@@ -19,28 +19,51 @@ import { prBase } from './pr-base.ts';
 import { planReleaseAgeExcludes } from './release-age.ts';
 import { loadRepo, type Repo } from './repo.ts';
 import { repoRulesGroup } from './repo-rules-rule.ts';
+import { planRules, reportRules, type RuleTable } from './rule.ts';
 import { type GroupPorts, type RuleGroupModule, runGroups } from './rule-group.ts';
+import type { RuleGroup } from './rule-settings.ts';
 import { checkSeedExtends } from './seed-extends.ts';
 import { planToolchainPins } from './toolchain-pins-rule.ts';
 
-// План дрейфа: всё, что sync умеет закрыть, в порядке применения — файлы, каталоги, release-age,
-// packageManager, ветка по умолчанию moon, копии пинов тулчейна. Правки одного файла друг от друга не
-// зависят: sync применяет любое их подмножество. Исключения нужны правилу копий пинов: удержанный
-// .prototools меняет, с какими пинами оно сверяется; сами находки гасит resolve.
+/** Таблица правил вне групп: имя из RULE_NAMES → модуль; имя без записи не компилируется. */
+export const RULE_MODULES = {
+	'release-age-exclude': { plan: (repo, canon) => planReleaseAgeExcludes(repo, canon) },
+	'package-manager': { plan: (repo, canon) => planPackageManager(repo, canon) },
+	'inline-version': { report: (repo, canon) => checkInlineVersions(repo, canon) },
+	'engines-node': { report: (repo, canon) => checkEnginesNode(repo, canon) },
+	'renovate-preset': {
+		report: (repo, canon, params) => checkRenovatePreset(repo, canon, params.preset),
+	},
+	'dependabot-config': { report: (repo) => checkDependabot(repo) },
+	'canon-not-extended': {
+		report: (repo, canon, params) => checkSeedExtends(repo, canon, params.seeds),
+	},
+	'moon-toolchain-version': { report: (repo, canon) => checkMoonToolchains(repo, canon) },
+	'moon-v1-toolchain': { report: (repo) => checkMoonV1Toolchain(repo) },
+	'moon-default-branch': {
+		plan: (repo, _canon, params) => planMoonDefaultBranch(repo, params.branch),
+		report: (repo, _canon, params) => checkMoonDefaultBranch(repo, params.branch, params.reason),
+	},
+	'toolchain-pin': {
+		plan: (repo, canon, _params, exceptions) => planToolchainPins(repo, canon, exceptions),
+	},
+} satisfies RuleTable;
+
+// План дрейфа: всё, что sync умеет закрыть, в порядке применения — файлы, каталоги, затем правки включённых
+// правил в порядке RULE_NAMES (release-age, packageManager, ветка по умолчанию moon, копии пинов тулчейна).
+// Правки одного файла друг от друга не зависят: sync применяет любое их подмножество. Исключения нужны
+// правилу копий пинов: удержанный .prototools меняет, с какими пинами оно сверяется; сами находки гасит resolve.
 export function plan(repo: Repo, canon: Canon, exceptions: readonly Exception[] = []): Drift[] {
 	return [
 		...planFiles(repo, canon),
 		...planCatalogs(repo, canon),
-		...planReleaseAgeExcludes(repo, canon),
-		...planPackageManager(repo, canon),
-		...planMoonDefaultBranch(repo),
-		...planToolchainPins(repo, canon, exceptions),
+		...planRules(RULE_MODULES, repo, canon, exceptions),
 	];
 }
 
-// Находки над снимком репозитория в порядке: план, нечитаемые файлы загрузчика, правила «только отчёт»
-// из deps.ts, засевы и moon. Находки групп правил добавляет checkRepo; все вместе проходят через
-// исключения, после них идут протухшие исключения.
+// Находки над снимком репозитория в порядке: план, нечитаемые файлы загрузчика, находки «только отчёт»
+// включённых правил в порядке RULE_NAMES. Находки групп правил добавляет checkRepo; все вместе проходят
+// через исключения, после них идут протухшие исключения.
 export function check(repo: Repo, canon: Canon, exceptions: Exception[]): Finding[] {
 	return resolveWith(repo, canon, exceptions, []);
 }
@@ -55,14 +78,7 @@ function resolveWith(
 		[
 			...plan(repo, canon, exceptions),
 			...repo.unreadable,
-			...checkInlineVersions(repo, canon),
-			...checkEnginesNode(repo, canon),
-			...checkRenovatePreset(repo, canon),
-			...checkDependabot(repo),
-			...checkSeedExtends(repo, canon),
-			...checkMoonToolchains(repo, canon),
-			...checkMoonV1Toolchain(repo),
-			...checkMoonDefaultBranch(repo),
+			...reportRules(RULE_MODULES, repo, canon),
 			...groupFindings,
 		],
 		exceptions,

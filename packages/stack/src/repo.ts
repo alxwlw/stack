@@ -6,7 +6,7 @@ import { type Document, parseDocument } from 'yaml';
 
 import type { Canon } from './canon.ts';
 import type { Finding } from './findings.ts';
-import { parsePeersBaseline, type PeerEntry, PEERS_BASELINE } from './peers.ts';
+import { parsePeersBaseline, type PeerEntry, peersBaselineFile } from './peers.ts';
 import { pinSiteKind } from './toolchain-pins.ts';
 
 // package.json в этих каталогах не читаются: чужой или собранный файл — не предмет проверки.
@@ -66,9 +66,9 @@ export interface Repo {
 	moonWorkspace?: Record<string, unknown>;
 	/** Путь moon workspace, который прочитан первым из MOON_WORKSPACES; есть, когда файл есть (и разобрался, и нет). */
 	moonWorkspacePath?: string;
-	/** Разобранный PEERS_BASELINE; нет поля — файла нет или он не разобрался. */
+	/** Разобранный файл базы peers (peersBaselineFile); нет поля — файла нет или он не разобрался. */
 	peersBaseline?: PeerEntry[];
-	/** Ровно одна находка unreadable-file на каждый неразобранный package.json, pnpm-workspace.yaml, первый конфиг Renovate, MOON_TOOLCHAINS, найденный из MOON_WORKSPACES и PEERS_BASELINE. */
+	/** Ровно одна находка unreadable-file на каждый неразобранный package.json, pnpm-workspace.yaml, первый конфиг Renovate, MOON_TOOLCHAINS, найденный из MOON_WORKSPACES и файл базы peers. */
 	unreadable: Finding[];
 }
 
@@ -98,11 +98,11 @@ export type Snapshot = ReadonlyMap<string, Read>;
 // Чистая часть: из снимка строит Repo. Здесь единственная классификация unreadable-file: сбой чтения и
 // сбой разбора одной роли — одна находка. Разбираемые роли: package.json (корневой всегда; вложенные —
 // только при pnpm-workspace.yaml среди путей), pnpm-workspace.yaml и первый из RENOVATE_CONFIGS среди
-// путей (нечитаемый заслоняет остальные), MOON_TOOLCHAINS, найденный из MOON_WORKSPACES и PEERS_BASELINE.
+// путей (нечитаемый заслоняет остальные), MOON_TOOLCHAINS, найденный из MOON_WORKSPACES и файл базы peers.
 // Остальные пути (среди них LOCKFILE и MOON_TOOLCHAIN_V1) загрузчик не разбирает и находок по ним не даёт:
 // они лежат в paths, существование MOON_TOOLCHAIN_V1 читает правило checkMoonV1Toolchain.
 // Порядок unreadable: по rank, равные — в порядке снимка.
-export function repoFromSnapshot(snapshot: Snapshot): Repo {
+export function repoFromSnapshot(snapshot: Snapshot, peersFile: string): Repo {
 	const files = new Map<string, string>();
 	const paths = new Set<string>();
 	for (const [path, read] of snapshot) {
@@ -210,12 +210,12 @@ export function repoFromSnapshot(snapshot: Snapshot): Repo {
 	}
 	// Неразобранный baseline не становится пустым: поля нет, и правило peers не сравнивает.
 	let peersBaseline: PeerEntry[] | undefined;
-	const peersRead = snapshot.get(PEERS_BASELINE);
+	const peersRead = snapshot.get(peersFile);
 	if (peersRead !== undefined && 'failed' in peersRead) {
-		unparsable(PEERS_BASELINE, peersRead.failed.message);
+		unparsable(peersFile, peersRead.failed.message);
 	} else if (peersRead !== undefined && 'text' in peersRead) {
 		const parsed = parsePeersBaseline(peersRead.text);
-		if ('problem' in parsed) unparsable(PEERS_BASELINE, parsed.problem);
+		if ('problem' in parsed) unparsable(peersFile, parsed.problem);
 		else peersBaseline = parsed.entries;
 	}
 	unreadable.sort((a, b) => rank(a) - rank(b));
@@ -270,7 +270,7 @@ function walkFiles(root: string, dir: string): string[] {
 }
 
 // Адаптер диска, без классификации: dest и satisfiedBy канон-файлов, конфиги Renovate и dependabot,
-// MOON_TOOLCHAINS, MOON_TOOLCHAIN_V1, MOON_WORKSPACES, PEERS_BASELINE, LOCKFILE, pnpm-workspace.yaml, корневой package.json;
+// MOON_TOOLCHAINS, MOON_TOOLCHAIN_V1, MOON_WORKSPACES, файл базы peers, LOCKFILE, pnpm-workspace.yaml, корневой package.json;
 // если pnpm-workspace.yaml есть (текст или сбой чтения) — ещё вложенные package.json без SKIP;
 // всегда — Dockerfile и workflow с возможными копиями пинов (pinSiteKind) без SKIP. Дерево обходится один
 // раз (без скрытых каталогов), каталоги .github/workflows и .github/actions — отдельными обходами.
@@ -286,7 +286,7 @@ export function readSnapshot(root: string, canon: Canon): Snapshot {
 		MOON_TOOLCHAINS,
 		MOON_TOOLCHAIN_V1,
 		...MOON_WORKSPACES,
-		PEERS_BASELINE,
+		peersBaselineFile(canon.settings.command),
 		LOCKFILE,
 	])
 		candidates.add(p);
@@ -317,5 +317,5 @@ export function readSnapshot(root: string, canon: Canon): Snapshot {
 // dest/satisfiedBy, конфиги dependabot, LOCKFILE и MOON_TOOLCHAIN_V1 нужны правилам только как существующие пути
 // (загрузчик их не разбирает).
 export function loadRepo(root: string, canon: Canon): Repo {
-	return repoFromSnapshot(readSnapshot(root, canon));
+	return repoFromSnapshot(readSnapshot(root, canon), peersBaselineFile(canon.settings.command));
 }

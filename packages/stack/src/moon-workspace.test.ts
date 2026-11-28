@@ -3,10 +3,11 @@ import { join } from 'node:path';
 
 import { expect, test } from 'bun:test';
 
-import { check, plan, syncRepo } from './check.ts';
+import { check, checkRepo, plan, syncRepo } from './check.ts';
 import { isDrift } from './findings.ts';
 import { loadRepo } from './repo.ts';
 import { ioError, repoDir, testCanon, testRepo } from './testkit.ts';
+import { ACME_SETTINGS } from './testkit-sources.ts';
 
 const canon = testCanon();
 const FILE = '.moon/workspace.yml';
@@ -189,4 +190,44 @@ test('исключение на пути .yaml держит находку; на
 		]);
 	expect(hold('.moon/workspace.yaml')).toStrictEqual([['moon-default-branch', 'r']]);
 	expect(hold(FILE).map((r) => r[0])).toStrictEqual(['moon-default-branch', 'stale-exception']);
+});
+
+// Чужой канон: ветка и пояснение идут из параметров правила, не из литералов движка.
+const acme = testCanon({ settings: ACME_SETTINGS });
+const TRUNK_MESSAGE = `vcs.defaultBranch is not set — moon falls back to "master", and CI on a push to trunk dies with "ambiguous argument 'master'"`;
+const TRUNK_REPORT =
+	'vcs is not a map — set vcs.defaultBranch (trunk, the branch acme CI runs on) by hand';
+
+test('чужой канон: план называет его ветку в тексте, fix и правке', () => {
+	const drifts = plan(testRepo(acme, { [FILE]: "projects:\n  app: 'apps/app'\n" }), acme);
+	expect(drifts.filter((d) => d.code === 'moon-default-branch')).toStrictEqual([
+		{
+			code: 'moon-default-branch',
+			target: '.moon/workspace.yml:vcs.defaultBranch',
+			file: FILE,
+			message: TRUNK_MESSAGE,
+			fix: '.moon/workspace.yml vcs.defaultBranch: — → trunk',
+			change: {
+				file: FILE,
+				kind: 'yaml-set',
+				path: ['vcs', 'defaultBranch'],
+				value: 'trunk',
+			},
+		},
+	]);
+});
+
+test('чужой канон: checkRepo и syncRepo идут через таблицу правил — ветка и пояснение из параметров', () => {
+	const noVcs = repoDir({ 'package.json': PKG, [FILE]: "projects:\n  app: 'apps/app'\n" });
+	const found = checkRepo(noVcs, acme, []).findings.filter((f) => f.code === 'moon-default-branch');
+	expect(found.map((f) => f.message)).toStrictEqual([TRUNK_MESSAGE]);
+	syncRepo(noVcs, acme, []);
+	expect(fs.readFileSync(join(noVcs, FILE), 'utf8')).toBe(
+		"projects:\n  app: 'apps/app'\nvcs:\n  defaultBranch: trunk\n",
+	);
+	const scalar = repoDir({ 'package.json': PKG, [FILE]: 'vcs: git\n' });
+	const report = checkRepo(scalar, acme, []).findings.filter(
+		(f) => f.code === 'moon-default-branch',
+	);
+	expect(report.map((f) => f.message)).toStrictEqual([TRUNK_REPORT]);
 });

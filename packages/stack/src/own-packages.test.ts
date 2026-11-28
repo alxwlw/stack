@@ -69,8 +69,8 @@ test.each([...OWNER_SOURCE.settings.profiles])(
 	(profile) => {
 		const base = loadCanon({ profile: 'node', with: [], exceptions: [] }).ownPackages;
 		expect(base.length).toBeGreaterThan(0);
-		const groups = readCanonSource().groups;
-		const withAll = [...groups.catalogs, ...groups.rules];
+		const source = readCanonSource();
+		const withAll = [...source.groups.catalogs, ...source.settings.groups];
 		expect(withAll.length).toBeGreaterThan(0);
 		expect(loadCanon({ profile, with: [], exceptions: [] }).ownPackages).toStrictEqual(base);
 		expect(loadCanon({ profile, with: withAll, exceptions: [] }).ownPackages).toStrictEqual(base);
