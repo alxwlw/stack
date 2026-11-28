@@ -3,6 +3,7 @@ import { parse, type ParseError, printParseErrorCode } from 'jsonc-parser';
 import type { Canon } from './canon.ts';
 import type { Finding } from './findings.ts';
 import type { Repo } from './repo.ts';
+import type { SeedSpec } from './rule-settings.ts';
 
 /** Канон-файл с правилами gitleaks: его подключает засев gitleaks. */
 export const GITLEAKS_CANON = '.gitleaks.canon.toml';
@@ -94,34 +95,29 @@ function jsonSeed(pattern: RegExp, message: string): SeedCheck {
 /** Чтение текста засева: undefined — канон подключён, строка — текст находки; command — команда канона. */
 export type SeedCheck = (text: string, command: string) => string | undefined;
 
-/** dest засева → его чтение. */
-export const SEED_CHECKS: ReadonlyMap<string, SeedCheck> = new Map([
-	['.gitleaks.toml', readGitleaks],
-	[
-		'.oxlintrc.json',
-		jsonSeed(
-			/(^|\/)@alxwlw\/oxlint-config\//,
-			'"extends" must include a preset of @alxwlw/oxlint-config, such as "./node_modules/@alxwlw/oxlint-config/node.jsonc" — without it the canon lint rules do not apply',
-		),
-	],
-	[
-		'tsconfig.options.json',
-		jsonSeed(
-			/(^|\/)@alxwlw\/tsconfig\//,
-			'"extends" must name a preset of @alxwlw/tsconfig, such as "@alxwlw/tsconfig/node.json" — without it the canon compiler options do not apply',
-		),
-	],
-]);
+const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-// Правило только для отчёта: засев на месте, но канон не подключает. Идёт по файлам канона, не по
-// ключам таблицы: файла нет в каноне — проверять нечего. Отсутствие засева сообщает file-missing.
+/** Чтение засева по его описанию из настроек канона. */
+export function seedCheck(spec: SeedSpec): SeedCheck {
+	if (spec.kind === 'gitleaks') return readGitleaks;
+	return jsonSeed(new RegExp(`(^|/)${escapeRegExp(spec.package)}/`), spec.message);
+}
+
+// Правило только для отчёта: засев на месте, но канон не подключает. Засевы — из настроек канона
+// (`rules.canon-not-extended.seeds`); идёт по файлам канона, не по ключам засевов: файла нет в каноне —
+// проверять нечего. Отсутствие засева сообщает file-missing.
 // Имя команды в тексте находки — из настроек канона.
-export function checkSeedExtends(repo: Repo, canon: Canon): Finding[] {
+export function checkSeedExtends(
+	repo: Repo,
+	canon: Canon,
+	seeds: Readonly<Record<string, SeedSpec>>,
+): Finding[] {
 	const { command } = canon.settings;
 	const findings: Finding[] = [];
 	for (const { dest } of canon.files) {
-		const read = SEED_CHECKS.get(dest);
-		if (!read || !repo.paths.has(dest)) continue;
+		const spec = seeds[dest];
+		if (!spec || !repo.paths.has(dest)) continue;
+		const read = seedCheck(spec);
 		const text = repo.files.get(dest);
 		const message =
 			text === undefined

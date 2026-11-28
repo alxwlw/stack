@@ -5,10 +5,10 @@ import { beforeAll, expect, test } from 'bun:test';
 import { parse as parseJsonc } from 'jsonc-parser';
 
 import { canonFor, readCanonSource } from './canon.ts';
-import { check, plan, syncRepo } from './check.ts';
+import { check, checkRepo, plan, syncRepo } from './check.ts';
 import type { Exception } from './exceptions.ts';
 import { loadRepo } from './repo.ts';
-import { checkSeedExtends, GITLEAKS_CANON, SEED_CHECKS } from './seed-extends.ts';
+import { checkSeedExtends, GITLEAKS_CANON, seedCheck } from './seed-extends.ts';
 import {
 	BARE,
 	canonFile,
@@ -23,7 +23,7 @@ import {
 	toolJson,
 } from './testkit.ts';
 import { checkDir, initRepo, syncDir } from './testkit-acceptance.ts';
-import { ACME_SETTINGS } from './testkit-sources.ts';
+import { ACME_SEEDS, ACME_SETTINGS, acmeSource, TEST_SEEDS } from './testkit-sources.ts';
 
 // Тексты находок заданы планом и записаны литералами, не через константы модуля.
 const M1 =
@@ -38,9 +38,9 @@ const M4 =
 	'"extends" must name a preset of @alxwlw/tsconfig, such as "@alxwlw/tsconfig/node.json" — without it the canon compiler options do not apply';
 
 const read = (dest: string, text: string): string | undefined => {
-	const check = SEED_CHECKS.get(dest);
-	if (!check) throw new Error(`SEED_CHECKS has no ${dest}`);
-	return check(text, 'stack');
+	const spec = TEST_SEEDS[dest];
+	if (!spec) throw new Error(`TEST_SEEDS has no ${dest}`);
+	return seedCheck(spec)(text, 'stack');
 };
 
 type Row = [name: string, text: string, expected: string | undefined | RegExp];
@@ -262,12 +262,10 @@ test.each(TSCONFIG)('засев tsconfig: %s', (_name, text, expected) => {
 	expectRow('tsconfig.options.json', text, expected);
 });
 
-test('SEED_CHECKS: три засева, в порядке манифеста', () => {
-	expect([...SEED_CHECKS.keys()]).toStrictEqual([
-		'.gitleaks.toml',
-		'.oxlintrc.json',
-		'tsconfig.options.json',
-	]);
+test('засевы канона владельца: три, в порядке манифеста', () => {
+	expect(Object.keys(OWNER_SOURCE.settings.rules['canon-not-extended']?.seeds ?? {})).toStrictEqual(
+		['.gitleaks.toml', '.oxlintrc.json', 'tsconfig.options.json'],
+	);
 });
 
 // Правило над снимком репозитория.
@@ -381,7 +379,11 @@ test('ключи таблицы — засевы настоящего канон
 	for (const profile of OWNER_SOURCE.settings.profiles) {
 		const real = canonFor(source, { profile, with: [], exceptions: [] });
 		const seedsOf = real.files
-			.filter((f) => f.strategy === 'create-if-absent' && SEED_CHECKS.has(f.dest))
+			.filter(
+				(f) =>
+					f.strategy === 'create-if-absent' &&
+					f.dest in (source.settings.rules['canon-not-extended']?.seeds ?? {}),
+			)
 			.map((f) => f.dest);
 		expect(seedsOf).toStrictEqual(expected[profile] ?? []);
 		const verbatim = real.files.find((f) => f.dest === GITLEAKS_CANON);
@@ -415,7 +417,11 @@ test('sync засев не меняет и находку не снимает', 
 });
 
 test('checkSeedExtends: правило само по себе даёт находку без правки', () => {
-	const findings = checkSeedExtends(testRepo(canon, { '.gitleaks.toml': NO_PATH }), canon);
+	const findings = checkSeedExtends(
+		testRepo(canon, { '.gitleaks.toml': NO_PATH }),
+		canon,
+		TEST_SEEDS,
+	);
 	expect(findings).toStrictEqual([
 		{ code: 'canon-not-extended', target: '.gitleaks.toml', file: '.gitleaks.toml', message: M2 },
 	]);
@@ -463,10 +469,48 @@ test('чужой канон: «не разобран» и «не читаетс�
 });
 
 test('читатели засевов берут команду параметром: «не разобран» называет её', () => {
-	expect(SEED_CHECKS.get('.oxlintrc.json')?.('{ "extends": [', 'acme')).toBe(
+	expect(seedCheck(TEST_SEEDS['.oxlintrc.json']!)('{ "extends": [', 'acme')).toBe(
 		'does not parse as JSON with comments (CloseBracketExpected at offset 14) — acme cannot tell whether it extends the canon',
 	);
-	expect(SEED_CHECKS.get('.gitleaks.toml')?.('[extend\n', 'acme')).toMatch(
+	expect(seedCheck(TEST_SEEDS['.gitleaks.toml']!)('[extend\n', 'acme')).toMatch(
 		/^does not parse as TOML \(.+\) — acme cannot tell whether it extends the canon$/,
 	);
+});
+
+test('образец JSON-засева: точка пакета экранирована, имя — целый сегмент', () => {
+	const run = seedCheck({ kind: 'json-extends', package: '@a.b/x', message: 'm' });
+	expect(run('{ "extends": ["@aXb/x/node.json"] }', 'stack')).toBe('m');
+	expect(run('{ "extends": ["@a.b/x/node.json"] }', 'stack')).toBeUndefined();
+	expect(run('{ "extends": ["./node_modules/@a.b/x/node.jsonc"] }', 'stack')).toBeUndefined();
+	expect(run('{ "extends": ["@a.b/xy/node.json"] }', 'stack')).toBe('m');
+});
+
+test('checkSeedExtends: засев, которого нет в seeds, не проверяется', () => {
+	const repo = testRepo(canon, { '.gitleaks.toml': NO_PATH });
+	expect(checkSeedExtends(repo, canon, {})).toStrictEqual([]);
+});
+
+test('checkRepo: засевы идут из настроек канона, а не зашиты — чужой пакет пресета', () => {
+	const source = acmeSource({
+		entries: [
+			...acmeSource().entries,
+			{
+				src: 'files/o',
+				dest: '.oxlintrc.json',
+				appliesTo: ['web', 'chain'],
+				content: '{}',
+				strategy: 'create-if-absent',
+			},
+		],
+	});
+	const acme = canonFor(source, { profile: 'web', with: [], exceptions: [] });
+	expect(acme.settings.rules['canon-not-extended']?.seeds).toBe(ACME_SEEDS);
+	const run = (extendsValue: string) => {
+		const dir = repoDir({ '.oxlintrc.json': JSON.stringify({ extends: [extendsValue] }) });
+		return checkRepo(dir, acme, []).findings.filter((f) => f.code === 'canon-not-extended');
+	};
+	expect(
+		run('./node_modules/@alxwlw/oxlint-config/node.jsonc').map((f) => f.message),
+	).toStrictEqual(['extend @acme/lint']);
+	expect(run('@acme/lint/base.json')).toStrictEqual([]);
 });

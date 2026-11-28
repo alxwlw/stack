@@ -199,6 +199,14 @@ export function readCanonSource(dir: string = canonDir()): CanonSource {
 			);
 		}
 	}
+	const seeds = settings.rules['canon-not-extended']?.seeds ?? {};
+	for (const dest of Object.keys(seeds)) {
+		if (!entries.some((e) => e.dest === dest)) {
+			throw new Error(
+				`canon settings: "rules.canon-not-extended.seeds" names ${JSON.stringify(dest)}, which no manifest entry writes`,
+			);
+		}
+	}
 	return { settings, entries, catalogs, groups, manifest: ownManifest() };
 }
 

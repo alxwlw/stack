@@ -7,9 +7,12 @@ import { repoDir } from './testkit.ts';
 import { ACME_SETTINGS, TEST_SETTINGS, testSource } from './testkit-sources.ts';
 
 const valid = (): Record<string, unknown> => ({ ...structuredClone(ACME_SETTINGS) });
+// Манифест пишет .oxlintrc.json — засев чужого канона называет его, и без записи настройки не читаются.
 const dirWith = (settings: string | null): string =>
 	repoDir({
-		'manifest.json': '{ "files": [] }',
+		'manifest.json':
+			'{ "files": [{ "src": "files/o", "dest": ".oxlintrc.json", "appliesTo": ["web"] }] }',
+		'files/o': '{}',
 		'catalogs.json': '{ "dev": {} }',
 		...(settings === null ? {} : { 'settings.json': settings }),
 	});

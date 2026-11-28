@@ -35,7 +35,9 @@ export const RULE_MODULES = {
 		report: (repo, canon, params) => checkRenovatePreset(repo, canon, params.preset),
 	},
 	'dependabot-config': { report: (repo) => checkDependabot(repo) },
-	'canon-not-extended': { report: (repo, canon) => checkSeedExtends(repo, canon) },
+	'canon-not-extended': {
+		report: (repo, canon, params) => checkSeedExtends(repo, canon, params.seeds),
+	},
 	'moon-toolchain-version': { report: (repo, canon) => checkMoonToolchains(repo, canon) },
 	'moon-v1-toolchain': { report: (repo) => checkMoonV1Toolchain(repo) },
 	'moon-default-branch': {

@@ -25,7 +25,7 @@ import {
 	parseBundles,
 	repoDir,
 } from './testkit.ts';
-import { ACME_SETTINGS, acmeSource, TEST_SETTINGS } from './testkit-sources.ts';
+import { ACME_SETTINGS, acmeSource, rulesWithout, TEST_SETTINGS } from './testkit-sources.ts';
 
 // Не канон-файл: README лежит рядом с пакетом, а не в canon/.
 const README_PATH = join(import.meta.dir, '..', '..', '..', 'README.md');
@@ -198,7 +198,10 @@ test('readCanonSource на настоящем canon/: все записи ман
 // Литеральный canon/ на диске: manifest из записей, каталог только dev, два src-файла.
 const literalCanon = (files: unknown): string =>
 	repoDir({
-		'settings.json': JSON.stringify(TEST_SETTINGS),
+		'settings.json': JSON.stringify({
+			...TEST_SETTINGS,
+			rules: rulesWithout('canon-not-extended'),
+		}),
 		'manifest.json': JSON.stringify({ files }),
 		'catalogs.json': '{ "dev": {} }',
 		'files/a': 'A',
@@ -300,6 +303,24 @@ const badManifests: [string, unknown, RegExp][] = [
 
 test.each(badManifests)('readCanonSource отклоняет manifest: %s', (_name, files, message) => {
 	expect(() => readCanonSource(literalCanon(files))).toThrow(message);
+});
+
+test('readCanonSource: засев называет dest, которого не пишет ни одна запись манифеста', () => {
+	const dir = repoDir({
+		'settings.json': JSON.stringify({
+			...TEST_SETTINGS,
+			rules: {
+				...TEST_SETTINGS.rules,
+				'canon-not-extended': { seeds: { '.nope.json': { kind: 'gitleaks' } } },
+			},
+		}),
+		'manifest.json': JSON.stringify({ files: [entry()] }),
+		'catalogs.json': '{ "dev": {} }',
+		'files/a': 'A',
+	});
+	expect(() => readCanonSource(dir)).toThrow(
+		'canon settings: "rules.canon-not-extended.seeds" names ".nope.json", which no manifest entry writes',
+	);
 });
 
 test('manifest.json с текстом null — files не массив', () => {
@@ -726,7 +747,10 @@ describe('связки canon/bundles.json в каталогах канона', (
 
 const acmeDir = (files: unknown): string =>
 	repoDir({
-		'settings.json': JSON.stringify(ACME_SETTINGS),
+		'settings.json': JSON.stringify({
+			...ACME_SETTINGS,
+			rules: rulesWithout('canon-not-extended'),
+		}),
 		'manifest.json': JSON.stringify({ files }),
 		'catalogs.json': '{ "dev": {} }',
 		'files/a': 'A',

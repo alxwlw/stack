@@ -58,3 +58,53 @@ test.each([
 ])('rules %j — ошибка пакета канона', (raw, text) => {
 	expect(() => checkRules(raw)).toThrow(`canon settings: ${text}`);
 });
+
+const seeds = (raw: unknown) => checkRules({ 'canon-not-extended': { seeds: raw } });
+const AT = '"rules.canon-not-extended.seeds"';
+
+test('seeds: gitleaks и json-extends как есть', () => {
+	const raw = {
+		'.gitleaks.toml': { kind: 'gitleaks' },
+		'.oxlintrc.json': { kind: 'json-extends', package: '@acme/lint', message: 'extend @acme/lint' },
+	} as const;
+	expect(seeds(raw)).toStrictEqual({ 'canon-not-extended': { seeds: raw } });
+});
+
+test.each([
+	[{}, `${AT} must be a non-empty object of dest → seed`],
+	[[], `${AT} must be a non-empty object of dest → seed`],
+	[{ a: 'gitleaks' }, `${AT} entry "a" must be an object`],
+	[{ a: { kind: 'toml' } }, `${AT} entry "a" has "kind" outside: gitleaks, json-extends`],
+	[{ a: { kind: 'gitleaks', package: 'x' } }, `${AT} entry "a" has unknown key "package"`],
+	[
+		{ a: { kind: 'json-extends', package: '@acme/lint/', message: 'm' } },
+		`${AT} entry "a" has "package" that is not a package name: "@acme/lint/"`,
+	],
+	[
+		{ a: { kind: 'json-extends', package: '', message: 'm' } },
+		`${AT} entry "a" has "package" that is not a package name: ""`,
+	],
+	[
+		{ a: { kind: 'json-extends', package: '@acme/my lint', message: 'm' } },
+		`${AT} entry "a" has "package" that is not a package name: "@acme/my lint"`,
+	],
+	[
+		{ a: { kind: 'json-extends', package: '@acme/lint' } },
+		`${AT} entry "a" needs a non-empty "message"`,
+	],
+	[
+		{ a: { kind: 'json-extends', package: '@acme/lint', message: 'm', x: 1 } },
+		`${AT} entry "a" has unknown key "x"`,
+	],
+])('seeds %j — ошибка пакета канона', (raw, text) => {
+	expect(() => seeds(raw)).toThrow(`canon settings: ${text}`);
+});
+
+test('canon-not-extended без seeds или с лишним ключом — ошибка пакета канона', () => {
+	expect(() => checkRules({ 'canon-not-extended': {} })).toThrow(
+		`canon settings: ${AT} must be a non-empty object of dest → seed`,
+	);
+	expect(() => checkRules({ 'canon-not-extended': { seeds: {}, x: 1 } })).toThrow(
+		'canon settings: "rules.canon-not-extended" has unknown key "x"',
+	);
+});

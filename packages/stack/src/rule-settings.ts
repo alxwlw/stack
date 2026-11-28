@@ -68,6 +68,14 @@ export const RULE_NAMES = [
 ] as const satisfies readonly FindingCode[];
 export type RuleName = (typeof RULE_NAMES)[number];
 
+// Имя пакета npm: со scope или без; тем же образцом canon-settings.ts проверяет ownPackages.
+export const PACKAGE_NAME = /^(@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/;
+
+/** Засев, который канон просит держать подключённым: gitleaks — встроенный вид, JSON — extends на пакет пресета. */
+export type SeedSpec =
+	| { readonly kind: 'gitleaks' }
+	| { readonly kind: 'json-extends'; readonly package: string; readonly message: string };
+
 export type NoParams = Readonly<Record<string, never>>;
 
 /** Параметры правила по имени; полный по RuleName: имя без записи не компилируется. */
@@ -78,7 +86,7 @@ export interface RuleParams {
 	'engines-node': NoParams;
 	'renovate-preset': { readonly preset: string };
 	'dependabot-config': NoParams;
-	'canon-not-extended': NoParams;
+	'canon-not-extended': { readonly seeds: Readonly<Record<string, SeedSpec>> };
 	'moon-toolchain-version': NoParams;
 	'moon-v1-toolchain': NoParams;
 	'moon-default-branch': NoParams;
@@ -101,6 +109,30 @@ const noParams = (raw: Record<string, unknown>, at: string): NoParams => {
 	return {};
 };
 
+const SEED_KINDS = ['gitleaks', 'json-extends'] as const;
+
+function checkSeed(raw: unknown, dest: string, at: string): SeedSpec {
+	const head = `"${at}" entry ${JSON.stringify(dest)}`;
+	if (!isRecord(raw)) return bad(`${head} must be an object`);
+	const { kind } = raw;
+	if (!(SEED_KINDS as readonly unknown[]).includes(kind)) {
+		return bad(`${head} has "kind" outside: ${SEED_KINDS.join(', ')}`);
+	}
+	const allowed = kind === 'gitleaks' ? ['kind'] : ['kind', 'package', 'message'];
+	for (const key of Object.keys(raw)) {
+		if (!allowed.includes(key)) bad(`${head} has unknown key ${JSON.stringify(key)}`);
+	}
+	if (kind === 'gitleaks') return { kind };
+	const { package: pkg, message } = raw;
+	if (typeof pkg !== 'string' || !PACKAGE_NAME.test(pkg)) {
+		return bad(`${head} has "package" that is not a package name: ${JSON.stringify(pkg)}`);
+	}
+	if (typeof message !== 'string' || message === '') {
+		return bad(`${head} needs a non-empty "message"`);
+	}
+	return { kind: 'json-extends', package: pkg, message };
+}
+
 const PARAMS_CHECKS: {
 	[K in RuleName]: (raw: Record<string, unknown>, at: string) => RuleParams[K];
 } = {
@@ -117,7 +149,19 @@ const PARAMS_CHECKS: {
 		return { preset };
 	},
 	'dependabot-config': noParams,
-	'canon-not-extended': noParams,
+	'canon-not-extended': (raw, at) => {
+		onlyKeys(raw, at, ['seeds']);
+		const seedsAt = `${at}.seeds`;
+		const { seeds } = raw;
+		if (!isRecord(seeds) || Object.keys(seeds).length === 0) {
+			return bad(`"${seedsAt}" must be a non-empty object of dest → seed`);
+		}
+		return {
+			seeds: Object.fromEntries(
+				Object.entries(seeds).map(([dest, spec]) => [dest, checkSeed(spec, dest, seedsAt)]),
+			),
+		};
+	},
 	'moon-toolchain-version': noParams,
 	'moon-v1-toolchain': noParams,
 	'moon-default-branch': noParams,

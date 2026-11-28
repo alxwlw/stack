@@ -12,7 +12,21 @@
 		"engines-node": {},
 		"renovate-preset": { "preset": "github>alxwlw/stack//renovate/canon.json5#v1" },
 		"dependabot-config": {},
-		"canon-not-extended": {},
+		"canon-not-extended": {
+			"seeds": {
+				".gitleaks.toml": { "kind": "gitleaks" },
+				".oxlintrc.json": {
+					"kind": "json-extends",
+					"package": "@alxwlw/oxlint-config",
+					"message": "\"extends\" must include a preset of @alxwlw/oxlint-config, such as \"./node_modules/@alxwlw/oxlint-config/node.jsonc\" — without it the canon lint rules do not apply"
+				},
+				"tsconfig.options.json": {
+					"kind": "json-extends",
+					"package": "@alxwlw/tsconfig",
+					"message": "\"extends\" must name a preset of @alxwlw/tsconfig, such as \"@alxwlw/tsconfig/node.json\" — without it the canon compiler options do not apply"
+				}
+			}
+		},
 		"moon-toolchain-version": {},
 		"moon-v1-toolchain": {},
 		"moon-default-branch": {},

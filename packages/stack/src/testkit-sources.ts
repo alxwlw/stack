@@ -2,10 +2,32 @@
 import type { CanonSource } from './canon.ts';
 import type { CanonSettings } from './canon-settings.ts';
 import type { StackManifest } from './own-packages.ts';
-import { RULE_NAMES, type RuleName, type RuleSettings } from './rule-settings.ts';
+import { RULE_NAMES, type RuleName, type RuleSettings, type SeedSpec } from './rule-settings.ts';
 
 // Пресет владельца: на нём строятся и TEST_SETTINGS, и репозитории testkit.ts.
 export const TEST_RENOVATE_PRESET = 'github>alxwlw/stack//renovate/canon.json5#v1';
+
+// Засевы канона владельца: тексты находок записаны литералами, как в canon/settings.json.
+export const TEST_SEEDS: Readonly<Record<string, SeedSpec>> = {
+	'.gitleaks.toml': { kind: 'gitleaks' },
+	'.oxlintrc.json': {
+		kind: 'json-extends',
+		package: '@alxwlw/oxlint-config',
+		message:
+			'"extends" must include a preset of @alxwlw/oxlint-config, such as "./node_modules/@alxwlw/oxlint-config/node.jsonc" — without it the canon lint rules do not apply',
+	},
+	'tsconfig.options.json': {
+		kind: 'json-extends',
+		package: '@alxwlw/tsconfig',
+		message:
+			'"extends" must name a preset of @alxwlw/tsconfig, such as "@alxwlw/tsconfig/node.json" — without it the canon compiler options do not apply',
+	},
+};
+
+// Засев чужого канона: свой пакет пресета и свой текст.
+export const ACME_SEEDS: Readonly<Record<string, SeedSpec>> = {
+	'.oxlintrc.json': { kind: 'json-extends', package: '@acme/lint', message: 'extend @acme/lint' },
+};
 
 // Имена как у канона владельца: иначе пришлось бы править сотни ожиданий (на другие имена тесты движка переводит фаза 4).
 export const TEST_SETTINGS: CanonSettings = {
@@ -28,7 +50,7 @@ export const TEST_SETTINGS: CanonSettings = {
 		'engines-node': {},
 		'renovate-preset': { preset: TEST_RENOVATE_PRESET },
 		'dependabot-config': {},
-		'canon-not-extended': {},
+		'canon-not-extended': { seeds: TEST_SEEDS },
 		'moon-toolchain-version': {},
 		'moon-v1-toolchain': {},
 		'moon-default-branch': {},
@@ -66,7 +88,7 @@ export const ACME_SETTINGS: CanonSettings = {
 		'moon-v1-toolchain': {},
 		// Правила, на которых тесты проверяют, что тексты и имена идут из настроек чужого канона.
 		'release-age-exclude': {},
-		'canon-not-extended': {},
+		'canon-not-extended': { seeds: ACME_SEEDS },
 	},
 };
 

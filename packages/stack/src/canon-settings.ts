@@ -4,6 +4,7 @@ import {
 	checkDeprecatedGroups,
 	checkGroups,
 	checkRules,
+	PACKAGE_NAME,
 	type RuleGroup,
 	type RuleSettings,
 } from './rule-settings.ts';
@@ -56,7 +57,6 @@ const SETTINGS_KEYS: Record<keyof CanonSettings, true> = {
 
 const PLACEHOLDER = /\{([A-Za-z]+)\}/g;
 const SCOPE_PATTERN = /^@[a-z0-9][a-z0-9._-]*\/$/;
-const PACKAGE_NAME = /^(@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/;
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
 	typeof v === 'object' && v !== null && !Array.isArray(v);
