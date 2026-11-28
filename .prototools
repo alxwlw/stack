@@ -1,11 +1,11 @@
 # Toolchain pins (proto-managed). This repo eats its own canon: same pins as
 # packages/stack/canon/files/prototools, guardrail plugins vendored below.
-proto = "0.64.0"
+proto = "0.64.1"
 node = "26.13.1"
 pnpm = "12.23.0"
 bun = "1.4.5"
-moon = "2.6.5"
-uv = "0.13.9"
+moon = "2.6.6"
+uv = "0.13.10"
 
 # Guardrail binaries: versions pinned for reproducibility.
 actionlint = "1.7.12"
