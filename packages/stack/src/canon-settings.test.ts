@@ -52,6 +52,7 @@ test.each([
 	'syncPr',
 	'groups',
 	'deprecatedGroups',
+	'rules',
 ])('нет ключа %s — та же ошибка', (key) => {
 	const raw = Object.fromEntries(Object.entries(valid()).filter(([k]) => k !== key));
 	expect(() => checkSettings(raw)).toThrow(`canon settings: "${key}"`);

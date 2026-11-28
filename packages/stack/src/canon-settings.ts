@@ -1,6 +1,12 @@
 // Настройки канона: имена и тексты, которые канон объявляет данными (canon/settings.json).
 // Нарушение — дефект пакета канона, а не потребителя: обычная Error, не StackConfigError.
-import { checkDeprecatedGroups, checkGroups, type RuleGroup } from './rule-settings.ts';
+import {
+	checkDeprecatedGroups,
+	checkGroups,
+	checkRules,
+	type RuleGroup,
+	type RuleSettings,
+} from './rule-settings.ts';
 
 export interface SyncPrTexts {
 	title: string;
@@ -19,6 +25,8 @@ export interface CanonSettings {
 	groups: readonly RuleGroup[];
 	/** Устаревшие группы: имя → причина; принимаются, ничего не включают. */
 	deprecatedGroups: Readonly<Record<string, string>>;
+	/** Включённые правила вне групп: имя → параметры; чего нет, то выключено. */
+	rules: RuleSettings;
 }
 
 // Подстановки шаблонов: у каждого шаблона свой список.
@@ -43,6 +51,7 @@ const SETTINGS_KEYS: Record<keyof CanonSettings, true> = {
 	syncPr: true,
 	groups: true,
 	deprecatedGroups: true,
+	rules: true,
 };
 
 const PLACEHOLDER = /\{([A-Za-z]+)\}/g;
@@ -134,6 +143,7 @@ export function checkSettings(raw: unknown): CanonSettings {
 		syncPr: checkSyncPr(raw.syncPr),
 		groups,
 		deprecatedGroups: checkDeprecatedGroups(raw.deprecatedGroups, groups),
+		rules: checkRules(raw.rules),
 	};
 }
 

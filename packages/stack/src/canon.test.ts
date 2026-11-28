@@ -16,6 +16,7 @@ import {
 } from './canon.ts';
 import { type Profile, type StackConfig, StackConfigError } from './config.ts';
 import { RENOVATE_CONFIGS } from './repo.ts';
+import { RULE_NAMES } from './rule-settings.ts';
 import {
 	canonBundles,
 	canonFile,
@@ -740,4 +741,23 @@ test('appliesTo манифеста проверяется по профилям 
 	expect(() => readCanonSource(acmeDir([a(['chain']), a(['web', 'chain'])]))).toThrow(
 		'canon manifest: dest "a" is listed twice for profile chain',
 	);
+});
+
+test('канон владельца включает все правила, пресет Renovate — с тегом мажора', () => {
+	const { rules } = OWNER_SOURCE.settings;
+	expect(Object.keys(rules).sort()).toStrictEqual([...RULE_NAMES].sort());
+	// Без тега или с #main потребитель получал бы неопубликованный канон, а пресет — тот же источник,
+	// что и rollout (плавающий v1).
+	expect(rules['renovate-preset']?.preset).toMatch(/#v\d+$/);
+});
+
+// Тексты правил живут в двух местах — в settings.json и в литерале тестов; без этого теста тесты на
+// testCanon прошли бы на тексте, которого у канона владельца уже нет. Тест снимает фаза 4 вместе с литералом.
+test('TEST_SETTINGS — зеркало канона владельца: правила, группы, устаревшие группы', () => {
+	const mirror = (s: typeof TEST_SETTINGS) => ({
+		rules: s.rules,
+		groups: s.groups,
+		deprecatedGroups: s.deprecatedGroups,
+	});
+	expect(mirror(TEST_SETTINGS)).toStrictEqual(mirror(OWNER_SOURCE.settings));
 });

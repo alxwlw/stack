@@ -2,6 +2,10 @@
 import type { CanonSource } from './canon.ts';
 import type { CanonSettings } from './canon-settings.ts';
 import type { StackManifest } from './own-packages.ts';
+import { RULE_NAMES, type RuleName, type RuleSettings } from './rule-settings.ts';
+
+// Пресет владельца: на нём строятся и TEST_SETTINGS, и репозитории testkit.ts.
+export const TEST_RENOVATE_PRESET = 'github>alxwlw/stack//renovate/canon.json5#v1';
 
 // Имена как у канона владельца: иначе пришлось бы править сотни ожиданий (на другие имена тесты движка переводит фаза 4).
 export const TEST_SETTINGS: CanonSettings = {
@@ -17,7 +21,30 @@ export const TEST_SETTINGS: CanonSettings = {
 	},
 	groups: ['peers', 'repo-rules', 'guardrails'],
 	deprecatedGroups: { renovate: "Renovate is the canon's dependency bot for every profile." },
+	rules: {
+		'release-age-exclude': {},
+		'package-manager': {},
+		'inline-version': {},
+		'engines-node': {},
+		'renovate-preset': { preset: TEST_RENOVATE_PRESET },
+		'dependabot-config': {},
+		'canon-not-extended': {},
+		'moon-toolchain-version': {},
+		'moon-v1-toolchain': {},
+		'moon-default-branch': {},
+		'toolchain-pin': {},
+	},
 };
+
+// Выборка из TEST_SETTINGS.rules: только названные правила / все, кроме названных.
+export function rulesOnly(...names: RuleName[]): RuleSettings {
+	return Object.fromEntries(
+		RULE_NAMES.filter((n) => names.includes(n)).map((n) => [n, TEST_SETTINGS.rules[n]]),
+	);
+}
+export function rulesWithout(...names: RuleName[]): RuleSettings {
+	return rulesOnly(...RULE_NAMES.filter((n) => !names.includes(n)));
+}
 
 // Чужой канон: доказывает, что настройки действуют.
 export const ACME_SETTINGS: CanonSettings = {
@@ -33,6 +60,15 @@ export const ACME_SETTINGS: CanonSettings = {
 	},
 	groups: ['repo-rules'],
 	deprecatedGroups: {},
+	rules: {
+		'inline-version': {},
+		'dependabot-config': {},
+		'moon-v1-toolchain': {},
+		// Правила, на которых тесты проверяют, что тексты и имена идут из настроек чужого канона.
+		'release-age-exclude': {},
+		'renovate-preset': { preset: 'github>acme/canon//renovate/canon.json5#v3' },
+		'canon-not-extended': {},
+	},
 };
 
 export const ACME_MANIFEST: StackManifest = {

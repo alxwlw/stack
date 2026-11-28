@@ -5,6 +5,19 @@
 	"ownPackages": ["@alxwlw/"],
 	"groups": ["peers", "repo-rules", "guardrails"],
 	"deprecatedGroups": { "renovate": "Renovate is the canon's dependency bot for every profile." },
+	"rules": {
+		"release-age-exclude": {},
+		"package-manager": {},
+		"inline-version": {},
+		"engines-node": {},
+		"renovate-preset": { "preset": "github>alxwlw/stack//renovate/canon.json5#v1" },
+		"dependabot-config": {},
+		"canon-not-extended": {},
+		"moon-toolchain-version": {},
+		"moon-v1-toolchain": {},
+		"moon-default-branch": {},
+		"toolchain-pin": {}
+	},
 	"syncPr": {
 		"title": "chore(stack): канон {version}",
 		"body": "Канон `@alxwlw/stack@{version}` применён к репозиторию.\n\nИзменённые файлы:\n{files}\nРелиз: https://github.com/alxwlw/stack/releases/tag/v{version}\n",

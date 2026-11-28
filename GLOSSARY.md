@@ -22,10 +22,14 @@ _Avoid_: preset, flavour, template
 A named opt-in slice of the canon, switched on through `with` in `.stack.jsonc`. There are four kinds: a **file group** (the `group` field of a manifest entry), a **catalog group** (a key of `canon/catalogs.json` other than `dev`, which every consumer gets), a **rule group** (switches on a rule of `stack check` rather than a file or a catalog: the canon offers them in `groups` of its settings, from the names `RULE_GROUPS` in `packages/stack/src/rule-settings.ts` knows, enabled ones in `Canon.rules`; the owner's canon offers three: `peers`, `repo-rules` and `guardrails`) and a **deprecated group** (accepted for old configs, enables nothing; `deprecatedGroups` of the canon's settings names it with the reason the schema prints). File and catalog group names come from `readCanonSource().groups` in `packages/stack/src/canon.ts`; `knownGroups` takes all four kinds from the source. A rule group is one function of the run context and its port that returns findings and notes (`RuleGroupModule` in `packages/stack/src/rule-group.ts`); `checkRepo` walks the enabled ones through `RULE_GROUP_MODULES` (`packages/stack/src/check.ts`), keyed by `RULE_GROUPS`, so a name without an entry does not compile.
 _Avoid_: feature, module, flag
 
+**Rule**:
+A built-in rule of `stack check` outside a **Group**; its name is the code of its findings. The canon switches rules on by name through the `rules` key of its Canon settings, with the parameters the rule takes (`renovate-preset` takes `preset`, the address of the canon's Renovate preset); a name the engine does not know, and a rule without a parameter it needs, is a defect of the canon package. What the engine can do is `RULE_MODULES` in `packages/stack/src/check.ts`, keyed by `RULE_NAMES` (`packages/stack/src/rule-settings.ts`), so a name without an entry does not compile; the findings come in the order of `RULE_NAMES`, not in the order of the settings. Files and catalogs are not rules: they are the canon itself.
+_Avoid_: check, policy, group (a **Group** is a slice a consumer switches on)
+
 ### What the canon holds
 
 **Canon settings**:
-The names and texts a canon declares as data: its profile names, the name of the consumer config file, the command name, the own-package patterns and the sync-PR texts. `canon/settings.json`, checked where it is read (`checkSettings`, `packages/stack/src/canon-settings.ts`); a violation is a defect of the canon package, not a finding.
+The names and texts a canon declares as data: its profile names, the name of the consumer config file, the command name, the own-package patterns, the rule groups and rules it offers, and the sync-PR texts. `canon/settings.json`, checked where it is read (`checkSettings`, `packages/stack/src/canon-settings.ts`); a violation is a defect of the canon package, not a finding.
 _Avoid_: canon config, canon options
 
 **Canon file**:

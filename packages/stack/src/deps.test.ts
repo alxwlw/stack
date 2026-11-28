@@ -1,10 +1,9 @@
 import { expect, test } from 'bun:test';
 
 import { check } from './check.ts';
-import { STACK_RENOVATE_PRESET } from './deps.ts';
 import type { FindingCode } from './findings.ts';
 import { canonFile, testCanon, testRepo } from './testkit.ts';
-import { ACME_SETTINGS } from './testkit-sources.ts';
+import { ACME_SETTINGS, TEST_RENOVATE_PRESET } from './testkit-sources.ts';
 
 // Пин node у testCanon нарочно не совпадает с реальным каноном (26.x): иначе тест engines-node
 // не отличит canon.pins.node от зашитой константы.
@@ -146,7 +145,7 @@ test('без pnpm-workspace.yaml правила каталогов молчат'
 // extends должен содержать пресет канона ровно с тегом #v1.
 const WITH_PRESET = `{
 	// свои правила потребителя
-	extends: ['config:recommended', '${STACK_RENOVATE_PRESET}'],
+	extends: ['config:recommended', '${TEST_RENOVATE_PRESET}'],
 	packageRules: [{ groupName: 'types', matchPackageNames: ['@types/**'] }],
 }
 `;
@@ -158,7 +157,7 @@ test('renovate-preset: renovate.json5 с пресетом — без наход�
 test('renovate-preset: .github/renovate.json с пресетом — без находки', () => {
 	expect(
 		renovate({
-			'.github/renovate.json': `{ "extends": ["config:recommended", "${STACK_RENOVATE_PRESET}"] }\n`,
+			'.github/renovate.json': `{ "extends": ["config:recommended", "${TEST_RENOVATE_PRESET}"] }\n`,
 		}),
 	).toEqual([]);
 });
@@ -184,7 +183,7 @@ test('renovate-preset: пресет без тега, с #main или с чужи
 	]) {
 		const [f] = renovate({ 'renovate.json5': `{ extends: ['${ref}'] }\n` });
 		expect(f?.code).toBe('renovate-preset');
-		expect(f?.message).toContain(STACK_RENOVATE_PRESET);
+		expect(f?.message).toContain(TEST_RENOVATE_PRESET);
 	}
 });
 
@@ -209,7 +208,7 @@ test('renovate-preset: конфиг без extends — находка, не ис
 });
 
 test('renovate-preset: extends строкой, даже равной пресету, — находка', () => {
-	const result = renovate({ 'renovate.json': `{ "extends": "${STACK_RENOVATE_PRESET}" }\n` });
+	const result = renovate({ 'renovate.json': `{ "extends": "${TEST_RENOVATE_PRESET}" }\n` });
 	expect(result).toHaveLength(1);
 	expect(result[0]?.code).toBe('renovate-preset');
 	expect(result[0]?.target).toBe('renovate.json');
