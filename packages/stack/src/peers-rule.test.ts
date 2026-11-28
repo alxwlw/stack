@@ -7,7 +7,7 @@ import { loadRepo, LOCKFILE, type Read, type Repo, repoFromSnapshot } from './re
 import { fakePeersReader, groupContext, repoDir, testCanon } from './testkit.ts';
 import { ACME_SETTINGS, TEST_SETTINGS } from './testkit-sources.ts';
 
-const PEERS_BASELINE = peersBaselineFile(TEST_SETTINGS.command);
+const PEERS_FILE = peersBaselineFile(TEST_SETTINGS.command);
 
 // Repo из снимка: pnpm-lock.yaml есть, если не сказано иное; baseline — записи или сырой текст.
 function repoWith(
@@ -19,9 +19,9 @@ function repoWith(
 	if (baseline !== undefined) {
 		const text =
 			typeof baseline === 'string' ? baseline : JSON.stringify({ version: 1, peers: baseline });
-		snapshot.set(PEERS_BASELINE, { text });
+		snapshot.set(PEERS_FILE, { text });
 	}
-	return repoFromSnapshot(snapshot, PEERS_BASELINE);
+	return repoFromSnapshot(snapshot, PEERS_FILE);
 }
 
 const UNMET: PeerIssue = {
@@ -175,9 +175,9 @@ test('baseline не разобрался — сравнения нет, нахо
 	const unread = repoFromSnapshot(
 		new Map<string, Read>([
 			[LOCKFILE, { text: 'lockfileVersion: x\n' }],
-			[PEERS_BASELINE, { failed: new Error('EACCES') }],
+			[PEERS_FILE, { failed: new Error('EACCES') }],
 		]),
-		PEERS_BASELINE,
+		PEERS_FILE,
 	);
 	expect(checkPeers(unread, { issues: [UNMET] }, 'stack')).toStrictEqual([]);
 	expect(unread.unreadable).toHaveLength(1);
