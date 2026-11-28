@@ -3,7 +3,7 @@ import { expect, test } from 'bun:test';
 import { check } from './check.ts';
 import type { FindingCode } from './findings.ts';
 import { canonFile, testCanon, testRepo } from './testkit.ts';
-import { ACME_SETTINGS, TEST_RENOVATE_PRESET } from './testkit-sources.ts';
+import { ACME_WITH_PRESET, TEST_RENOVATE_PRESET } from './testkit-sources.ts';
 
 // Пин node у testCanon нарочно не совпадает с реальным каноном (26.x): иначе тест engines-node
 // не отличит canon.pins.node от зашитой константы.
@@ -247,7 +247,7 @@ test('dependabot-config: .yml и .yaml — по находке на файл, б
 });
 
 test('renovate-preset: имя команды в сообщениях идёт из настроек канона', () => {
-	const acme = testCanon({ settings: ACME_SETTINGS });
+	const acme = testCanon({ settings: ACME_WITH_PRESET });
 	const none = check(testRepo(acme, { 'renovate.json5': null }), acme, []).find(
 		(f) => f.code === 'renovate-preset',
 	);

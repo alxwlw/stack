@@ -66,8 +66,16 @@ export const ACME_SETTINGS: CanonSettings = {
 		'moon-v1-toolchain': {},
 		// Правила, на которых тесты проверяют, что тексты и имена идут из настроек чужого канона.
 		'release-age-exclude': {},
-		'renovate-preset': { preset: 'github>acme/canon//renovate/canon.json5#v3' },
 		'canon-not-extended': {},
+	},
+};
+
+// Чужой канон с пресетом Renovate: acme по умолчанию его не включает.
+export const ACME_WITH_PRESET: CanonSettings = {
+	...ACME_SETTINGS,
+	rules: {
+		...ACME_SETTINGS.rules,
+		'renovate-preset': { preset: 'github>acme/canon//renovate/canon.json5#v3' },
 	},
 };
 
