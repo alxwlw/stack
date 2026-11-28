@@ -37,7 +37,13 @@ test('rules: включённые правила с параметрами ка�
 	const raw = { 'inline-version': {}, 'renovate-preset': { preset: 'github>acme/canon#v3' } };
 	expect(checkRules(raw)).toStrictEqual(raw);
 	expect(checkRules({})).toStrictEqual({});
+	const moon = { 'moon-default-branch': { branch: 'trunk', reason: 'the branch acme CI runs on' } };
+	expect(checkRules(moon)).toStrictEqual(moon);
 });
+
+const MOON_BRANCH =
+	'"rules.moon-default-branch.branch" must be a branch name: non-empty, without whitespace';
+const MOON_REASON = '"rules.moon-default-branch.reason" must be a non-empty string';
 
 test.each([
 	[[], '"rules" must be an object'],
@@ -55,6 +61,15 @@ test.each([
 		'"rules.renovate-preset.preset" must be a non-empty string',
 	],
 	[{ 'renovate-preset': { preset: 'p', x: 1 } }, '"rules.renovate-preset" has unknown key "x"'],
+	[{ 'moon-default-branch': { branch: '', reason: 'r' } }, MOON_BRANCH],
+	[{ 'moon-default-branch': { branch: 'my main', reason: 'r' } }, MOON_BRANCH],
+	[{ 'moon-default-branch': {} }, MOON_BRANCH],
+	[{ 'moon-default-branch': { branch: 'main' } }, MOON_REASON],
+	[{ 'moon-default-branch': { branch: 'main', reason: '' } }, MOON_REASON],
+	[
+		{ 'moon-default-branch': { branch: 'main', reason: 'r', x: 1 } },
+		'"rules.moon-default-branch" has unknown key "x"',
+	],
 ])('rules %j — ошибка пакета канона', (raw, text) => {
 	expect(() => checkRules(raw)).toThrow(`canon settings: ${text}`);
 });

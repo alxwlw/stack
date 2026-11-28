@@ -13,8 +13,8 @@ import { join } from 'node:path';
 
 import { expect, test } from 'bun:test';
 
-import { PEERS_BASELINE } from './peers.ts';
-import { canonFile } from './testkit.ts';
+import { peersBaselineFile } from './peers.ts';
+import { canonFile, OWNER_SOURCE } from './testkit.ts';
 
 const ROOT = join(import.meta.dir, '..', '..', '..');
 const OXFMT_BIN = join(ROOT, 'node_modules', '.bin', 'oxfmt');
@@ -45,6 +45,7 @@ test('canon oxfmtrc: sortPackageJson:false — oxfmt --write не трогает
 }, 30_000);
 
 const REPO_RULES_BASELINE = '.repo-rules-baseline.json';
+const PEERS_FILE = peersBaselineFile(OWNER_SOURCE.settings.command);
 // Вид, в котором файлы пишет канон: repo-rules — два пробела, peers — табуляция и `by` по элементу на строку.
 const RULES_TEXT = `${JSON.stringify({ version: 1, rules: { 'max-lines': { 'src/a.ts': 1 } } }, null, 2)}\n`;
 const PEERS_TEXT = `${JSON.stringify(
@@ -57,10 +58,10 @@ test('canon oxfmtrc: baseline канона не форматируются, та
 	const dir = mkdtempSync(join(tmpdir(), 'stack-oxfmtrc-'));
 	writeFileSync(join(dir, '.oxfmtrc.jsonc'), canonFile('.oxfmtrc.jsonc'));
 	mkdirSync(join(dir, 'sub'));
-	const ignored = [REPO_RULES_BASELINE, PEERS_BASELINE, `sub/${REPO_RULES_BASELINE}`];
+	const ignored = [REPO_RULES_BASELINE, PEERS_FILE, `sub/${REPO_RULES_BASELINE}`];
 	writeFileSync(join(dir, REPO_RULES_BASELINE), RULES_TEXT);
 	writeFileSync(join(dir, `sub/${REPO_RULES_BASELINE}`), RULES_TEXT);
-	writeFileSync(join(dir, PEERS_BASELINE), PEERS_TEXT);
+	writeFileSync(join(dir, PEERS_FILE), PEERS_TEXT);
 	// Контроль: тот же текст под именами вне списка oxfmt считает неотформатированным.
 	writeFileSync(join(dir, 'rules-control.json'), RULES_TEXT);
 	writeFileSync(join(dir, 'peers-control.json'), PEERS_TEXT);
@@ -77,7 +78,7 @@ test('canon oxfmtrc: baseline канона не форматируются, та
 	expect(readFileSync(join(dir, 'rules-control.json'), 'utf8')).not.toBe(RULES_TEXT);
 	expect(readFileSync(join(dir, 'peers-control.json'), 'utf8')).not.toBe(PEERS_TEXT);
 	for (const path of ignored) {
-		const expected = path.endsWith(PEERS_BASELINE) ? PEERS_TEXT : RULES_TEXT;
+		const expected = path.endsWith(PEERS_FILE) ? PEERS_TEXT : RULES_TEXT;
 		expect(readFileSync(join(dir, path), 'utf8')).toBe(expected);
 	}
 }, 30_000);

@@ -53,7 +53,10 @@ export const TEST_SETTINGS: CanonSettings = {
 		'canon-not-extended': { seeds: TEST_SEEDS },
 		'moon-toolchain-version': {},
 		'moon-v1-toolchain': {},
-		'moon-default-branch': {},
+		'moon-default-branch': {
+			branch: 'main',
+			reason: "the branch the canon's stack workflow runs on",
+		},
 		'toolchain-pin': {},
 	},
 };
@@ -86,6 +89,7 @@ export const ACME_SETTINGS: CanonSettings = {
 		'inline-version': {},
 		'dependabot-config': {},
 		'moon-v1-toolchain': {},
+		'moon-default-branch': { branch: 'trunk', reason: 'the branch acme CI runs on' },
 		// Правила, на которых тесты проверяют, что тексты и имена идут из настроек чужого канона.
 		'release-age-exclude': {},
 		'canon-not-extended': { seeds: ACME_SEEDS },

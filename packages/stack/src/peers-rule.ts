@@ -6,7 +6,7 @@ import type { Finding } from './findings.ts';
 import {
 	comparePeers,
 	type PeerEntry,
-	PEERS_BASELINE,
+	peersBaselineFile,
 	type PeersOutcome,
 	peersOutcome,
 	type PeersReader,
@@ -42,13 +42,14 @@ export function checkPeers(repo: Repo, outcome: PeersOutcome, command: string): 
 	if ('unavailable' in outcome) {
 		return [{ code: 'peers-unavailable', target: TARGET, message: outcome.unavailable }];
 	}
-	if (repo.paths.has(PEERS_BASELINE) && repo.peersBaseline === undefined) return [];
+	const file = peersBaselineFile(command);
+	if (repo.paths.has(file) && repo.peersBaseline === undefined) return [];
 	const { added, stale } = comparePeers(outcome.issues, repo.peersBaseline ?? []);
 	return [
 		...added.map((i): Finding => ({
 			code: 'peer-dependency',
 			target: where(i.entry),
-			message: `${i.detail}; not in ${PEERS_BASELINE}`,
+			message: `${i.detail}; not in ${file}`,
 		})),
 		...stale.map((e): Finding => ({
 			code: 'stale-peer-baseline',

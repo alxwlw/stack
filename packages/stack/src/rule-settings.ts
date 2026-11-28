@@ -89,7 +89,7 @@ export interface RuleParams {
 	'canon-not-extended': { readonly seeds: Readonly<Record<string, SeedSpec>> };
 	'moon-toolchain-version': NoParams;
 	'moon-v1-toolchain': NoParams;
-	'moon-default-branch': NoParams;
+	'moon-default-branch': { readonly branch: string; readonly reason: string };
 	'toolchain-pin': NoParams;
 }
 
@@ -164,7 +164,17 @@ const PARAMS_CHECKS: {
 	},
 	'moon-toolchain-version': noParams,
 	'moon-v1-toolchain': noParams,
-	'moon-default-branch': noParams,
+	'moon-default-branch': (raw, at) => {
+		onlyKeys(raw, at, ['branch', 'reason']);
+		const { branch, reason } = raw;
+		if (typeof branch !== 'string' || branch === '' || /\s/.test(branch)) {
+			return bad(`"${at}.branch" must be a branch name: non-empty, without whitespace`);
+		}
+		if (typeof reason !== 'string' || reason === '') {
+			return bad(`"${at}.reason" must be a non-empty string`);
+		}
+		return { branch, reason };
+	},
 	'toolchain-pin': noParams,
 };
 

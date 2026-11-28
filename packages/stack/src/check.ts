@@ -41,8 +41,8 @@ export const RULE_MODULES = {
 	'moon-toolchain-version': { report: (repo, canon) => checkMoonToolchains(repo, canon) },
 	'moon-v1-toolchain': { report: (repo) => checkMoonV1Toolchain(repo) },
 	'moon-default-branch': {
-		plan: (repo) => planMoonDefaultBranch(repo),
-		report: (repo) => checkMoonDefaultBranch(repo),
+		plan: (repo, _canon, params) => planMoonDefaultBranch(repo, params.branch),
+		report: (repo, _canon, params) => checkMoonDefaultBranch(repo, params.branch, params.reason),
 	},
 	'toolchain-pin': {
 		plan: (repo, canon, _params, exceptions) => planToolchainPins(repo, canon, exceptions),

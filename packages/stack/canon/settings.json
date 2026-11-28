@@ -29,7 +29,10 @@
 		},
 		"moon-toolchain-version": {},
 		"moon-v1-toolchain": {},
-		"moon-default-branch": {},
+		"moon-default-branch": {
+			"branch": "main",
+			"reason": "the branch the canon's stack workflow runs on"
+		},
 		"toolchain-pin": {}
 	},
 	"syncPr": {

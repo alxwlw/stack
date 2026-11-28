@@ -350,7 +350,7 @@ test('checkRepo: подсказки stale групп peers и repo-rules наз�
 	const repo = repoDir({
 		...CLEAN_REPO,
 		'pnpm-lock.yaml': 'lockfileVersion: x\n',
-		'.stack-peers-baseline.json': JSON.stringify({ version: 1, peers: [stalePeer] }),
+		'.acme-peers-baseline.json': JSON.stringify({ version: 1, peers: [stalePeer] }),
 	});
 	const peers = fakePeersReader({ status: 0, signal: null, stdout: '{}', stderr: '' });
 	const rr = fakeRepoRulesReader(

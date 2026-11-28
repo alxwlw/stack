@@ -21,6 +21,7 @@ import type { GuardrailRun, GuardrailRunner } from './guardrails-port.ts';
 import type { Line } from './output.ts';
 import { ownPackages } from './own-packages.ts';
 import type { PeersReader, PeersRun } from './peers.ts';
+import { peersBaselineFile } from './peers.ts';
 import type { Served } from './registry.ts';
 import { type Read, RENOVATE_CONFIGS, type Repo, repoFromSnapshot } from './repo.ts';
 import type { RepoRulesReader, RepoRulesRun } from './repo-rules.ts';
@@ -249,7 +250,7 @@ export function testRepo(canon: Canon, over: Record<string, string | Read | null
 		if (value === null) snapshot.delete(path);
 		else snapshot.set(path, typeof value === 'string' ? { text: value } : value);
 	}
-	return repoFromSnapshot(snapshot);
+	return repoFromSnapshot(snapshot, peersBaselineFile(canon.settings.command));
 }
 
 // Контекст группы правил для тестов: корень '/r', пустое окружение, база PR пропущена.

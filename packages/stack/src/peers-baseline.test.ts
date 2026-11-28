@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, statSync, utimesSync } from 'node:fs';
+import { existsSync, readFileSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { expect, test } from 'bun:test';
@@ -264,7 +264,41 @@ test('чужой канон: сообщения называют его кома
 	});
 	const withPeers = testCanon({ rules: ['peers'], settings: ACME_SETTINGS });
 	expect(peersBaseline(repo(), withPeers, 'lower', p.read).err).toStrictEqual([
-		`no ${FILE}: run acme peers-baseline --init`,
+		'no .acme-peers-baseline.json: run acme peers-baseline --init',
 	]);
 	expect(p.calls()).toBe(0);
+});
+
+test('чужой канон: файл baseline — по имени его команды; .stack-peers-baseline.json — обычный файл', () => {
+	const acme = testCanon({ rules: ['peers'], settings: ACME_SETTINGS });
+	const ACME_FILE = '.acme-peers-baseline.json';
+	const p = port(pnpmRun(A));
+	const dir = repoDir({
+		'package.json': '{}',
+		'pnpm-lock.yaml': 'lockfileVersion: x\n',
+		[FILE]: '{"version":2,"peers":[]}\n',
+	});
+	// Чужой файл с именем стека не база: init его не видит и пишет свой.
+	expect(peersBaseline(dir, acme, 'init', p.read)).toStrictEqual({
+		code: 0,
+		out: [`wrote ${ACME_FILE}: 1 entr(ies)`],
+		err: [],
+	});
+	expect(readFileSync(join(dir, ACME_FILE), 'utf8')).toBe(baselineText([A]));
+	expect(readFileSync(join(dir, FILE), 'utf8')).toBe('{"version":2,"peers":[]}\n');
+	expect(peersBaseline(dir, acme, 'init', p.read)).toStrictEqual({
+		code: 2,
+		out: [],
+		err: [`${ACME_FILE} already exists`],
+	});
+	// Неразобранная база чужого канона называется её именем.
+	writeFileSync(join(dir, ACME_FILE), '{"version":2,"peers":[]}\n');
+	expect(peersBaseline(dir, acme, 'lower', p.read).err).toStrictEqual([
+		`${ACME_FILE} does not parse: version must be 1`,
+	]);
+	// drop-fixed пишет её же.
+	writeFileSync(join(dir, ACME_FILE), baselineText([A, B]));
+	expect(peersBaseline(dir, acme, 'drop-fixed', port(pnpmRun(A)).read).out).toStrictEqual([
+		`dropped 1 fixed entr(ies) from ${ACME_FILE}`,
+	]);
 });
